@@ -1,7 +1,7 @@
 //! Drawing properties dialog - modal popup for editing drawing properties.
 
 use crate::localization as l10n;
-use egui::{Context, Event, Key, Modifiers, Ui, Vec2};
+use egui::{Align, Context, Event, Key, Modifiers, Ui, Vec2};
 
 use super::actions::{DrawingId, DrawingPropertiesAction, DrawingProps};
 use super::config::DrawingPropertiesConfig;
@@ -15,7 +15,7 @@ use crate::ui::drawing_toolbar::{DrawingToolbarAction, utilities::TemplatesButto
 use crate::ui_kit::ColorPickerState;
 use crate::ui_kit::buttons::Button;
 use crate::ui_kit::dialog::{DialogFooter, DialogFrame, dialog_header};
-use crate::ui_kit::tab_bar::TabBar;
+use crate::ui_kit::ext::UiExt;
 
 /// Drawing properties dialog
 pub struct DrawingPropertiesDialog {
@@ -27,7 +27,7 @@ pub struct DrawingPropertiesDialog {
     pub drawing_id: Option<DrawingId>,
     /// Display name of the drawing being edited.
     pub drawing_name: String,
-    /// Currently selected tab.
+    /// Section to bring into view (hosts may set this to jump, e.g. Text editing).
     pub active_tab: PropertiesTab,
     /// Editable drawing appearance and tool settings.
     pub props: DrawingProps,
@@ -441,27 +441,25 @@ impl DrawingPropertiesDialog {
             .tool_settings
             .as_ref()
             .is_some_and(|t| InputsTab::available(t.settings.tool_type));
-        let tabs: Vec<_> = PropertiesTab::all()
-            .into_iter()
-            .filter(|t| match t {
-                PropertiesTab::Inputs => has_inputs,
-                PropertiesTab::Text => self
-                    .props
-                    .tool_settings
-                    .as_ref()
-                    .is_some_and(|t| t.settings.tool_type.supports_text()),
-                _ => true,
-            })
-            .collect();
-        if !tabs.contains(&self.active_tab) {
+        let has_text = self
+            .props
+            .tool_settings
+            .as_ref()
+            .is_some_and(|t| t.settings.tool_type.supports_text());
+        let section_available = |tab: PropertiesTab| match tab {
+            PropertiesTab::Inputs => has_inputs,
+            PropertiesTab::Text => has_text,
+            _ => true,
+        };
+        if !section_available(self.active_tab) {
             self.active_tab = PropertiesTab::Style;
         }
-        egui::ScrollArea::horizontal()
-            .id_salt("properties_tabs")
-            .show(ui, |ui| TabBar::new(&tabs, &mut self.active_tab).show(ui));
+        // Scroll once when a host jumps to a section via `active_tab` (e.g. Open Text).
+        let scroll_to = (state.scrolled_tab != Some(self.active_tab)).then_some(self.active_tab);
 
         // Vertical auto-shrink stays on: a full-height body would push the pinned footer out.
         egui::ScrollArea::vertical()
+            .id_salt("drawing_properties_sections")
             .auto_shrink([false, true])
             .max_height(
                 (ui.available_height()
@@ -469,21 +467,44 @@ impl DrawingPropertiesDialog {
                     - if self.error.is_some() { 40.0 } else { 0.0 })
                 .max(0.0),
             )
-            .show(ui, |ui| match self.active_tab {
-                PropertiesTab::Style => {
-                    StyleTab::show(ui, &mut self.props, &mut state.pickers);
-                }
-                PropertiesTab::Inputs => {
-                    let color = self.props.color.to_srgba_unmultiplied();
-                    if let Some(template) = &mut self.props.tool_settings {
-                        template.settings.color = color;
-                        InputsTab::show(ui, &mut template.settings, &mut state.level_pickers);
+            .show(ui, |ui| {
+                let mut first = true;
+                for tab in PropertiesTab::all() {
+                    if !section_available(tab) {
+                        continue;
+                    }
+                    if !first {
+                        ui.spaced_separator();
+                    }
+                    first = false;
+                    if scroll_to == Some(tab) {
+                        ui.scroll_to_cursor(Some(Align::TOP));
+                    }
+                    ui.section_header(tab.label());
+                    match tab {
+                        PropertiesTab::Style => {
+                            StyleTab::show(ui, &mut self.props, &mut state.pickers);
+                        }
+                        PropertiesTab::Inputs => {
+                            let color = self.props.color.to_srgba_unmultiplied();
+                            if let Some(template) = &mut self.props.tool_settings {
+                                template.settings.color = color;
+                                InputsTab::show(
+                                    ui,
+                                    &mut template.settings,
+                                    &mut state.level_pickers,
+                                );
+                            }
+                        }
+                        PropertiesTab::Text => TextTab::show(ui, &mut self.props),
+                        PropertiesTab::Coordinates => {
+                            CoordinatesTab::show(ui, &mut self.coordinates)
+                        }
+                        PropertiesTab::Visibility => VisibilityTab::show(ui, &mut self.props),
                     }
                 }
-                PropertiesTab::Coordinates => CoordinatesTab::show(ui, &mut self.coordinates),
-                PropertiesTab::Visibility => VisibilityTab::show(ui, &mut self.props),
-                PropertiesTab::Text => TextTab::show(ui, &mut self.props),
             });
+        state.scrolled_tab = Some(self.active_tab);
 
         if let Some(error) = &self.error {
             ui.colored_label(ui.visuals().error_fg_color, l10n::text(ui.ctx(), error));
@@ -552,12 +573,14 @@ const FOOTER_HEIGHT: f32 = 60.0;
 /// Keyboard and colour picker state kept in egui memory between frames.
 #[derive(Clone, Default)]
 struct UiState {
-    /// Colour and fill colour pickers of the Style tab.
+    /// Colour and fill colour pickers of the Style section.
     pickers: [ColorPickerState; 2],
     /// Pickers for the current tool's editable levels.
     level_pickers: Vec<ColorPickerState>,
     /// Whether a widget had keyboard focus at the end of the previous frame.
     had_focus: bool,
+    /// Last section scrolled into view for `active_tab` deep-links.
+    scrolled_tab: Option<PropertiesTab>,
 }
 
 /// Only previewed drawings are restored; incoming host drawings and metadata stay intact.

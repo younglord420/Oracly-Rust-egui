@@ -1,13 +1,14 @@
 //! Drawing properties dialog - modal popup for editing drawing properties.
 //!
-//! Provides a properties dialog for drawings with tabs:
+//! Provides a single scrolling properties panel with stacked sections:
 //! - Style: Color, line width, line style, fill options
-//! - Inputs: Saved tool-specific levels, sizing and calculation settings
+//! - Inputs: Saved tool-specific levels, sizing and calculation settings (when available)
+//! - Text: Labels and font settings (when the tool supports text)
 //! - Coordinates: Price and time points
 //! - Visibility: Timeframe visibility settings
-//! - Text: Labels and font settings
 //!
-//! Open with [`DrawingPropertiesDialog::open_for_chart`] and call
+//! [`PropertiesTab`] / [`DrawingPropertiesDialog::active_tab`] remain for hosts that jump to a
+//! section (e.g. text editing). Open with [`DrawingPropertiesDialog::open_for_chart`] and call
 //! [`DrawingPropertiesDialog::show_and_apply`] each frame to apply validated edits in the library.
 //! Hosts persist [`crate::drawings::DrawingManager::tool_defaults`] and may attach storage to
 //! [`DrawingPropertiesDialog::templates`]. Delete and Clone are in the drawing context menu.

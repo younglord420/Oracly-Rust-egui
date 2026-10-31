@@ -2,8 +2,8 @@
 
 use crate::tokens::DESIGN_TOKENS;
 
-/// Preferred content height; longer coordinate and level lists scroll above the footer.
-const HEIGHT: f32 = 320.0;
+/// Preferred content height; stacked sections scroll above the pinned footer.
+const HEIGHT: f32 = 450.0;
 
 /// Configuration for the drawing properties dialog
 #[derive(Clone, Debug)]

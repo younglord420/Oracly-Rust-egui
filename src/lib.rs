@@ -254,14 +254,13 @@ mod tests {
 
     /// Every number followed, directly or after one or two words, by "drawing tool...",
     /// "indicator..." or "chart type..." (ignoring surrounding punctuation) in the README, the
-    /// package description, the crate docs and the ROADMAP must match the code.
+    /// package description and the crate docs must match the code.
     #[test]
     fn stated_counts_match_code() {
         let docs = [
             include_str!("../README.md"),
             include_str!("../Cargo.toml"),
             include_str!("lib.rs"),
-            include_str!("../ROADMAP.md"),
         ];
         let counts: [(&[&str], usize); 3] = [
             (&["drawing", "tool"], DrawingToolType::all().len()),

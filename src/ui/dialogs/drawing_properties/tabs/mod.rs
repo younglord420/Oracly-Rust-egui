@@ -41,14 +41,14 @@ impl PropertiesTab {
         }
     }
 
-    /// Values in display order.
+    /// Values in display order (stacked sections in the properties panel).
     pub fn all() -> [Self; 5] {
         [
             Self::Style,
             Self::Inputs,
+            Self::Text,
             Self::Coordinates,
             Self::Visibility,
-            Self::Text,
         ]
     }
 }
