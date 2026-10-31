@@ -44,7 +44,7 @@ pub fn render_price_labels(
 /// Core implementation for price label rendering.
 ///
 /// When `tick_layers` is `Some`, those marks (with per-tick opacity) are used
-/// instead of regenerating nice-number ticks — for Vela-like slide/fade during zoom.
+/// instead of regenerating nice-number ticks — for slide/fade during zoom.
 pub fn render_price_labels_at_pos(
     context: &RenderContext,
     price_scale: &PriceMap,

@@ -1179,7 +1179,7 @@ impl Chart {
             .max(0.0);
         self.frame_dt = dt;
         self.last_anim_time = Some(now);
-        // Vela `animations.autoscale` (~80 ms): glide the price range while zoom
+        // Autoscale ease (~80 ms): glide the price range while zoom
         // or fling is in flight instead of snapping every frame.
         if let Some(tau) = self.chart_options.animations.autoscale_tau_secs() {
             let alpha = 1.0 - (-dt / tau).exp();
@@ -1256,7 +1256,7 @@ impl Chart {
         self.update_shared_study_maps(price_rect);
         let price_formatter =
             self.series_label_formatter(super::SeriesId::MAIN, price_map.transform().mode);
-        // Vela-like: freeze nice tick prices while the range moves, remap Y (slide),
+        // Freeze nice tick prices while the range moves, remap Y (slide),
         // crossfade when the nice step changes.
         let fade_tau = self
             .chart_options

@@ -117,7 +117,7 @@ impl Chart {
                 if price_axis_rect.contains(hp) {
                     pending_price_zoom = Some(delta_y);
                 } else {
-                    // Vela-like: responsive notches with a short ease (not as coarse as `/100`).
+                    // Responsive notches with a short ease (not as coarse as `/100`).
                     let zoom_scale = (-delta_y / 120.0).clamp(-0.4, 0.4);
                     // Zoom around the pointer, or the latest candle while the right bar stays
                     let zoom_point_x = self.zoom_anchor(hp.x - chart_rect_min_x, chart_width);
@@ -639,7 +639,7 @@ impl Chart {
         price_rect: Rect,
         transform: PriceTransform,
     ) {
-        // Vela price-axis wheel is “gentle”: a bit softer than raw dy, still responsive.
+        // Price-axis wheel is “gentle”: a bit softer than raw dy, still responsive.
         let soft_dy = dy * 0.55;
         let height = price_rect.height().max(1.0) as f64;
         let factor = (f64::from(soft_dy) / height).exp();

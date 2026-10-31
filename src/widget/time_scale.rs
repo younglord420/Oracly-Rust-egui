@@ -234,7 +234,7 @@ impl Chart {
     /// With [`right_bar_stays_on_scroll`](crate::config::TimeScaleOptions::right_bar_stays_on_scroll):
     /// near the live edge (including a latest candle panned just under the price axis) pins that
     /// candle in pixels; further into history pins the plot's right edge so the bar there stays
-    /// (Vela / TradingView `rightBarStaysOnScroll`).
+    /// (right-bar-stays-on-scroll behaviour).
     pub(super) fn zoom_anchor(&self, x: f32, width: f32) -> f32 {
         if !self.chart_options.time_scale.right_bar_stays_on_scroll {
             return x;

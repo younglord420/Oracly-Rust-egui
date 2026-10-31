@@ -52,7 +52,7 @@ pub struct ChartOptions {
     /// Kinetic scroll animation
     pub kinetic_scroll: KineticScrollOptions,
 
-    /// Eased zoom and auto price-scale glide (Vela-like motion).
+    /// Eased zoom and auto price-scale glide.
     #[serde(default)]
     pub animations: ChartAnimations,
 

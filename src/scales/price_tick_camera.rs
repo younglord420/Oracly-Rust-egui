@@ -1,4 +1,4 @@
-//! Vela-like price-axis tick motion: freeze nice prices while the range moves,
+//! Price-axis tick motion: freeze nice prices while the range moves,
 //! remap their Y each frame (slide), and crossfade when the nice step changes.
 
 use super::{PriceFormatter, PriceMap, PriceMark, PriceScaleMode};

@@ -599,7 +599,7 @@ fn recent_colors_id() -> Id {
     Id::unique("color_picker_recent")
 }
 
-/// Paint the TradingView-style palette grid (grayscale, hues, shades, recent, opacity).
+/// Paint the standard charting palette grid (grayscale, hues, shades, recent, opacity).
 ///
 /// For hosts that supply their own trigger and popup chrome (e.g. the floating selection bar).
 /// Returns `true` when `color` changed.

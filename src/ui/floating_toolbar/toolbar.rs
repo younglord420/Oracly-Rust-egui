@@ -507,7 +507,7 @@ impl FloatingSelectionToolbar {
             .frame(crate::ui_kit::glass_menu(ui))
             .gap(theme.spacing.xs)
             .show(|ui| {
-                // TradingView-style swatch grid + opacity (kit palette).
+                // Standard swatch grid + opacity (kit palette).
                 ui.set_min_width(200.0);
                 if show_palette(ui, color) {
                     changed = true;

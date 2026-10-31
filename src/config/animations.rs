@@ -1,4 +1,4 @@
-//! Chart motion easing (Vela-like zoom / pan / crosshair glide).
+//! Chart motion easing (eased zoom / pan / crosshair glide).
 //!
 //! Durations are exponential time-constants in milliseconds: after one constant the
 //! motion has covered about 63% of the remaining distance, and looks settled after
@@ -10,25 +10,25 @@
 pub struct ChartAnimations {
     /// Wheel / pinch zoom ease time-constant in milliseconds.
     ///
-    /// `None` or `Some(0)` applies zoom instantly. Default `Some(70)` (Vela `animations.zoom`).
+    /// `None` or `Some(0)` applies zoom instantly. Default `Some(70)`.
     pub zoom_ms: Option<u32>,
 
     /// Auto price-scale ease time-constant in milliseconds.
     ///
     /// `None` or `Some(0)` snaps the range every frame. Default `Some(80)`
-    /// (Vela `animations.autoscale` — glides while zoom/fling is in flight).
+    /// (glides while zoom/fling is in flight).
     pub autoscale_ms: Option<u32>,
 
     /// Go-to-realtime / near-edge snap ease time-constant in milliseconds.
     ///
     /// `None` or `Some(0)` jumps instantly when animated scroll is requested.
-    /// Default `Some(130)` (Vela `animations.scroll`).
+    /// Default `Some(130)`.
     pub scroll_ms: Option<u32>,
 
     /// Price-axis wheel zoom ease time-constant in milliseconds.
     ///
     /// `None` or `Some(0)` applies instantly. Drag-zoom on the axis stays instant.
-    /// Default `Some(70)` (aligned with Vela wheel zoom).
+    /// Default `Some(70)` (aligned with wheel zoom).
     pub price_zoom_ms: Option<u32>,
 
     /// Crosshair follow ease time-constant in milliseconds.
@@ -102,7 +102,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_matches_vela_like_constants() {
+    fn default_matches_documented_constants() {
         let a = ChartAnimations::default();
         assert_eq!(a.zoom_ms, Some(70));
         assert_eq!(a.autoscale_ms, Some(80));

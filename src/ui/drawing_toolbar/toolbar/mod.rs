@@ -412,8 +412,8 @@ impl DrawingToolbar {
         action
     }
 
-    /// Hover opens the flyout; a click quick-picks the top item for tool/cursor categories
-    /// (Vela-style). Utility menus (Magnet / Hide / Remove / Icons) only hover-open.
+    /// Hover opens the flyout; a click quick-picks the top item for tool/cursor categories.
+    /// Utility menus (Magnet / Hide / Remove / Icons) only hover-open.
     fn menu_button(
         &mut self,
         ui: &Ui,
@@ -1047,7 +1047,7 @@ mod tests {
         }
     }
 
-    /// Hover opens a category flyout; a click on the rail picks the top tool (Vela-style).
+    /// Hover opens a category flyout; a click on the rail picks the top tool.
     #[test]
     fn hover_opens_flyout_and_click_selects_the_top_tool() {
         let ctx = Context::default();

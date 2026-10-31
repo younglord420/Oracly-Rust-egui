@@ -48,7 +48,7 @@ pub struct TimeScaleOptions {
     pub lock_visible_time_range_on_resize: bool,
 
     /// Prefer locking the right side of the chart when zooming (wheel / pinch / keyboard)
-    /// instead of the bar under the pointer — TradingView / Vela `rightBarStaysOnScroll`.
+    /// instead of the bar under the pointer (common charting “right bar stays on scroll”).
     ///
     /// Near the live edge the latest candle is pinned in pixels (margin stays constant). After
     /// scrolling into history the plot's right edge is pinned so the bar at that edge stays put.

@@ -503,18 +503,18 @@ impl DemoApp {
         options.time_scale.min_bar_spacing = 0.01;
         // The scale reserves half a slot and one pixel after the last centre.
         options.time_scale.right_offset_pixels = Some(65.0 - 6.1 * 0.5 - 1.0);
-        // Vela-like: keep the latest candle fixed on the right while zooming.
+        // Keep the latest candle fixed on the right while zooming.
         options.time_scale.right_bar_stays_on_scroll = true;
         options.time_scale.time_visible = true;
         options.time_scale.seconds_visible = true;
-        // Match Vela defaults: zoom 70 ms, price-axis zoom 70 ms, autoscale 80 ms.
+        // Match Oracly defaults: zoom 70 ms, price-axis zoom 70 ms, autoscale 80 ms.
         options.animations.zoom_ms = Some(70);
         options.animations.price_zoom_ms = Some(70);
         options.animations.autoscale_ms = Some(80);
         // Phase 1 motion: kinetic pan with a short (~110 ms) decay after flicks.
         options.kinetic_scroll.enabled = true;
         options.kinetic_scroll.mouse = true;
-        // Vela pan momentum ~110 ms feel.
+        // Pan momentum ~110 ms feel.
         options.kinetic_scroll.damping_coeff = 0.88;
         options.kinetic_scroll.scroll_min_move = 8.0;
         let live = Arc::new(LiveFeed::new(symbol, now));
