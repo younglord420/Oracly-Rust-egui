@@ -1,0 +1,676 @@
+//! Visible-range requests for host-owned annotations and events.
+
+use super::{Chart, ChartEvent, SeriesId};
+use crate::chart::coords::ChartMapping;
+use crate::chart::renderers::RenderContext;
+use crate::data::{FeedError, inbox::Inbox};
+use crate::model::{Bar, EventVisibility, Marker, MarkerZOrder, TimeScaleEvent};
+use crate::services::{Marks, MarksPage, MarksRequest};
+use chrono::{DateTime, Utc};
+use std::sync::{Arc, Mutex, PoisonError};
+
+/// Where a bar mark with a host ID was painted.
+pub(super) struct MarkHit {
+    id: String,
+    series: SeriesId,
+    time: DateTime<Utc>,
+    rect: egui::Rect,
+}
+
+pub(super) struct MarkSource {
+    source: Arc<dyn Marks>,
+    inbox: Arc<Inbox>,
+    request: Option<MarksRequest>,
+    wake: Arc<Mutex<egui::ViewportId>>,
+    pub(super) page: MarksPage,
+    error: Option<FeedError>,
+}
+
+/// A time, as markers and time scale events carry.
+pub(crate) trait Timed {
+    fn time(&self) -> DateTime<Utc>;
+}
+
+impl Timed for Marker {
+    fn time(&self) -> DateTime<Utc> {
+        self.time
+    }
+}
+
+impl Timed for TimeScaleEvent {
+    fn time(&self) -> DateTime<Utc> {
+        self.time
+    }
+}
+
+/// Items in supplied painting order, indexed by time so a frame visits only those near the view.
+#[derive(Clone)]
+pub(crate) struct TimeOrdered<T> {
+    items: Vec<T>,
+    /// Indices into `items` by time; equal times keep the supplied order.
+    by_time: Vec<usize>,
+}
+
+impl<T> Default for TimeOrdered<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            by_time: Vec::new(),
+        }
+    }
+}
+
+impl<T: Timed> From<Vec<T>> for TimeOrdered<T> {
+    fn from(items: Vec<T>) -> Self {
+        let mut by_time: Vec<usize> = (0..items.len()).collect();
+        by_time.sort_by_key(|&index| items[index].time());
+        Self { items, by_time }
+    }
+}
+
+impl<T> std::ops::Deref for TimeOrdered<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        &self.items
+    }
+}
+
+impl<T: Timed> TimeOrdered<T> {
+    /// Indices timed from `from` through `to`, a side open when `None`, in supplied order.
+    pub(crate) fn within(
+        &self,
+        from: Option<DateTime<Utc>>,
+        to: Option<DateTime<Utc>>,
+    ) -> Vec<usize> {
+        let time = |index: &usize| self.items[*index].time();
+        let start = from.map_or(0, |from| self.by_time.partition_point(|i| time(i) < from));
+        let end = to.map_or(self.by_time.len(), |to| {
+            self.by_time.partition_point(|i| time(i) <= to)
+        });
+        if end.saturating_sub(start) == self.items.len() {
+            return (0..self.items.len()).collect();
+        }
+        let mut indices = self.by_time[start..end.max(start)].to_vec();
+        indices.sort_unstable();
+        indices
+    }
+}
+
+/// Times a point and a bar beyond `rect` in `coords`, open past the data or without an inverse.
+/// This includes every marker or badge drawn in the rect; renderers still test each position.
+pub(super) fn window(
+    bars: &[Bar],
+    coords: &ChartMapping,
+    rect: egui::Rect,
+) -> (Option<DateTime<Utc>>, Option<DateTime<Utc>>) {
+    if bars.is_empty() || !(f32::EPSILON..).contains(&coords.bar_spacing) {
+        return (None, None);
+    }
+    let last = (bars.len() - 1) as f64;
+    let left = (coords.x_to_idx_f64(rect.left() - 1.0) - 1.0).floor();
+    let right = (coords.x_to_idx_f64(rect.right() + 1.0) + 1.0).ceil();
+    (
+        (left > 0.0 && left <= last).then(|| bars[left as usize].time),
+        (right >= 0.0 && right < last).then(|| bars[right as usize].time),
+    )
+}
+
+impl Chart {
+    /// Paints the markers of the visible bar series whose `MarkerOptions` place them at
+    /// `layer`: the main series' own and source bar marks, and those of the added series.
+    pub(super) fn paint_marks(
+        &self,
+        ctx: &RenderContext,
+        coords: &ChartMapping,
+        layer: MarkerZOrder,
+    ) {
+        // Normal markers of added series, and all markers in other panes, are painted with
+        // each series.
+        for item in self
+            .main_pane_series()
+            .filter(|item| layer != MarkerZOrder::Normal && item.marker_options.z_order == layer)
+        {
+            let map = self.series_map(item, ctx.rect);
+            self.paint_series_markers(ctx.painter, ctx.rect, item, map);
+        }
+        if !self.main_series_visible {
+            return;
+        }
+        if layer == MarkerZOrder::Normal
+            && let Some(marks) = self
+                .change_marks
+                .as_ref()
+                .filter(|_| !self.chart_type.is_time_independent())
+        {
+            marks.paint(ctx.painter, |time, close| {
+                let index = crate::model::index_at(self.state.shown(), time)?;
+                let x = coords.idx_to_x(0) + index as f32 * coords.bar_spacing;
+                Some(egui::Pos2::new(x, coords.price.price_to_y(close)))
+            });
+        }
+        if self.marker_options.z_order != layer {
+            return;
+        }
+        let source: &[Marker] = self
+            .mark_source
+            .as_ref()
+            .map_or(&[], |source| &source.page.bar_marks);
+        if self.marks.is_empty() && source.is_empty() {
+            return;
+        }
+        // Source pages already cover the view; keep manual then source painting order and keys.
+        let (from, to) = window(self.state.shown(), coords, ctx.rect);
+        let marks = self
+            .marks
+            .within(from, to)
+            .into_iter()
+            .map(|index| (index, &self.marks[index]))
+            .chain(
+                source
+                    .iter()
+                    .enumerate()
+                    .map(|(index, mark)| (self.marks.len() + index, mark)),
+            );
+        let mapping = ChartMapping {
+            start_idx: 0,
+            ..*coords
+        };
+        if self.chart_type.is_time_independent() {
+            let mapped = crate::chart::rendering::candles::price_based::markers(
+                marks,
+                &self.state,
+                self.chart_type,
+                &self.chart_type_params,
+                self.older_bars_drawn,
+            );
+            let hits = crate::chart::renderers::render_markers(
+                ctx,
+                mapped.iter().map(|(index, mark)| (*index, mark)),
+                self.state.shown(),
+                &coords.price,
+                &mapping,
+            );
+            self.record_mark_hits(SeriesId::MAIN, hits);
+        } else {
+            let hits = crate::chart::renderers::render_markers(
+                ctx,
+                marks,
+                self.state.shown(),
+                &coords.price,
+                &mapping,
+            );
+            self.record_mark_hits(SeriesId::MAIN, hits);
+        }
+    }
+
+    /// Remembers where the marks of `series` with host IDs were painted, from the marks and
+    /// areas that `render_markers` returned.
+    pub(super) fn record_mark_hits(&self, series: SeriesId, hits: Vec<(&Marker, egui::Rect)>) {
+        self.mark_hits
+            .borrow_mut()
+            .extend(hits.into_iter().filter_map(|(mark, rect)| {
+                Some(MarkHit {
+                    id: mark.id.clone()?,
+                    series,
+                    time: mark.time,
+                    rect,
+                })
+            }));
+    }
+
+    /// Starts a frame's record of painted marks; clicks resolve against the previous frame's.
+    pub(super) fn begin_mark_hits(&mut self) {
+        self.clickable_marks = std::mem::take(self.mark_hits.get_mut());
+    }
+
+    /// The mark painted on top at `pos`: the last of those painted there. Drawing tools and
+    /// the eraser take the click first.
+    pub(super) fn mark_at(&self, pos: egui::Pos2) -> Option<&MarkHit> {
+        #[cfg(feature = "drawings")]
+        if self.drawings.active_tool.is_some() || self.drawings.eraser_mode {
+            return None;
+        }
+        self.clickable_marks
+            .iter()
+            .rev()
+            .find(|hit| hit.rect.contains(pos))
+    }
+
+    /// Reports a click on a mark with a host ID.
+    pub(super) fn click_mark(&mut self, pos: egui::Pos2) {
+        let Some(hit) = self.mark_at(pos) else {
+            return;
+        };
+        let event = ChartEvent::MarkClick {
+            id: hit.id.clone(),
+            series: hit.series,
+            time: hit.time,
+        };
+        self.host_events.push(event);
+    }
+
+    /// Connects a source of bar marks and time-axis events. Replacing or removing the source
+    /// clears its marks and pending replies; manually supplied annotations are retained.
+    pub fn set_mark_source(&mut self, source: Option<Arc<dyn Marks>>) {
+        self.mark_source = source.map(|source| MarkSource {
+            source,
+            inbox: Arc::default(),
+            request: None,
+            wake: Arc::new(Mutex::new(egui::ViewportId::ROOT)),
+            page: MarksPage::default(),
+            error: None,
+        });
+    }
+
+    /// Requests fresh marks on the next frame, for example after a host-side event update.
+    pub fn reload_marks(&mut self) {
+        if let Some(source) = &mut self.mark_source {
+            source.request = None;
+            source.inbox = Arc::default();
+            source.page = MarksPage::default();
+            source.error = None;
+        }
+    }
+
+    /// Takes the last mark request error. Retry with `reload_marks`; errors never clear manual
+    /// markers. Answers for a previous symbol, interval or viewport are ignored.
+    pub fn take_mark_error(&mut self) -> Option<FeedError> {
+        self.mark_source.as_mut()?.error.take()
+    }
+
+    /// Supplies typed corporate, economic and news events independently of a mark source.
+    /// Replaces the previous list; `set_events` continues to accept generic badges.
+    pub fn set_time_scale_events(&mut self, events: Vec<TimeScaleEvent>) {
+        self.time_scale_events = events.into();
+    }
+
+    /// Visibility of typed time-axis events, shared with the chart settings dialog.
+    pub fn event_visibility(&self) -> &EventVisibility {
+        &self.event_visibility
+    }
+
+    /// Changes event visibility without discarding the supplied events or fetching them again.
+    pub fn set_event_visibility(&mut self, visibility: EventVisibility) {
+        self.event_visibility = visibility;
+    }
+
+    pub(super) fn pump_marks(&mut self, ctx: &egui::Context) {
+        let range = self.visible_time_range();
+        let Some(source) = &mut self.mark_source else {
+            return;
+        };
+        *source.wake.lock().unwrap_or_else(PoisonError::into_inner) = ctx.viewport_id();
+        let request = range
+            .filter(|range| range.from < range.to)
+            .map(|range| MarksRequest {
+                symbol: self.symbol.clone(),
+                timeframe: self.timeframe.unwrap_or_default(),
+                from: range.from,
+                to: range.to,
+            });
+        if request != source.request {
+            // A separate inbox per request prevents abandoned replies accumulating during pans.
+            source.inbox = Arc::default();
+            let (ctx, wake) = (ctx.clone(), Arc::clone(&source.wake));
+            source.inbox.set_waker(move || {
+                let viewport = *wake.lock().unwrap_or_else(PoisonError::into_inner);
+                ctx.request_repaint_of(viewport);
+            });
+            source.page = MarksPage::default();
+            source.error = None;
+            source.request = request;
+            if let Some(request) = &source.request {
+                source.source.marks(request.clone(), source.inbox.reply(0));
+            }
+        }
+        for (_, answer) in source.inbox.drain().answers {
+            match *answer.downcast::<Result<MarksPage, FeedError>>().unwrap() {
+                Ok(page) => source.page = page,
+                Err(error) => source.error = Some(error),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::Reply;
+    use crate::model::{EventKind, Marker, MarkerPos, Timeframe};
+    use crate::widget::{SeriesId, test_frames};
+    use egui::{Context, Shape};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Source(Mutex<Vec<(MarksRequest, Reply<MarksPage>)>>);
+
+    impl Marks for Source {
+        fn marks(&self, request: MarksRequest, reply: Reply<MarksPage>) {
+            self.0.lock().unwrap().push((request, reply));
+        }
+    }
+
+    /// Requests track the view, accept only its latest reply and keep manual annotations.
+    #[test]
+    fn requests_follow_the_view_and_discard_stale_answers() {
+        let ctx = Context::default();
+        let mut chart = test_frames::chart(&[95.0], &[105.0]);
+        chart.config_mut().show_volume = false;
+        test_frames::frame(&ctx, &mut chart, 0.0, vec![]);
+        let time = chart.state.shown()[70].time;
+        chart.set_markers(SeriesId::MAIN, vec![Marker::new(time).with_text("Manual")]);
+        let source = Arc::new(Source::default());
+        chart.set_mark_source(Some(source.clone()));
+        test_frames::frame(&ctx, &mut chart, 0.01, vec![]);
+        let (request, stale) = source.0.lock().unwrap().pop().unwrap();
+        let range = chart.visible_time_range().unwrap();
+        assert_eq!((request.from, request.to), (range.from, range.to));
+        chart.pump_marks(&ctx);
+        assert!(
+            source.0.lock().unwrap().is_empty(),
+            "an unchanged view must not refetch"
+        );
+        chart.state.time_scale_mut().set_bar_spacing(20.0);
+        chart.pump_marks(&ctx);
+        let (new_request, reply) = source.0.lock().unwrap().pop().unwrap();
+        assert_ne!(request, new_request);
+        let page = MarksPage {
+            bar_marks: vec![
+                Marker::new(time)
+                    .with_pos(MarkerPos::Top)
+                    .with_text("Source bar"),
+            ],
+            time_scale_marks: vec![Marker::event(time, "Axis").with_id("source-axis")],
+            ..Default::default()
+        };
+        stale.send(Ok(page.clone()));
+        chart.pump_marks(&ctx);
+        assert!(
+            chart
+                .mark_source
+                .as_ref()
+                .unwrap()
+                .page
+                .bar_marks
+                .is_empty()
+        );
+        reply.send(Ok(page));
+        chart.pump_marks(&ctx);
+        let shapes = test_frames::shapes(&ctx, &mut chart, 0.1, vec![]);
+        for label in ["Manual", "Source bar", "Axis"] {
+            assert!(
+                shapes
+                    .iter()
+                    .any(|s| matches!(s, Shape::Text(t) if t.galley.text() == label)),
+                "missing {label}"
+            );
+        }
+        chart.set_visible_bars(50);
+        let shapes = test_frames::shapes(&ctx, &mut chart, 0.2, vec![]);
+        assert!(
+            !shapes
+                .iter()
+                .any(|s| matches!(s, Shape::Text(t) if t.galley.text() == "Source bar")),
+            "a layout change must invalidate source marks before painting"
+        );
+        chart.reload_marks();
+        chart.pump_marks(&ctx);
+        source
+            .0
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap()
+            .1
+            .send(Err(FeedError::Network("offline".into())));
+        chart.pump_marks(&ctx);
+        assert_eq!(
+            chart.take_mark_error(),
+            Some(FeedError::Network("offline".into()))
+        );
+        chart.reload_marks();
+        chart.pump_marks(&ctx);
+        source
+            .0
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap()
+            .1
+            .send(Ok(MarksPage::default()));
+        chart.pump_marks(&ctx);
+        assert!(
+            chart
+                .mark_source
+                .as_ref()
+                .unwrap()
+                .page
+                .bar_marks
+                .is_empty()
+        );
+        assert_eq!(chart.marks.len(), 1);
+        for timeframe in [Timeframe::Hour1, Timeframe::Day1] {
+            chart.set_timeframe(timeframe);
+            chart.pump_marks(&ctx);
+            assert_eq!(
+                source.0.lock().unwrap().pop().unwrap().0.timeframe,
+                timeframe
+            );
+        }
+        chart.set_symbol("NEXT");
+        chart.pump_marks(&ctx);
+        assert_eq!(source.0.lock().unwrap().pop().unwrap().0.symbol, "NEXT");
+    }
+
+    /// Windowing keeps sub-bar edge marks, future-margin marks and supplied painting order.
+    #[test]
+    fn markers_near_the_view_are_drawn_and_hit_in_list_order() {
+        let ctx = Context::default();
+        let mut chart = test_frames::chart(&[95.0], &[105.0]);
+        chart.config_mut().show_volume = false;
+        let bars = chart.bars(SeriesId::MAIN).to_vec();
+        let series = chart.add_series(crate::widget::SeriesOptions::default());
+        chart.set_data(series, bars.clone());
+        test_frames::frame(&ctx, &mut chart, 0.0, vec![]);
+        chart.apply_synced_time_scale(20.0, 4.0);
+        test_frames::frame(&ctx, &mut chart, 0.1, vec![]);
+        let left = chart
+            .get_chart_mapping()
+            .x_to_idx_f64(chart.get_rendered_price_rect().left());
+        let time = |index| crate::model::time_at(&bars, index).unwrap();
+        let marks: Vec<_> = [
+            ("far-left", 0.0),
+            ("future-in", 102.0),
+            ("edge-in", left + 0.25),
+            ("future-out", 104.0),
+            ("edge-out", left - 0.25),
+            ("middle", 90.0),
+        ]
+        .into_iter()
+        .map(|(id, index)| Marker::new(time(index)).with_id(id))
+        .collect();
+        chart.set_markers(SeriesId::MAIN, marks.clone());
+        chart.set_markers(series, marks);
+        chart.set_time_scale_events(
+            [0.0, 90.0, 102.0, 104.0]
+                .into_iter()
+                .map(|index| TimeScaleEvent {
+                    id: index.to_string(),
+                    time: time(index),
+                    kind: EventKind::News,
+                    title: "Headline".into(),
+                    details: String::new(),
+                })
+                .collect(),
+        );
+        let shapes = test_frames::shapes(&ctx, &mut chart, 0.2, vec![]);
+        for series in [SeriesId::MAIN, series] {
+            let hits = chart.mark_hits.borrow();
+            let ids: Vec<_> = hits
+                .iter()
+                .filter(|hit| hit.series == series)
+                .map(|hit| hit.id.as_str())
+                .collect();
+            assert_eq!(ids, ["future-in", "edge-in", "middle"]);
+        }
+        assert_eq!(
+            shapes
+                .iter()
+                .filter(|shape| matches!(shape,
+            Shape::Circle(circle) if circle.radius == 10.0 && circle.stroke.width == 1.2))
+                .count(),
+            2
+        );
+    }
+
+    /// Every category is retained while hidden and restored by the same chart settings.
+    #[test]
+    fn category_visibility_filters_events_without_discarding_them() {
+        let ctx = Context::default();
+        let mut chart = test_frames::chart(&[95.0], &[105.0]);
+        chart.config_mut().show_volume = false;
+        let kinds = [
+            EventKind::Dividend,
+            EventKind::Split,
+            EventKind::Earnings,
+            EventKind::Economic,
+            EventKind::News,
+            EventKind::Idea,
+        ];
+        chart.set_time_scale_events(
+            kinds
+                .iter()
+                .map(|&kind| TimeScaleEvent {
+                    id: kind.label().into(),
+                    time: chart.state.shown()[70].time,
+                    kind,
+                    title: "Host headline".into(),
+                    details: "Host details".into(),
+                })
+                .collect(),
+        );
+        for separate_pane in [false, true] {
+            if separate_pane {
+                #[cfg(feature = "studies")]
+                chart.add_indicator(Box::new(crate::studies::RSI::new(14)));
+                #[cfg(not(feature = "studies"))]
+                continue;
+            }
+            for selected in [
+                None,
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(5),
+                None,
+            ] {
+                let visibility = EventVisibility {
+                    show_dividends: selected == Some(0),
+                    show_splits: selected == Some(1),
+                    show_earnings: selected == Some(2),
+                    // Breaks follow their own switch, not the earnings badge.
+                    show_earnings_breaks: selected == Some(1),
+                    show_economic_events: selected == Some(3),
+                    show_news: selected == Some(4),
+                    show_news_notifications: false,
+                    show_ideas: selected == Some(5),
+                };
+                #[cfg(feature = "ui")]
+                {
+                    use crate::widget::settings::ChartSettingsState;
+                    let mut settings = ChartSettingsState::from_chart(&chart);
+                    settings.events = visibility.clone();
+                    settings.apply_to_chart(&mut chart).unwrap();
+                    assert_eq!(ChartSettingsState::from_chart(&chart).events, visibility);
+                }
+                #[cfg(not(feature = "ui"))]
+                chart.set_event_visibility(visibility);
+                let shapes = test_frames::shapes(&ctx, &mut chart, 0.0, vec![]);
+                for (index, kind) in kinds.into_iter().enumerate() {
+                    assert_eq!(
+                        shapes.iter().any(
+                            |s| matches!(s, Shape::Text(t) if t.galley.text() == kind.label())
+                        ),
+                        selected == Some(index),
+                        "{kind:?}"
+                    );
+                }
+                let info = crate::theme::ThemeExt::active_theme(&ctx).ui.info;
+                assert_eq!(
+                    shapes
+                        .iter()
+                        .any(|s| matches!(s, Shape::LineSegment { points, stroke }
+                        if points[0].x == points[1].x && stroke.color == info)),
+                    selected == Some(1),
+                    "earnings break"
+                );
+                assert_eq!(chart.time_scale_events.len(), kinds.len());
+                if separate_pane && selected.is_some() {
+                    let badge = shapes
+                        .iter()
+                        .find_map(|s| match s {
+                            Shape::Circle(circle)
+                                if circle.radius == 10.0 && circle.stroke.width == 1.2 =>
+                            {
+                                Some(circle.center)
+                            }
+                            _ => None,
+                        })
+                        .expect("an event badge above the shared time axis");
+                    assert!(
+                        badge.y > chart.get_rendered_price_rect().bottom(),
+                        "the event rail must follow the lowest pane's time axis"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A primary click on marks reports the host ID of the one painted on top, with its series
+    /// and time, and selects nothing; marks without an ID are not reported.
+    #[test]
+    fn clicking_overlapping_marks_reports_the_top_one_and_selects_nothing() {
+        let ctx = Context::default();
+        let mut chart = test_frames::chart(&[95.0], &[105.0]);
+        chart.config_mut().show_volume = false;
+        test_frames::frame(&ctx, &mut chart, 0.0, vec![]);
+        let time = chart.state.shown()[70].time;
+        let mark = |id: &str| Marker::new(time).with_pos(MarkerPos::InBar).with_id(id);
+        chart.set_markers(
+            SeriesId::MAIN,
+            vec![mark("first"), mark("top"), Marker::new(time)],
+        );
+        test_frames::frame(&ctx, &mut chart, 0.1, vec![]);
+        test_frames::frame(&ctx, &mut chart, 0.2, vec![]);
+        let pos = chart.clickable_marks.last().unwrap().rect.center();
+        for pressed in [true, false] {
+            test_frames::frame(
+                &ctx,
+                &mut chart,
+                0.3,
+                vec![egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                }],
+            );
+        }
+        let clicks: Vec<_> = chart
+            .drain_events()
+            .filter(|event| matches!(event, ChartEvent::MarkClick { .. }))
+            .collect();
+        assert_eq!(
+            clicks,
+            [ChartEvent::MarkClick {
+                id: "top".into(),
+                series: SeriesId::MAIN,
+                time
+            }]
+        );
+        assert_eq!(chart.selected_element(), None);
+    }
+}

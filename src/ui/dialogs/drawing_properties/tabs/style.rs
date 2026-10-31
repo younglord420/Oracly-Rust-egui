@@ -1,0 +1,218 @@
+//! Style tab - color, line width, line style.
+
+use crate::drawings::{ArrowStyle, DrawingToolType};
+use crate::localization as l10n;
+use crate::model::LineStyle;
+use egui::{Color32, Role, Sense, Stroke, StrokeKind, Ui, Vec2, WidgetInfo};
+
+use crate::theme::ThemeExt;
+use crate::tokens::DESIGN_TOKENS;
+use crate::ui::dialogs::drawing_properties::actions::DrawingProps;
+use crate::ui_kit::buttons::ButtonSize;
+use crate::ui_kit::ext::UiExt;
+use crate::ui_kit::{ColorPicker, ColorPickerState, FormGrid, form_control_width_for, form_label};
+
+/// Line widths offered as swatches; the stepper next to them takes any width.
+const LINE_WIDTHS: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
+
+/// Style tab renderer
+pub struct StyleTab;
+
+impl StyleTab {
+    pub fn show(ui: &mut Ui, props: &mut DrawingProps, pickers: &mut [ColorPickerState; 2]) {
+        let tool = props.tool_settings.as_ref().map(|t| t.settings.tool_type);
+        let [color_picker, fill_picker] = pickers;
+        let control_width = form_control_width_for(ui);
+        ui.space_md();
+
+        FormGrid::new("style_grid").show(ui, |ui| {
+            form_label(ui, "Color");
+            if let Some(color) = color_swatch(ui, color_picker, props.color, "drawing_props_color")
+            {
+                props.color = color;
+            }
+            ui.end_row();
+
+            form_label(ui, "Line width");
+            line_width_row(ui, &mut props.line_width);
+            ui.end_row();
+
+            let label = form_label(ui, "Line style");
+            ui.label_inputs_by(label.id, |ui| {
+                ui.combo_select_width(
+                    "line_style",
+                    &mut props.line_style,
+                    LineStyle::all().iter().copied(),
+                    |v| v.name().to_string(),
+                    control_width,
+                );
+            });
+            ui.end_row();
+
+            if let Some(template) = &mut props.tool_settings {
+                let settings = &mut template.settings;
+                if matches!(
+                    settings.tool_type,
+                    DrawingToolType::TrendLine
+                        | DrawingToolType::Ray
+                        | DrawingToolType::ExtendedLine
+                        | DrawingToolType::InfoLine
+                        | DrawingToolType::TrendAngle
+                        | DrawingToolType::Arrow
+                        | DrawingToolType::Path
+                        | DrawingToolType::Polyline
+                ) {
+                    for (label_key, style) in [
+                        ("Line start", &mut settings.arrow_start_style),
+                        ("Line end", &mut settings.arrow_end_style),
+                    ] {
+                        let label = form_label(ui, label_key);
+                        ui.label_inputs_by(label.id, |ui| {
+                            // Keep host-supplied endpoint styles selectable when reopening them.
+                            let mut choices = vec![ArrowStyle::None, ArrowStyle::Arrow];
+                            if !choices.contains(style) {
+                                choices.push(*style);
+                            }
+                            let ctx = ui.ctx().clone();
+                            ui.combo_select_width(
+                                label.id,
+                                style,
+                                choices,
+                                |v| {
+                                    l10n::text(
+                                        &ctx,
+                                        match v {
+                                            ArrowStyle::None => "Plain",
+                                            ArrowStyle::Arrow => "Arrow",
+                                            ArrowStyle::OpenArrow => "Open arrow",
+                                            ArrowStyle::Circle => "Circle",
+                                            ArrowStyle::Square => "Square",
+                                            ArrowStyle::Diamond => "Diamond",
+                                        },
+                                    )
+                                },
+                                control_width,
+                            );
+                        });
+                        ui.end_row();
+                    }
+                }
+                if settings.tool_type == DrawingToolType::Rect {
+                    let label = form_label(ui, "Middle line");
+                    ui.checkbox(
+                        &mut settings.channel_midline,
+                        l10n::text(ui.ctx(), "Show middle line"),
+                    )
+                    .labelled_by(label.id);
+                    ui.end_row();
+                }
+            }
+
+            if tool.is_some_and(|tool| tool.supports_fill()) {
+                let label = form_label(ui, "Fill");
+                ui.checkbox(&mut props.fill_enabled, l10n::text(ui.ctx(), "Enable fill"))
+                    .labelled_by(label.id);
+                ui.end_row();
+
+                if props.fill_enabled {
+                    form_label(ui, "Fill color");
+                    let fill = props
+                        .fill_color
+                        .unwrap_or(ui.active_theme().ui.accent.gamma_multiply(0.2));
+                    props.fill_color = Some(fill);
+                    if let Some(picked) = color_swatch(ui, fill_picker, fill, "drawing_props_fill")
+                    {
+                        // Palette swatches are opaque: keep the fill's opacity unless it was edited.
+                        let [r, g, b, a] = picked.to_srgba_unmultiplied();
+                        let a = if fill_picker.custom_mode { a } else { fill.a() };
+                        props.fill_color = Some(Color32::from_rgba_unmultiplied(r, g, b, a));
+                    }
+                    ui.end_row();
+                }
+            }
+
+            if tool.is_some_and(|tool| tool.supports_extend()) {
+                form_label(ui, "Extend");
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = ui.active_theme().spacing.lg;
+                    ui.checkbox(&mut props.extend_left, l10n::text(ui.ctx(), "Left"));
+                    ui.checkbox(&mut props.extend_right, l10n::text(ui.ctx(), "Right"));
+                });
+                ui.end_row();
+            }
+        });
+    }
+}
+
+/// Kit colour swatch for `color`; returns the colour picked this frame.
+fn color_swatch(
+    ui: &mut Ui,
+    state: &mut ColorPickerState,
+    color: Color32,
+    id: &str,
+) -> Option<Color32> {
+    state.sel_color = color;
+    ColorPicker::new(state, id).show(ui).inner
+}
+
+/// Swatches that draw each preset width, then a stepper for any width from 1 to 10 px.
+fn line_width_row(ui: &mut Ui, width: &mut f32) {
+    let theme = ui.active_theme();
+    // Wrap on narrow dialogs so the width stepper can move below the swatches.
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing.sm;
+        for preset in LINE_WIDTHS {
+            let size = Vec2::splat(ButtonSize::MD.pixels());
+            let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+            if response.clicked() {
+                *width = preset;
+            }
+            let selected = (*width - preset).abs() < f32::EPSILON;
+            let translated_label = l10n::format_text(
+                ui.ctx(),
+                "{preset} px",
+                &[("preset", format!("{}", preset))],
+            );
+            response.widget_info(|| {
+                WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, &translated_label)
+            });
+
+            let visuals = ui.visuals();
+            let radius = ui.active_theme().radius.md;
+            if selected {
+                ui.painter()
+                    .rect_filled(rect, radius, visuals.selection.bg_fill);
+            } else if response.hovered() {
+                ui.painter()
+                    .rect_filled(rect, radius, visuals.widgets.hovered.bg_fill);
+            }
+            ui.painter().rect_stroke(
+                rect,
+                radius,
+                Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border_control),
+                StrokeKind::Inside,
+            );
+            crate::styles::focus::draw_focus_ring(ui, &response, radius);
+            let line = if selected {
+                visuals.selection.stroke.color
+            } else {
+                visuals.text_color()
+            };
+            ui.painter().hline(
+                rect.x_range().shrink(theme.spacing.md),
+                rect.center().y,
+                Stroke::new(preset, line),
+            );
+        }
+        ui.add_space(theme.spacing.md);
+        ui.add(
+            egui::DragValue::new(width)
+                .range(1.0..=10.0)
+                .speed(0.5)
+                .max_decimals(1)
+                .custom_formatter(|v, _| v.to_string())
+                .suffix(l10n::text(ui.ctx(), " px")),
+        )
+        .accessible_name(l10n::text(ui.ctx(), "Line width"));
+    });
+}

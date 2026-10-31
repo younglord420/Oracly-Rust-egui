@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>egui-charts · desktop webview</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4f4f1;
+      --fg: #1a1a1a;
+      --muted: #555;
+      --accent: #0b5fff;
+      --card: #fff;
+      --border: #d8d8d2;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121418;
+        --fg: #e8e8e6;
+        --muted: #a0a4ab;
+        --accent: #6ea8fe;
+        --card: #1b1f27;
+        --border: #2c333f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font: 16px/1.5 system-ui, sans-serif;
+      color: var(--fg);
+      background:
+        radial-gradient(900px 420px at 10% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+        var(--bg);
+    }
+    main {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 3rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.35rem;
+    }
+    .lede { color: var(--muted); margin: 0 0 1.5rem; }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.15rem;
+      margin: 0 0 1rem;
+    }
+    h2 {
+      font-size: 1.05rem;
+      margin: 0 0 0.5rem;
+    }
+    p, li { color: var(--muted); }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+    }
+    pre {
+      margin: 0.75rem 0 0;
+      padding: 0.75rem 0.9rem;
+      overflow-x: auto;
+      background: color-mix(in srgb, var(--bg) 70%, var(--card));
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--fg);
+    }
+    a { color: var(--accent); }
+    .ok {
+      display: inline-block;
+      margin-top: 0.75rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--fg);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>egui-charts in a desktop webview</h1>
+    <p class="lede">
+      This page is embedded offline by <code>examples/desktop_webview.rs</code>
+      with <a href="https://docs.rs/wry">wry</a>. No network is required for the smoke path.
+    </p>
+
+    <section>
+      <h2>What this shows</h2>
+      <p>
+        A native desktop shell can host the same WASM chart UI you ship for the browser
+        (Trunk builds of <code>examples/demo</code> or <code>examples/bare_chart.rs</code>).
+        Load the built assets from disk or a custom protocol; keep market data and storage
+        in the host and talk to the page over IPC if needed.
+      </p>
+      <span class="ok" id="status">Local HTML loaded</span>
+    </section>
+
+    <section>
+      <h2>Embed the WASM / demo chart</h2>
+      <ol>
+        <li>Build the web target, for example
+          <code>cd examples/demo &amp;&amp; trunk build --release</code>.</li>
+        <li>Point the webview at the produced <code>dist/</code> (file URL, asset protocol,
+          or your app’s bundler such as Tauri).</li>
+        <li>Prefer a custom protocol over <code>file://</code> when you need fetch/WASM
+          workers or stricter origin rules.</li>
+      </ol>
+      <pre>cargo run --example desktop_webview --features desktop-webview</pre>
+    </section>
+
+    <section>
+      <h2>Prefer a native egui window?</h2>
+      <p>
+        For charts drawn with egui directly (no webview), run the eframe examples such as
+        <code>basic_chart</code> or <code>live_feed</code>, or assemble UI with the
+        <code>terminal</code> package.
+      </p>
+    </section>
+
+    <section>
+      <h2>Docs (optional network)</h2>
+      <p>
+        Guide and API:
+        <a href="https://userfrm.github.io/egui-charts/docs/">userfrm.github.io/egui-charts/docs</a>,
+        crate docs on
+        <a href="https://docs.rs/egui-charts">docs.rs/egui-charts</a>,
+        live WASM demo at
+        <a href="https://userfrm.github.io/egui-charts/demo/">/demo/</a>.
+      </p>
+    </section>
+  </main>
+  <script>
+    document.getElementById('status').textContent =
+      'Local HTML loaded · ' + (navigator.userAgentData
+        ? navigator.userAgentData.platform
+        : (navigator.platform || 'desktop'));
+  </script>
+</body>
+</html>

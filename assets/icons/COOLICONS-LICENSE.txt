@@ -1,0 +1,7 @@
+Coolicons (https://github.com/krystonschwarze/coolicons)
+Copyright (c) Kryston Schwarze
+Licensed under the MIT License.
+UI chrome and selected chart-type SVGs in this tree were adapted from Coolicons
+line/regular (and fill/regular for star-filled), with stroke width normalized
+for toolbar density. glasses.svg is an original glyph in the same style.
+replay.svg uses Coolicons line/regular reload.
