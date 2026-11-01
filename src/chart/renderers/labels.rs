@@ -163,12 +163,15 @@ pub fn render_price_labels_at_pos(
             continue;
         }
         if axis.ticks_visible {
+            let snap = crate::painting::pixel_snap::PixelSnap::of(&painter);
+            let width = snap.line_width(1.0);
+            let y = snap.line_center(mark.y_coord, width);
             shapes.push(Shape::line_segment(
                 [
-                    Pos2::new(edge, mark.y_coord),
-                    Pos2::new(edge + side * AXIS_TICK_LENGTH, mark.y_coord),
+                    Pos2::new(edge, y),
+                    Pos2::new(edge + side * AXIS_TICK_LENGTH, y),
                 ],
-                egui::Stroke::new(1.0, text),
+                egui::Stroke::new(width, text),
             ));
         }
         shapes.push(Shape::galley(rect.min, galley, text));

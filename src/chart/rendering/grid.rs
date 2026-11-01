@@ -4,6 +4,7 @@
 use crate::chart::renderers::ChartMapping;
 use crate::model::LineStyle;
 use crate::painting::dashed_line::draw_dashed_segments;
+use crate::painting::pixel_snap::PixelSnap;
 use crate::scales::PriceMap;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Painter, Pos2, Rect, Stroke};
@@ -95,6 +96,7 @@ pub(crate) fn render_grid_lines(
 ) {
     let stroke = Stroke::new(DESIGN_TOKENS.stroke.hairline, color);
     match style.hairline_pattern() {
+        // The dots are placed on whole pixels as they are painted.
         Some((dash, gap)) => draw_dashed_segments(
             painter,
             lines.into_iter().map(|[start, end]| (start, end, 0.0)),
@@ -103,11 +105,21 @@ pub(crate) fn render_grid_lines(
             gap,
         ),
         None => {
-            painter.extend(
-                lines
-                    .into_iter()
-                    .map(|points| egui::Shape::line_segment(points, stroke)),
-            );
+            // Horizontal lines sit on a pixel row and vertical ones on a pixel column.
+            let snap = PixelSnap::of(painter);
+            let stroke = Stroke::new(snap.line_width(stroke.width), color);
+            painter.extend(lines.into_iter().map(|[start, end]| {
+                let points = if start.y == end.y {
+                    let y = snap.line_center(start.y, stroke.width);
+                    [Pos2::new(start.x, y), Pos2::new(end.x, y)]
+                } else if start.x == end.x {
+                    let x = snap.line_center(start.x, stroke.width);
+                    [Pos2::new(x, start.y), Pos2::new(x, end.y)]
+                } else {
+                    [start, end]
+                };
+                egui::Shape::line_segment(points, stroke)
+            }));
         }
     }
 }

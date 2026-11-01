@@ -33,13 +33,15 @@ impl Drawing {
         let color = self.text_color32();
         let font = self.annotation_font();
         let galley = if self.font_italic {
-            let mut job =
-                egui::text::LayoutJob::single_section(text.to_owned(), egui::TextFormat {
+            let mut job = egui::text::LayoutJob::single_section(
+                text.to_owned(),
+                egui::TextFormat {
                     font_id: font.clone(),
                     color,
                     italics: true,
                     ..Default::default()
-                });
+                },
+            );
             job.wrap.max_width = f32::INFINITY;
             painter.layout_job(job)
         } else {
@@ -172,7 +174,10 @@ impl Drawing {
                 (left_pt, u, t0, t1)
             });
 
-        Some((TextShape::new(top_left, galley, color).with_angle(angle), line_cut))
+        Some((
+            TextShape::new(top_left, galley, color).with_angle(angle),
+            line_cut,
+        ))
     }
 
     /// Apply line patterns and font weight without changing the renderer's widths or fills.
@@ -241,11 +246,13 @@ impl Drawing {
         });
         self.render_end_markers(painter, rect);
         let pixels_per_point = painter.pixels_per_point();
+        let snap = crate::painting::pixel_snap::PixelSnap::new(pixels_per_point);
         painter.ctx().graphics_mut(|g| {
             let list = g.entry(painter.layer_id());
             for index in start..list.next_idx().0 {
                 list.mutate_shape(ShapeIdx(index), |s| {
-                    fewer_circle_sides(&mut s.shape, pixels_per_point)
+                    fewer_circle_sides(&mut s.shape, pixels_per_point);
+                    snap_axis_aligned_lines(&mut s.shape, snap);
                 });
             }
         });
@@ -535,13 +542,7 @@ impl Drawing {
 
 /// Cuts any line segment that lies collinearly on the ray `(left_pt, u)` across `[t0, t1]`
 /// so a `TextVerticalAlign::Middle` label sits inside a clean gap in the line.
-fn cut_line_segment_for_label(
-    shape: &mut Shape,
-    left_pt: Pos2,
-    u: egui::Vec2,
-    t0: f32,
-    t1: f32,
-) {
+fn cut_line_segment_for_label(shape: &mut Shape, left_pt: Pos2, u: egui::Vec2, t0: f32, t1: f32) {
     match shape {
         Shape::Vec(shapes) => {
             for s in shapes {
@@ -614,6 +615,29 @@ fn fewer_circle_sides(shape: &mut Shape, pixels_per_point: f32) {
             let mut path = egui::epaint::PathShape::convex_polygon(points, c.fill, c.stroke);
             path.stroke = path.stroke.outside();
             *shape = Shape::Path(path);
+        }
+        _ => {}
+    }
+}
+
+/// Moves horizontal and vertical line segments onto the pixel grid, so that a level line stays
+/// crisp and one width while the price scale glides under it.
+fn snap_axis_aligned_lines(shape: &mut Shape, snap: crate::painting::pixel_snap::PixelSnap) {
+    match shape {
+        Shape::Vec(shapes) => {
+            for shape in shapes {
+                snap_axis_aligned_lines(shape, snap);
+            }
+        }
+        Shape::LineSegment { points, stroke } if !stroke.is_empty() => {
+            let [a, b] = points;
+            if a.y == b.y && a.x != b.x {
+                let y = snap.line_center(a.y, stroke.width);
+                (a.y, b.y) = (y, y);
+            } else if a.x == b.x && a.y != b.y {
+                let x = snap.line_center(a.x, stroke.width);
+                (a.x, b.x) = (x, x);
+            }
         }
         _ => {}
     }

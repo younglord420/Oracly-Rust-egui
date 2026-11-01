@@ -570,11 +570,15 @@ mod tests {
         });
         chart.set_data(added, vec![Bar::new(time, 9.0, 11.0, 9.0, 11.0, 100.0)]);
         let painted = shapes(&ctx, &mut chart, 0.3, vec![]);
+        // The body is placed on whole pixels, within half a pixel of its fractional position and
+        // so clear of the whole bar one pixel to its left.
         let x = chart.index_to_x(999_997.005).unwrap();
         assert!(
             painted.iter().any(|shape| matches!(shape,
                 egui::Shape::Rect(body)
-                    if body.fill == egui::Color32::BLUE && (body.rect.center().x - x).abs() < 1e-3
+                    if body.fill == egui::Color32::BLUE
+                        && (body.rect.center().x - x).abs() <= 0.5
+                        && body.rect.left().fract() == 0.0
             )),
             "an added series must retain its fractional time position"
         );

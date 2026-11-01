@@ -9,8 +9,8 @@ mod types;
 
 pub use data::{
     AlertsSettings, ButtonsSettings, CandleColorConfig, ChartBasicStylesSettings,
-    ChartSettingsState, CrosshairSettings, GridLinesSettings, MarginsSettings,
-    MotionSettings, ScalesAndLinesSettings, ScalesAppearanceSettings, StatusLineOptions, TradingNotifications,
+    ChartSettingsState, CrosshairSettings, GridLinesSettings, MarginsSettings, MotionSettings,
+    ScalesAndLinesSettings, ScalesAppearanceSettings, StatusLineOptions, TradingNotifications,
     TradingSettings, WatermarkSettings,
 };
 pub use types::{BackgroundType, ButtonVisibility, GridLinesMode, PrecisionMode, WatermarkMode};

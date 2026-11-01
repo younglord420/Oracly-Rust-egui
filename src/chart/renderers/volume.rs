@@ -25,11 +25,14 @@ pub fn render_volume_bar(
     let bar_height = (candle.volume / max_volume) as f32 * context.rect.height();
     let bar_bottom = context.rect.max.y;
     let snap = PixelSnap::of(context.painter);
-    let (left, right) = snap.bar_span(params.x, params.width);
+    let (left, right) = snap.span(params.x, params.width);
     let top = snap.edge(bar_bottom - bar_height);
 
     context.painter.rect_filled(
-        Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, snap.edge(bar_bottom))),
+        Rect::from_min_max(
+            Pos2::new(left, top),
+            Pos2::new(right, snap.edge(bar_bottom)),
+        ),
         0.0,
         color,
     );

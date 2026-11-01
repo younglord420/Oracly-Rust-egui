@@ -169,7 +169,7 @@ pub(super) fn render_columns(
             Some(base) if close <= base => (close.min(base - 1.0), base),
             Some(base) => (base, close.max(base + 1.0)),
         };
-        let (left, right) = snap.bar_span(x, bar_width);
+        let (left, right) = snap.span(x, bar_width);
         let (top, bottom) = snap.vertical_span(top, bottom, 1.0);
         let rect = Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom));
         price_ctx.painter.rect_filled(rect, 0.0, color);
@@ -475,8 +475,9 @@ mod tests {
     }
 
     /// Volumes 0, 1 and 10 under a largest visible volume of 10 draw bodies 0, 2 and 20 points
-    /// wide out of 20; a larger visible maximum narrows them, a missing volume draws no body,
-    /// and without any visible volume every body keeps the full width.
+    /// wide out of 20, in whole pixels and odd from three on, so 19; a larger visible maximum
+    /// narrows them, a missing volume draws no body, and without any visible volume every body
+    /// keeps the full width.
     #[test]
     fn volume_candle_bodies_scale_with_their_share_of_the_largest_volume() {
         let rect = Rect::from_min_size(Pos2::ZERO, vec2(200.0, 100.0));
@@ -498,10 +499,10 @@ mod tests {
             candle_border_width: 0.0,
         };
         for (volumes, max_volume, widths) in [
-            ([0.0, 1.0, 10.0], 10.0, vec![2.0, 20.0]),
-            ([0.0, 1.0, 10.0], 20.0, vec![1.0, 10.0]),
-            ([f64::NAN, 5.0, 10.0], 10.0, vec![10.0, 20.0]),
-            ([0.0, 0.0, 0.0], 0.0, vec![20.0, 20.0, 20.0]),
+            ([0.0, 1.0, 10.0], 10.0, vec![2.0, 19.0]),
+            ([0.0, 1.0, 10.0], 20.0, vec![1.0, 9.0]),
+            ([f64::NAN, 5.0, 10.0], 10.0, vec![9.0, 19.0]),
+            ([0.0, 0.0, 0.0], 0.0, vec![19.0, 19.0, 19.0]),
         ] {
             let bars = volumes.map(|volume| {
                 Bar::new(chrono::DateTime::UNIX_EPOCH, 40.0, 60.0, 30.0, 50.0, volume)

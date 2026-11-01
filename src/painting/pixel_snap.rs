@@ -29,11 +29,6 @@ impl PixelSnap {
         Self::new(painter.pixels_per_point())
     }
 
-    /// One physical pixel, in points.
-    pub(crate) fn pixel(self) -> f32 {
-        1.0 / self.pixels_per_point
-    }
-
     /// `v` on the nearest pixel edge.
     pub(crate) fn edge(self, v: f32) -> f32 {
         if !v.is_finite() {
@@ -65,6 +60,12 @@ impl PixelSnap {
         }
     }
 
+    /// The left and right edges of a column about `width` points wide centred on `x`, a whole
+    /// number of pixels wide and at least one.
+    pub(crate) fn span(self, x: f32, width: f32) -> (f32, f32) {
+        self.span_of(x, self.pixels(width))
+    }
+
     /// The left and right edges of a bar about `width` points wide centred on `x`.
     ///
     /// The width is a whole number of pixels, at least one, and odd from three pixels on, so a
@@ -74,6 +75,10 @@ impl PixelSnap {
         if pixels >= 3.0 && pixels % 2.0 == 0.0 {
             pixels -= 1.0;
         }
+        self.span_of(x, pixels)
+    }
+
+    fn span_of(self, x: f32, pixels: f32) -> (f32, f32) {
         let center = x * self.pixels_per_point;
         let left = if pixels % 2.0 == 1.0 {
             center.floor() - (pixels - 1.0) / 2.0
@@ -125,6 +130,15 @@ mod tests {
     }
 
     #[test]
+    fn columns_keep_their_rounded_width_even_or_odd() {
+        let snap = PixelSnap::new(1.0);
+        assert_eq!(snap.span(10.0, 4.0), (8.0, 12.0));
+        assert_eq!(snap.span(10.3, 4.4), (8.0, 12.0));
+        assert_eq!(snap.span(10.3, 5.0), (8.0, 13.0));
+        assert_eq!(PixelSnap::new(2.0).span(10.3, 2.0), (9.5, 11.5));
+    }
+
+    #[test]
     fn hairlines_sit_on_pixel_centres_at_any_scale() {
         for (ppp, v, center, edge) in [(1.0, 10.3, 10.5, 10.0), (2.0, 10.3, 10.25, 10.5)] {
             let snap = PixelSnap::new(ppp);
@@ -134,7 +148,7 @@ mod tests {
             assert_eq!(snap.line_center(v, 2.0 / ppp), edge);
         }
         let snap = PixelSnap::new(f32::NAN);
-        assert_eq!(snap.pixel(), 1.0);
+        assert_eq!(snap.line_width(1.0), 1.0);
         assert!(snap.center(f32::INFINITY).is_infinite());
     }
 

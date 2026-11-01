@@ -2,6 +2,7 @@ use crate::chart::renderers::{ChartMapping, RenderContext};
 use crate::model::Bar;
 use crate::model::LineStyle;
 use crate::painting::dashed_line::{draw_dashed_polyline, draw_dotted_polyline};
+use crate::painting::pixel_snap::PixelSnap;
 use crate::scales::PriceMap;
 use crate::studies::{CrossDirection, Indicator, IndicatorLineStyle, PlotStyle, PlotType};
 use crate::tokens::DESIGN_TOKENS;
@@ -89,11 +90,19 @@ pub(crate) fn paint_study_plot(
             }
         }
         PlotType::BackgroundColor => {
+            // Edges on pixel boundaries tile neighbouring bars without seams or overlaps.
+            let snap = PixelSnap::of(painter);
             for point in points {
                 painter.rect_filled(
                     egui::Rect::from_min_max(
-                        Pos2::new(point.x - plot.width * 0.5, painter.clip_rect().top()),
-                        Pos2::new(point.x + plot.width * 0.5, painter.clip_rect().bottom()),
+                        Pos2::new(
+                            snap.edge(point.x - plot.width * 0.5),
+                            painter.clip_rect().top(),
+                        ),
+                        Pos2::new(
+                            snap.edge(point.x + plot.width * 0.5),
+                            painter.clip_rect().bottom(),
+                        ),
                     ),
                     0.0,
                     plot.color,
@@ -132,11 +141,13 @@ pub(crate) fn paint_study_plot(
             }
         },
         PlotType::Histogram | PlotType::Columns => {
+            let snap = PixelSnap::of(painter);
             for point in points {
+                let (left, right) = snap.span(point.x, plot.width);
                 painter.rect_filled(
                     egui::Rect::from_two_pos(
-                        Pos2::new(point.x - plot.width * 0.5, baseline),
-                        Pos2::new(point.x + plot.width * 0.5, point.y),
+                        Pos2::new(left, snap.edge(baseline)),
+                        Pos2::new(right, snap.edge(point.y)),
                     ),
                     0.0,
                     plot.color,
@@ -149,6 +160,38 @@ pub(crate) fn paint_study_plot(
             }
         }
     }
+}
+
+/// The first, highest, lowest and last of the points in each physical pixel column, in order:
+/// they draw the same line as all of them, so a zoomed-out study neither shimmers nor thickens.
+fn per_pixel_column(points: &[(Pos2, f64)], pixels_per_point: f32) -> Vec<(Pos2, f64)> {
+    let column = |point: &(Pos2, f64)| (point.0.x * pixels_per_point).floor();
+    let mut kept = Vec::with_capacity(points.len());
+    for group in points.chunk_by(|a, b| column(a) == column(b)) {
+        if group.len() <= 2 {
+            kept.extend_from_slice(group);
+            continue;
+        }
+        let (mut top, mut bottom) = (0, 0);
+        for (i, point) in group.iter().enumerate() {
+            if point.0.y < group[top].0.y {
+                top = i;
+            }
+            if point.0.y > group[bottom].0.y {
+                bottom = i;
+            }
+        }
+        let mut picks = [0, top, bottom, group.len() - 1];
+        picks.sort_unstable();
+        let mut last = None;
+        for i in picks {
+            if last != Some(i) {
+                kept.push(group[i]);
+                last = Some(i);
+            }
+        }
+    }
+    kept
 }
 
 /// Split crossing boundaries at their intersection, so neither triangle crosses the band.
@@ -403,14 +446,20 @@ impl IndicatorRenderer {
                         let high = price_scale.price_to_y(bar.high);
                         let low = price_scale.price_to_y(bar.low);
                         if [top, bottom, high, low].iter().all(|y| y.is_finite()) {
+                            let snap = PixelSnap::of(&painter);
+                            let wick = snap.line_width(1.0);
+                            let wick_x = snap.line_center(x, wick);
+                            let (high, low) = snap.vertical_span(high.min(low), high.max(low), 0.0);
                             painter.line_segment(
-                                [Pos2::new(x, high), Pos2::new(x, low)],
-                                Stroke::new(1.0, color),
+                                [Pos2::new(wick_x, high), Pos2::new(wick_x, low)],
+                                Stroke::new(wick, color),
                             );
+                            let (left, right) = snap.bar_span(x, width);
+                            let (top, bottom) = snap.vertical_span(top, bottom, 1.0);
                             painter.rect_filled(
-                                egui::Rect::from_two_pos(
-                                    Pos2::new(x - width * 0.5, top),
-                                    Pos2::new(x + width * 0.5, bottom.max(top + 1.0)),
+                                egui::Rect::from_min_max(
+                                    Pos2::new(left, top),
+                                    Pos2::new(right, bottom),
                                 ),
                                 0.0,
                                 color,
@@ -607,6 +656,13 @@ impl IndicatorRenderer {
     ) {
         let painter = context.painter.with_clip_rect(context.rect);
         let plot = PlotStyle { color, ..plot };
+        let decimated;
+        let points = if plot.plot_type == PlotType::Line && points.len() > 2 {
+            decimated = per_pixel_column(points, painter.pixels_per_point());
+            &decimated[..]
+        } else {
+            points
+        };
         if plot.plot_type != PlotType::Line || plot.pattern != LineStyle::Solid {
             let positions: Vec<_> = points.iter().map(|(point, _)| *point).collect();
             paint_study_plot(&painter, &positions, plot, baseline);
@@ -673,6 +729,26 @@ mod tests {
     use egui::{RawInput, Rect, Vec2};
 
     use crate::studies::{BollingerBands, SMA, StandardErrorBands};
+
+    /// Ten points to a pixel column keep the first, highest, lowest and last of each column, in
+    /// order; columns of one or two points keep every point.
+    #[test]
+    fn dense_lines_keep_each_columns_extremes_in_order() {
+        let points: Vec<_> = (0..20)
+            .map(|i| {
+                let y = [5.0, 9.0, 1.0, 4.0, 7.0, 2.0, 8.0, 3.0, 6.0, 5.5][i % 10];
+                (Pos2::new(i as f32 * 0.1, y), f64::from(y))
+            })
+            .collect();
+        let kept = per_pixel_column(&points, 1.0);
+        let ys: Vec<_> = kept.iter().map(|(point, _)| point.y).collect();
+        assert_eq!(ys, [5.0, 9.0, 1.0, 5.5, 5.0, 9.0, 1.0, 5.5]);
+        assert_eq!(per_pixel_column(&points[..2], 1.0), points[..2].to_vec());
+        let sparse: Vec<_> = (0..5)
+            .map(|i| (Pos2::new(i as f32 * 3.0, i as f32), f64::from(i)))
+            .collect();
+        assert_eq!(per_pixel_column(&sparse, 2.0), sparse);
+    }
 
     #[test]
     fn patterned_study_plots_only_walk_visible_lengths() {
