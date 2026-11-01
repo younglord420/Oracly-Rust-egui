@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use egui::text::LayoutJob;
 use egui::{
-    Align, Align2, Color32, EventFilter, FontId, Key, Label, Layout, Modifiers, RichText, Sense,
-    Shape, Stroke, TextStyle, Ui, pos2, vec2,
+    Align, Align2, EventFilter, FontId, Key, Label, Layout, Modifiers, RichText, Sense, Shape,
+    Stroke, TextStyle, Ui, pos2, vec2,
 };
 
 use super::market_details::WatchlistDetails;
@@ -32,8 +32,8 @@ const LIST_ROW_HEIGHT: f32 = 34.0;
 const MARK_SIZE: f32 = 18.0;
 /// Inset so hover/selected pills do not touch the panel edge.
 const ROW_INSET_H: f32 = 4.0;
-/// Corner radius for row pills (matched to rail / flyout).
-const ROW_RADIUS: f32 = 8.0;
+/// Corner radius for row pills (matched to 6px Refero button/input/badge radius).
+const ROW_RADIUS: f32 = 6.0;
 
 pub use crate::model::{Watchlist, WatchlistFlag, WatchlistItem};
 
@@ -941,14 +941,14 @@ impl WatchlistPanel {
                                     painter.circle_filled(
                                         mark.center(),
                                         MARK_SIZE / 2.0,
-                                        theme.ui.text_disabled,
+                                        theme.ui.border,
                                     );
                                     painter.text(
                                         mark.center(),
                                         Align2::CENTER_CENTER,
                                         symbol.chars().next().unwrap_or(' ').to_uppercase(),
                                         FontId::proportional(MARK_SIZE / 2.0),
-                                        Color32::WHITE,
+                                        theme.ui.text,
                                     );
                                 }
                             }

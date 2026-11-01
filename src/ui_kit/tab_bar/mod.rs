@@ -98,12 +98,28 @@ impl<'a, T: TabLabel> TabBar<'a, T> {
 
                 let visuals = ui.visuals();
                 if self.pills {
-                    let fill = if is_active {
-                        theme.ui.text
+                    let pill_radius = rect.height() / 2.0;
+                    if is_active {
+                        ui.painter().rect_filled(rect, pill_radius, theme.ui.text);
                     } else {
-                        theme.ui.btn_bg_hover
-                    };
-                    ui.painter().rect_filled(rect, rect.height() / 2.0, fill);
+                        let fill = if response.hovered() {
+                            theme.ui.btn_bg_hover
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+                        let border_color = if response.hovered() {
+                            theme.ui.text
+                        } else {
+                            theme.ui.border
+                        };
+                        ui.painter().rect(
+                            rect,
+                            pill_radius,
+                            fill,
+                            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, border_color),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                 }
                 let text_color = if self.pills && is_active {
                     theme.ui.panel_bg

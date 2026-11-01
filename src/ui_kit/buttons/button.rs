@@ -266,13 +266,20 @@ impl<'a> Widget for Button<'a> {
             };
 
             ui.painter().rect_filled(rect, rounding, bg);
-            if !selected && let Some(border) = self.variant.border_color(ui) {
-                ui.painter().rect_stroke(
-                    rect,
-                    rounding,
-                    egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, border),
-                    egui::epaint::StrokeKind::Inside,
-                );
+            if !selected {
+                let border = if self.variant == ButtonVariant::Outlined && (hovered || pressed) {
+                    Some(theme.ui.text)
+                } else {
+                    self.variant.border_color(ui)
+                };
+                if let Some(border) = border {
+                    ui.painter().rect_stroke(
+                        rect,
+                        rounding,
+                        egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, border),
+                        egui::epaint::StrokeKind::Inside,
+                    );
+                }
             }
 
             // Centred, so a label narrower than a square button still sits in the middle.

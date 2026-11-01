@@ -318,13 +318,16 @@ impl DialogFooter {
                     Layout::left_to_right(Align::Center),
                     |ui| {
                         let colors = &theme.ui;
-                        let outline = ui.visuals().widgets.inactive.fg_stroke.color;
                         let secondary_clicked =
                             self.secondary_label.as_ref().is_some_and(|label| {
                                 let hover = ui.visuals().widgets.hovered.bg_fill;
                                 let fill = [Color32::TRANSPARENT, hover, hover];
-                                let stroke = Stroke::new(DESIGN_TOKENS.stroke.hairline, outline);
-                                footer_button(ui, label, fill, outline, stroke).clicked()
+                                let stroke = [
+                                    Stroke::new(DESIGN_TOKENS.stroke.hairline, colors.border),
+                                    Stroke::new(DESIGN_TOKENS.stroke.hairline, colors.text),
+                                    Stroke::new(DESIGN_TOKENS.stroke.hairline, colors.text),
+                                ];
+                                footer_button(ui, label, fill, colors.text, stroke).clicked()
                             });
                         let (fill, text) = if self.danger {
                             let fill = [
@@ -341,7 +344,13 @@ impl DialogFooter {
                         };
                         let primary_clicked = ui
                             .add_enabled_ui(self.primary_enabled, |ui| {
-                                footer_button(ui, &self.primary_label, fill, text, Stroke::NONE)
+                                footer_button(
+                                    ui,
+                                    &self.primary_label,
+                                    fill,
+                                    text,
+                                    [Stroke::NONE, Stroke::NONE, Stroke::NONE],
+                                )
                             })
                             .inner
                             .clicked();
@@ -366,21 +375,21 @@ impl DialogFooter {
     }
 }
 
-/// A footer action button: `fill` at rest, hovered and pressed, with `text` and `stroke`.
+/// A footer action button: `fill` and `stroke` at rest, hovered and pressed, with `text`.
 fn footer_button(
     ui: &mut Ui,
     label: &str,
     fill: [Color32; 3],
     text: Color32,
-    stroke: Stroke,
+    stroke: [Stroke; 3],
 ) -> Response {
     let radius = ui.active_theme().radius.md;
     ui.scope(|ui| {
         let widgets = &mut ui.visuals_mut().widgets;
-        for (visuals, fill) in [
-            (&mut widgets.inactive, fill[0]),
-            (&mut widgets.hovered, fill[1]),
-            (&mut widgets.active, fill[2]),
+        for (visuals, (fill, stroke)) in [
+            (&mut widgets.inactive, (fill[0], stroke[0])),
+            (&mut widgets.hovered, (fill[1], stroke[1])),
+            (&mut widgets.active, (fill[2], stroke[2])),
         ] {
             visuals.weak_bg_fill = fill;
             visuals.bg_stroke = stroke;

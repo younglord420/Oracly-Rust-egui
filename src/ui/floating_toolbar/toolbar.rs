@@ -434,10 +434,7 @@ impl FloatingSelectionToolbar {
             Vec2::new(DESIGN_TOKENS.stroke.hairline, height),
             Sense::hover(),
         );
-        let stroke = Stroke::new(
-            DESIGN_TOKENS.stroke.hairline,
-            ui.active_theme().ui.border_control.gamma_multiply(0.7),
-        );
+        let stroke = Stroke::new(DESIGN_TOKENS.stroke.hairline, ui.active_theme().ui.border);
         ui.painter().line_segment(
             [
                 Pos2::new(rect.center().x, rect.min.y),
@@ -531,16 +528,15 @@ impl FloatingSelectionToolbar {
         if fill != Color32::TRANSPARENT {
             ui.painter().rect_filled(rect, radius, fill);
         }
+        let border_color = if open || hovered {
+            theme.ui.text
+        } else {
+            theme.ui.border
+        };
         ui.painter().rect_stroke(
             rect,
             radius,
-            Stroke::new(
-                DESIGN_TOKENS.stroke.hairline,
-                theme
-                    .ui
-                    .border_control
-                    .gamma_multiply(if open || hovered { 1.0 } else { 0.75 }),
-            ),
+            Stroke::new(DESIGN_TOKENS.stroke.hairline, border_color),
             StrokeKind::Inside,
         );
     }

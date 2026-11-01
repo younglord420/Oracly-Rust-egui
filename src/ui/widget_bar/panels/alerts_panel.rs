@@ -550,18 +550,23 @@ impl AlertsPanel {
                                 ui.label(l10n::text(ui.ctx(), &alert.name));
                             }
                             let color = self.status_color(ui, alert.status);
-                            ui.colored_label(
-                                color,
-                                l10n::text(
-                                    ui.ctx(),
-                                    match alert.status {
-                                        AlertStatus::Active => "Active",
-                                        AlertStatus::Triggered => "Triggered",
-                                        AlertStatus::Disabled => "Disabled",
-                                        AlertStatus::Expired => "Expired",
-                                    },
-                                ),
-                            );
+                            ui.horizontal(|ui| {
+                                let (dot_rect, _) =
+                                    ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
+                                ui.painter().circle_filled(dot_rect.center(), 2.5, color);
+                                ui.colored_label(
+                                    color,
+                                    l10n::text(
+                                        ui.ctx(),
+                                        match alert.status {
+                                            AlertStatus::Active => "Active",
+                                            AlertStatus::Triggered => "Triggered",
+                                            AlertStatus::Disabled => "Disabled",
+                                            AlertStatus::Expired => "Expired",
+                                        },
+                                    ),
+                                );
+                            });
                             if !alert.message.is_empty() {
                                 ui.label(l10n::text(ui.ctx(), &alert.message));
                             }

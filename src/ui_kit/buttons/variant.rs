@@ -93,11 +93,12 @@ impl ButtonVariant {
         }
     }
 
-    /// Get the border color for this variant: Outlined, and a disabled Primary, which keeps an
-    /// accent outline so a disabled selected button still reads as selected
+    /// Get the border color for this variant: Outlined uses the theme's hairline border (`#292d30`
+    /// in dark), and a disabled Primary keeps an accent outline so a disabled selected button still
+    /// reads as selected.
     pub fn border_color(&self, ui: &Ui) -> Option<Color32> {
         match self {
-            Self::Outlined => Some(ui.visuals().widgets.inactive.fg_stroke.color),
+            Self::Outlined => Some(ui.active_theme().ui.border),
             Self::Primary if !ui.is_enabled() => Some(ui.active_theme().ui.accent),
             _ => None,
         }
