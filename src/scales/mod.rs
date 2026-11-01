@@ -14,6 +14,11 @@ mod study_format;
 mod time_formatter;
 mod timescale_marks;
 
+/// Stands in for a value a label has none of: no bar, no study output, or a non-finite number.
+///
+/// An em dash, which the interface font a lean host installs is guaranteed to carry.
+pub const NO_VALUE: &str = "\u{2014}";
+
 pub use countdown::bar_countdown;
 pub use horizontal::{
     HorizontalScale, MaturityScale, PriceHorizontalScale, TickMarkLayout, key_time, time_key,

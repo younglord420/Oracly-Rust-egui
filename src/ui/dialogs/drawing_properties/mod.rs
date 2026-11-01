@@ -1,11 +1,12 @@
 //! Drawing properties dialog - modal popup for editing drawing properties.
 //!
-//! Provides a single scrolling properties panel with stacked sections:
-//! - Style: Color, line width, line style, fill options
-//! - Inputs: Saved tool-specific levels, sizing and calculation settings (when available)
-//! - Text: Labels and font settings (when the tool supports text)
-//! - Coordinates: Price and time points
-//! - Visibility: Timeframe visibility settings
+//! Provides a single scrolling properties panel with always-open calm sections:
+//! - Appearance: Color, width, style, optional extend and ends
+//! - Label: Text and font settings (when the tool supports text)
+//! - Fill: Fill toggle and color (when the tool paints a fill)
+//! - Inputs: Tool-specific levels and calculation settings (when available)
+//! - Coordinates: Price and time anchors
+//! - Visibility: Timeframe visibility presets
 //!
 //! [`PropertiesTab`] / [`DrawingPropertiesDialog::active_tab`] remain for hosts that jump to a
 //! section (e.g. text editing). Open with [`DrawingPropertiesDialog::open_for_chart`] and call
@@ -16,6 +17,7 @@
 mod actions;
 mod config;
 mod dialog;
+mod section;
 mod tabs;
 
 pub use actions::{DrawingId, DrawingPropertiesAction, DrawingProps};

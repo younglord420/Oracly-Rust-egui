@@ -1,3 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M4.25 3.75h15.5M4.25 20.25h15.5M12.25 6.75v10.5m-3-7.5 3-3 3 3m-6 4.5 3 3 3-3"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Price Range"><title>Price Range</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M4 4h16M4 20h16"/><path d="M12 12L12 4" stroke="currentColor"/><path d="M13.94 6.55L12 4L10.06 6.55" stroke="currentColor"/><path d="M12 12L12 20" stroke="currentColor"/><path d="M10.06 17.45L12 20L13.94 17.45" stroke="currentColor"/></g></svg>

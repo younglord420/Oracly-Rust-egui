@@ -1,4 +1,4 @@
-//! Drawing properties tabs.
+//! Drawing properties panel sections.
 
 mod coordinates;
 mod inputs;
@@ -13,7 +13,7 @@ pub use visibility::VisibilityTab;
 
 use crate::ui_kit::tab_bar::TabLabel;
 
-/// Tab selection for drawing properties
+/// Section selection for drawing properties (deep-link / scroll targets).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PropertiesTab {
     #[default]
@@ -30,14 +30,14 @@ pub enum PropertiesTab {
 }
 
 impl PropertiesTab {
-    /// Display label for this value.
+    /// Display label for this section header.
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Style => "Style",
+            Self::Style => "Appearance",
             Self::Coordinates => "Coordinates",
             Self::Inputs => "Inputs",
             Self::Visibility => "Visibility",
-            Self::Text => "Text",
+            Self::Text => "Label",
         }
     }
 

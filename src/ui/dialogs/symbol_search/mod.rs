@@ -603,9 +603,11 @@ impl SymbolSearchDialog {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 8.0;
-                    for (key, action) in
-                        [("↑ ↓", "Navigate"), ("Enter", "Select"), ("Esc", "Close")]
-                    {
+                    for (key, action) in [
+                        ("Up / Down", "Navigate"),
+                        ("Enter", "Select"),
+                        ("Esc", "Close"),
+                    ] {
                         ui.label(
                             RichText::new(l10n::text(ui.ctx(), key))
                                 .monospace()

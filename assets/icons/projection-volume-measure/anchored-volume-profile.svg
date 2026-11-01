@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="4.75" cy="19.25" r="1.75"/>
-  <path d="M4.75 17.5V3.25m0 1h8m-8 3h12m-12 3h15m-15 3h10m-10 3h6"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Volume Profile Anchored"><title>Volume Profile Anchored</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M7 3v18M7 5h8M7 9h14M7 13h11M7 17h6M7 21h8"/><circle cx="4" cy="3" r="2" stroke="currentColor"/></g></svg>

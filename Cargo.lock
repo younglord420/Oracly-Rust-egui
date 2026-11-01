@@ -3,6 +3,33 @@
 version = 4
 
 [[package]]
+name = "Oracly-charts"
+version = "0.3.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "csv",
+ "ecolor",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "egui_kittest",
+ "log",
+ "png 0.17.16",
+ "rand 0.10.3",
+ "resvg",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tao",
+ "thiserror 2.0.21",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-time",
+ "wry",
+]
+
+[[package]]
 name = "accesskit"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1246,33 +1273,6 @@ dependencies = [
  "smallvec",
  "unicode-segmentation",
  "web-sys",
-]
-
-[[package]]
-name = "egui-charts"
-version = "0.3.0"
-dependencies = [
- "chrono",
- "chrono-tz",
- "csv",
- "ecolor",
- "eframe",
- "egui",
- "egui_extras",
- "egui_kittest",
- "log",
- "png 0.17.16",
- "rand 0.10.3",
- "resvg",
- "rfd",
- "serde",
- "serde_json",
- "tao",
- "thiserror 2.0.21",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-time",
- "wry",
 ]
 
 [[package]]

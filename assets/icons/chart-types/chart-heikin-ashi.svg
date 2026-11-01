@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M7.25 11.25v1.5M12.25 7.75v1.5M17.25 4.25v1.5"/>
-  <rect x="4.75" y="12.75" width="4.5" height="7"/>
-  <rect x="9.75" y="9.25" width="4.5" height="7"/>
-  <rect x="14.75" y="5.75" width="4.5" height="7"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Heikin Ashi"><title>Heikin Ashi</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M5 6v15M12 3v17M19 2v15"/><rect x="3" y="11" width="4" height="6" rx="0" stroke="currentColor"/><rect x="10" y="8" width="4" height="7" rx="0" stroke="currentColor"/><rect x="17" y="5" width="4" height="7" rx="0" stroke="currentColor"/></g></svg>

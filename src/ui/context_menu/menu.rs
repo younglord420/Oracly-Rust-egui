@@ -192,10 +192,8 @@ fn draw_menu<A: Clone>(
     rects: &mut Vec<Rect>,
 ) -> Option<A> {
     let t = &DESIGN_TOKENS.sizing.context_menu;
-    let frame = crate::ui_kit::frames::glass_chrome(
-        theme,
-        egui::Margin::same(theme.spacing.sm as i8),
-    );
+    let frame =
+        crate::ui_kit::frames::glass_chrome(theme, egui::Margin::same(theme.spacing.sm as i8));
     let chrome = frame.total_margin().sum();
     // Icons, labels and shortcuts keep `item_padding_h` from the menu edge.
     let pad = t.item_padding_h - theme.spacing.sm;

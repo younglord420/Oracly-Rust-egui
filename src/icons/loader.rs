@@ -1,8 +1,8 @@
 //! Image loader that rasterises [`Icon`](super::Icon)s with pixel-aligned strokes.
 //!
-//! A plain SVG rasteriser scales the 1.5 unit stroke of the 24 unit grid with the icon, so at the 11 to 32 point
+//! A plain SVG rasteriser scales the authored stroke of the 24 unit grid with the icon, so at the 11 to 32 point
 //! sizes the interface uses, strokes fall between pixel rows and blur into two or three partly covered pixels. This
-//! loader draws every stroke a whole number of physical pixels wide, one logical pixel for the nominal 1.5 unit
+//! loader draws every stroke a whole number of physical pixels wide, one logical pixel for the nominal Oracly
 //! weight, and moves horizontal and vertical segments onto the pixel grid. Fills are drawn as authored.
 
 use std::sync::Arc;
@@ -18,7 +18,10 @@ use resvg::usvg;
 pub(super) const URI_PREFIX: &str = "bytes://egui_charts/icon/";
 
 /// Stroke width, in grid units, that draws one logical pixel wide.
-const NOMINAL_STROKE: f32 = 1.5;
+///
+/// Matches the root `stroke-width` of the Oracly mono SVGs (`1.944444` before the 0.9 inset
+/// transform, i.e. a 1.75 unit effective weight on the 24 unit grid).
+const NOMINAL_STROKE: f32 = 1.944_444;
 
 /// Registers the icon loader on `ctx` once.
 pub(crate) fn install(ctx: &Context) {
@@ -107,11 +110,15 @@ fn rasterize(svg: &[u8], logical_width: f32, size_hint: SizeHint) -> Result<Colo
     )
 }
 
-/// Whether `group` holds only solid-colour paths without group opacity, clipping, masks or filters, which
-/// [`draw_group`] renders exactly; anything else is left to resvg.
+/// Whether `group` holds only solid-colour paths without group opacity, clipping or filters, which
+/// [`draw_group`] renders with pixel-aligned strokes (including luminance `<mask>` cutouts);
+/// anything else is left to resvg.
 fn is_plain(group: &usvg::Group) -> bool {
     let solid = |paint: &usvg::Paint| matches!(paint, usvg::Paint::Color(_));
-    !group.should_isolate()
+    group.opacity().get() == 1.0
+        && group.clip_path().is_none()
+        && group.filters().is_empty()
+        && group.mask().is_none_or(|mask| is_plain(mask.root()))
         && group.children().iter().all(|node| match node {
             usvg::Node::Group(group) => is_plain(group),
             usvg::Node::Path(path) => {
@@ -123,6 +130,55 @@ fn is_plain(group: &usvg::Group) -> bool {
 }
 
 fn draw_group(
+    group: &usvg::Group,
+    to_pixels: Transform,
+    pixels_per_point: f32,
+    pixmap: &mut Pixmap,
+) {
+    if let Some(mask) = group.mask() {
+        let (w, h) = (pixmap.width(), pixmap.height());
+        let (Some(mut layer), Some(mut mask_pix)) = (Pixmap::new(w, h), Pixmap::new(w, h)) else {
+            return;
+        };
+        draw_group_children(group, to_pixels, pixels_per_point, &mut layer);
+        resvg::render_node(
+            &usvg::Node::Group(Box::new(mask.root().clone())),
+            group.abs_transform().post_concat(to_pixels),
+            &mut mask_pix.as_mut(),
+        );
+        for (dst, (src, m)) in pixmap
+            .data_mut()
+            .chunks_exact_mut(4)
+            .zip(layer.data().chunks_exact(4).zip(mask_pix.data().chunks_exact(4)))
+        {
+            let sa = src[3] as u32;
+            if sa == 0 {
+                continue;
+            }
+            let lum = if mask.kind() == usvg::MaskType::Alpha {
+                m[3] as u32
+            } else {
+                (2126 * m[0] as u32 + 7152 * m[1] as u32 + 722 * m[2] as u32 + 5000) / 10000
+            };
+            if lum == 0 {
+                continue;
+            }
+            let sr = (src[0] as u32 * lum + 127) / 255;
+            let sg = (src[1] as u32 * lum + 127) / 255;
+            let sb = (src[2] as u32 * lum + 127) / 255;
+            let sa = (sa * lum + 127) / 255;
+            let inv_sa = 255 - sa;
+            dst[0] = (sr + (dst[0] as u32 * inv_sa + 127) / 255).min(255) as u8;
+            dst[1] = (sg + (dst[1] as u32 * inv_sa + 127) / 255).min(255) as u8;
+            dst[2] = (sb + (dst[2] as u32 * inv_sa + 127) / 255).min(255) as u8;
+            dst[3] = (sa + (dst[3] as u32 * inv_sa + 127) / 255).min(255) as u8;
+        }
+        return;
+    }
+    draw_group_children(group, to_pixels, pixels_per_point, pixmap);
+}
+
+fn draw_group_children(
     group: &usvg::Group,
     to_pixels: Transform,
     pixels_per_point: f32,
@@ -269,7 +325,7 @@ mod tests {
     use super::*;
     use crate::icons::icons;
 
-    /// A straight 1.5 unit stroke covers whole pixels, one row or column per logical pixel, at every icon size.
+    /// A straight Oracly stroke covers whole pixels, one row or column per logical pixel, at every icon size.
     #[test]
     fn straight_strokes_cover_whole_pixels() {
         for (icon, vertical) in [
@@ -290,9 +346,9 @@ mod tests {
                     maintain_aspect_ratio: true,
                 };
                 let image = rasterize(icon.svg_bytes(), size, hint).unwrap();
-                // Cross the left or top segment (2.75 to 10.5 units) a quarter of the way along the icon.
+                // Sample the midspan so endpoint handles on the Oracly glyphs are not counted.
                 let alphas: Vec<u8> = (0..n)
-                    .map(|j| if vertical { (j, n / 4) } else { (n / 4, j) })
+                    .map(|j| if vertical { (j, n / 2) } else { (n / 2, j) })
                     .map(|(x, y)| image.pixels[y * n + x].a())
                     .filter(|&a| a > 0)
                     .collect();
@@ -311,5 +367,25 @@ mod tests {
         let circle = PathBuilder::from_circle(10.3, 10.3, 5.2).unwrap();
         let snapped = snap_to_pixels(&circle, 1.0).unwrap();
         assert!(circle.segments().eq(snapped.segments()));
+    }
+
+    /// Masked badge icons (such as `ALERTS` and `SAVE`) stay on the pixel-aligned stroke path.
+    #[test]
+    fn masked_badge_icons_use_pixel_aligned_strokes() {
+        for icon in [icons::ALERTS, icons::SAVE, icons::FILTER, icons::GO_TO_DATE] {
+            let tree = usvg::Tree::from_data(icon.svg_bytes(), &usvg::Options::default()).unwrap();
+            assert!(
+                is_plain(tree.root()),
+                "{} should be handled by pixel-aligned draw_group",
+                icon.name()
+            );
+            let hint = SizeHint::Size {
+                width: 18,
+                height: 18,
+                maintain_aspect_ratio: true,
+            };
+            let image = rasterize(icon.svg_bytes(), 18.0, hint).unwrap();
+            assert!(image.pixels.iter().any(|p| p.a() == 255));
+        }
     }
 }

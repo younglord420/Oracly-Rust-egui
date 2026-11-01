@@ -426,14 +426,15 @@ mod tests {
                 ];
                 super::super::tabs::StyleTab::show(ui, &mut props, &mut pickers);
             });
-            let labels: Vec<_> = output
+            let labels: Vec<String> = output
                 .shapes
                 .iter()
                 .filter_map(|shape| match &shape.shape {
-                    egui::Shape::Text(text) => Some(text.galley.job.text.as_str()),
+                    egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
                     _ => None,
                 })
                 .collect();
+            output.drop_without_applying_deltas();
             let line = matches!(
                 tool,
                 DrawingToolType::TrendLine
@@ -445,14 +446,19 @@ mod tests {
                     | DrawingToolType::Path
                     | DrawingToolType::Polyline
             );
-            assert_eq!(labels.contains(&"Line start"), line, "{tool:?}");
-            assert_eq!(labels.contains(&"Line end"), line, "{tool:?}");
+            // Ends combo shows the current ArrowStyle label (Plain/Arrow/…); other choices stay in the popup.
             assert_eq!(
-                labels.contains(&"Middle line"),
+                labels
+                    .iter()
+                    .any(|label| label == "Plain" || label == "Arrow"),
+                line,
+                "{tool:?}: {labels:?}"
+            );
+            assert_eq!(
+                labels.iter().any(|label| label == "Show middle line"),
                 tool == DrawingToolType::Rect,
                 "{tool:?}"
             );
-            output.drop_without_applying_deltas();
             let settings = &mut props.tool_settings.as_mut().unwrap().settings;
             settings.fib_config = Some(FibonacciConfig {
                 reverse: true,

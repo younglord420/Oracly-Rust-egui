@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="4.75" cy="18.75" r="1.75"/>
-  <circle cx="11.25" cy="11.25" r="1.75"/>
-  <circle cx="17.25" cy="15.75" r="1.75"/>
-  <path d="m5.90 17.43 4.20-4.86m2.55-.27 3.2 2.4"/>
-  <path d="M18.30 14.35Q21.75 9.75 18.25 4.75" stroke-dasharray="2 2"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Projection"><title>Projection</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M3.97 17.49L11.03 6.51"/><path d="M13.12 6.41L18.88 13.59"/><path d="M4.75 18.59L18.25 15.41" stroke-dasharray="2.5 2.5" stroke="currentColor"/><path d="M12 5A15 15 0 0 1 20 15" stroke="currentColor"/><circle cx="3" cy="19" r="1.8" stroke="currentColor"/><circle cx="12" cy="5" r="1.8" stroke="currentColor"/><circle cx="20" cy="15" r="1.8" stroke="currentColor"/></g></svg>

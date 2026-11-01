@@ -1,3 +1,1 @@
-<svg color="#fff" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M3 20V13C3 11.89543 3.89543 11 5 11H9V6C9 4.89543 9.89543 4 11 4H13C14.10457 4 15 4.89543 15 6V8H19C20.10457 8 21 8.89543 21 10V20H3ZM9 20L9 11M15 20L15 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Ohlc Bars"><title>Ohlc Bars</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M5 5v15M2 10h3M5 16h3M12 2v16M9 7h3M12 12h3M19 7v15M16 11h3M19 17h3"/></g></svg>

@@ -15,9 +15,7 @@
 //! # });
 //! ```
 
-use egui::{
-    Color32, CornerRadius, Frame, InnerResponse, Margin, Shadow, Stroke, Ui,
-};
+use egui::{Color32, CornerRadius, Frame, InnerResponse, Margin, Shadow, Stroke, Ui};
 
 use crate::theme::{Theme, ThemeExt};
 use crate::tokens::DESIGN_TOKENS;

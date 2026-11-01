@@ -1,9 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M4.49 18.41 7 13 10 16.5 14.5 5.5 17.5 9 19.44 5.30"/>
-  <circle cx="3.75" cy="20" r="1.75"/>
-  <circle cx="7" cy="13" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="10" cy="16.5" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="14.5" cy="5.5" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="17.5" cy="9" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="20.25" cy="3.75" r="1.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Elliott Impulse"><title>Elliott Impulse</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M3.66 18.49L5.84 13.51"/><path d="M7.42 13.37L8.58 15.13"/><path d="M10.1 14.96L13.4 6.54"/><path d="M14.79 6.45L16.21 9.05"/><path d="M17.82 9.07L20.18 4.93"/><circle cx="3" cy="20" r="1.65" stroke="currentColor"/><circle cx="6.5" cy="12" r="1.65" stroke="currentColor"/><circle cx="9.5" cy="16.5" r="1.65" stroke="currentColor"/><circle cx="14" cy="5" r="1.65" stroke="currentColor"/><circle cx="17" cy="10.5" r="1.65" stroke="currentColor"/><circle cx="21" cy="3.5" r="1.65" stroke="currentColor"/></g></svg>

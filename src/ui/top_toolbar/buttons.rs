@@ -556,10 +556,14 @@ impl Trigger<'_> {
         let cx = rect.max.x - theme.spacing.lg - 4.0;
         let cy = rect.center().y;
         let stroke = egui::Stroke::new(1.25, theme.ui.text_secondary);
-        ui.painter()
-            .line_segment([Pos2::new(cx - 3.0, cy - 1.5), Pos2::new(cx, cy + 1.5)], stroke);
-        ui.painter()
-            .line_segment([Pos2::new(cx, cy + 1.5), Pos2::new(cx + 3.0, cy - 1.5)], stroke);
+        ui.painter().line_segment(
+            [Pos2::new(cx - 3.0, cy - 1.5), Pos2::new(cx, cy + 1.5)],
+            stroke,
+        );
+        ui.painter().line_segment(
+            [Pos2::new(cx, cy + 1.5), Pos2::new(cx + 3.0, cy - 1.5)],
+            stroke,
+        );
     }
 
     pub(crate) fn show(self, ui: &mut Ui, open: bool) -> Response {

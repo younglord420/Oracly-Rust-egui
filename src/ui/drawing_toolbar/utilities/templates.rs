@@ -83,71 +83,68 @@ impl TemplatesButton {
             .constrain(true)
             .show(ui.ctx(), |ui| {
                 crate::ui_kit::glass_popup(ui).show(ui, |ui| {
-                        ui.set_min_width(popup_width);
-                        ui.space_lg();
+                    ui.set_min_width(popup_width);
+                    ui.space_lg();
 
-                        ui.label(
-                            egui::RichText::new(l10n::text(ui.ctx(), "Save Template"))
-                                .size(ui.active_theme().text.body)
-                                .strong(),
-                        );
-                        ui.space_md();
+                    ui.label(
+                        egui::RichText::new(l10n::text(ui.ctx(), "Save Template"))
+                            .size(ui.active_theme().text.body)
+                            .strong(),
+                    );
+                    ui.space_md();
 
-                        ui.label(l10n::text(ui.ctx(), "Template name:"));
-                        ui.space_sm();
+                    ui.label(l10n::text(ui.ctx(), "Template name:"));
+                    ui.space_sm();
 
-                        let text_response = ui.text_edit_singleline(name_input);
+                    let text_response = ui.text_edit_singleline(name_input);
 
-                        let focus_in_dialog = ui
-                            .memory(|m| m.focused())
-                            .and_then(|id| ui.ctx().read_response(id))
-                            .is_some_and(|response| response.layer_id == ui.layer_id());
-                        if !focus_in_dialog && !text_response.lost_focus() {
-                            text_response.request_focus();
-                        }
+                    let focus_in_dialog = ui
+                        .memory(|m| m.focused())
+                        .and_then(|id| ui.ctx().read_response(id))
+                        .is_some_and(|response| response.layer_id == ui.layer_id());
+                    if !focus_in_dialog && !text_response.lost_focus() {
+                        text_response.request_focus();
+                    }
 
-                        ui.space_lg();
+                    ui.space_lg();
 
-                        ui.horizontal(|ui| {
-                            let can_save = !name_input.trim().is_empty();
+                    ui.horizontal(|ui| {
+                        let can_save = !name_input.trim().is_empty();
 
-                            if ui
-                                .add_enabled(
-                                    can_save,
-                                    egui::Button::new(l10n::text(ui.ctx(), "Save")),
-                                )
-                                .clicked()
-                            {
-                                action = Some(DrawingToolbarAction::SaveTemplate {
-                                    name: name_input.trim().to_string(),
-                                });
-                            }
-
-                            if ui.button(l10n::text(ui.ctx(), "Cancel")).clicked() {
-                                name_input.clear();
-                                action = Some(DrawingToolbarAction::None);
-                            }
-                        });
-
-                        // Enter key to confirm
-                        if ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            && (text_response.has_focus()
-                                || ui.memory(|m| m.had_focus_last_frame(text_response.id)))
-                            && !name_input.trim().is_empty()
+                        if ui
+                            .add_enabled(can_save, egui::Button::new(l10n::text(ui.ctx(), "Save")))
+                            .clicked()
                         {
                             action = Some(DrawingToolbarAction::SaveTemplate {
                                 name: name_input.trim().to_string(),
                             });
                         }
 
-                        // Escape key to cancel
-                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        if ui.button(l10n::text(ui.ctx(), "Cancel")).clicked() {
                             name_input.clear();
                             action = Some(DrawingToolbarAction::None);
                         }
-
-                        ui.space_md();
                     });
+
+                    // Enter key to confirm
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && (text_response.has_focus()
+                            || ui.memory(|m| m.had_focus_last_frame(text_response.id)))
+                        && !name_input.trim().is_empty()
+                    {
+                        action = Some(DrawingToolbarAction::SaveTemplate {
+                            name: name_input.trim().to_string(),
+                        });
+                    }
+
+                    // Escape key to cancel
+                    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                        name_input.clear();
+                        action = Some(DrawingToolbarAction::None);
+                    }
+
+                    ui.space_md();
+                });
             });
 
         action

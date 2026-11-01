@@ -11,8 +11,8 @@ use crate::tokens::DESIGN_TOKENS;
 use crate::ui_kit::buttons::{ButtonSize, IconButton};
 use crate::ui_kit::show_palette;
 use egui::{
-    Color32, FontId, PopupCloseBehavior, Pos2, Rect, RectAlign, Role, Sense, Stroke, StrokeKind, Ui,
-    Vec2, WidgetInfo,
+    Color32, FontId, PopupCloseBehavior, Pos2, Rect, RectAlign, Role, Sense, Stroke, StrokeKind,
+    Ui, Vec2, WidgetInfo,
 };
 
 /// Stroke widths offered in the floating width menu.
@@ -284,8 +284,10 @@ impl FloatingSelectionToolbar {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = theme.spacing.xs;
-                            ui.set_height(DESIGN_TOKENS.sizing.floating_toolbar.height
-                                - 2.0 * theme.spacing.xs);
+                            ui.set_height(
+                                DESIGN_TOKENS.sizing.floating_toolbar.height
+                                    - 2.0 * theme.spacing.xs,
+                            );
 
                             let mut inner_action: Option<FloatingToolbarAction> = None;
 
@@ -398,8 +400,7 @@ impl FloatingSelectionToolbar {
         // text, settings, more, lock, delete
         let icons = 5.0 * (button + gap);
         Vec2::new(
-            drag
-                + sep
+            drag + sep
                 + color_count as f32 * (color + gap)
                 + chips
                 + sep
@@ -473,7 +474,8 @@ impl FloatingSelectionToolbar {
             rect.center() - Vec2::new(1.0, 1.0),
             Vec2::splat(DESIGN_TOKENS.sizing.floating_toolbar.color_size),
         );
-        ui.painter().circle_filled(disc.center(), disc.width() * 0.5, *color);
+        ui.painter()
+            .circle_filled(disc.center(), disc.width() * 0.5, *color);
         ui.painter().circle_stroke(
             disc.center(),
             disc.width() * 0.5,
@@ -534,7 +536,10 @@ impl FloatingSelectionToolbar {
             radius,
             Stroke::new(
                 DESIGN_TOKENS.stroke.hairline,
-                theme.ui.border_control.gamma_multiply(if open || hovered { 1.0 } else { 0.75 }),
+                theme
+                    .ui
+                    .border_control
+                    .gamma_multiply(if open || hovered { 1.0 } else { 0.75 }),
             ),
             StrokeKind::Inside,
         );
@@ -580,7 +585,10 @@ impl FloatingSelectionToolbar {
         ui.painter().galley(text_pos, galley, theme.ui.text);
 
         let chevron_rect = Rect::from_center_size(
-            Pos2::new(rect.max.x - theme.spacing.sm - chevron * 0.5, rect.center().y),
+            Pos2::new(
+                rect.max.x - theme.spacing.sm - chevron * 0.5,
+                rect.center().y,
+            ),
             Vec2::splat(chevron),
         );
         icons::CHEVRON_DOWN
@@ -604,8 +612,10 @@ impl FloatingSelectionToolbar {
                 for preset in LINE_WIDTHS {
                     let selected = (*width - preset).abs() < f32::EPSILON;
                     let row_h = 28.0;
-                    let (row, resp) =
-                        ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
+                    let (row, resp) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(), row_h),
+                        Sense::click(),
+                    );
                     if selected || resp.hovered() {
                         ui.painter().rect_filled(
                             row,
@@ -640,7 +650,7 @@ impl FloatingSelectionToolbar {
                             Role::Button,
                             ui.is_enabled(),
                             selected,
-                            &format!("{preset}px"),
+                            format!("{preset}px"),
                         )
                     });
                     if resp.clicked() {
@@ -680,7 +690,10 @@ impl FloatingSelectionToolbar {
         Self::paint_style_preview(ui, preview, *style, theme.ui.text);
 
         let chevron_rect = Rect::from_center_size(
-            Pos2::new(rect.max.x - theme.spacing.sm - chevron * 0.5, rect.center().y),
+            Pos2::new(
+                rect.max.x - theme.spacing.sm - chevron * 0.5,
+                rect.center().y,
+            ),
             Vec2::splat(chevron),
         );
         icons::CHEVRON_DOWN
@@ -702,8 +715,8 @@ impl FloatingSelectionToolbar {
                 ui.set_min_width(132.0);
                 for choice in LineStyle::all() {
                     let selected = *style == *choice;
-                    let (row, resp) =
-                        ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click());
+                    let (row, resp) = ui
+                        .allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click());
                     if selected || resp.hovered() {
                         ui.painter().rect_filled(
                             row,
@@ -728,12 +741,7 @@ impl FloatingSelectionToolbar {
                         theme.ui.text,
                     );
                     resp.widget_info(|| {
-                        WidgetInfo::selected(
-                            Role::Button,
-                            ui.is_enabled(),
-                            selected,
-                            choice.name(),
-                        )
+                        WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, choice.name())
                     });
                     if resp.clicked() {
                         *style = *choice;
@@ -946,12 +954,12 @@ mod tests {
                 .iter()
                 .filter(|shape| {
                     matches!(shape,
-                egui::Shape::LineSegment { points, stroke }
-                    if points[0].x == points[1].x
-                        && (points[1].y - points[0].y).abs()
-                            == DESIGN_TOKENS.sizing.floating_toolbar.separator_height
-                        && stroke.width == DESIGN_TOKENS.stroke.hairline
-            )
+                        egui::Shape::LineSegment { points, stroke }
+                            if points[0].x == points[1].x
+                                && (points[1].y - points[0].y).abs()
+                                    == DESIGN_TOKENS.sizing.floating_toolbar.separator_height
+                                && stroke.width == DESIGN_TOKENS.stroke.hairline
+                    )
                 })
                 .count();
             assert_eq!(separators, 3);

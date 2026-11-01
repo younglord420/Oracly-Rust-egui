@@ -192,9 +192,10 @@ impl OrderTicket {
                 {
                     self.apply(preset);
                 }
-                if ui
-                    .small_button("✕")
-                    .on_hover_text(l10n::text(ui.ctx(), "Delete preset"))
+                if IconButton::new(&icons::CLOSE)
+                    .size(crate::ui_kit::buttons::ButtonSize::SM)
+                    .tooltip("Delete preset")
+                    .show(ui)
                     .clicked()
                 {
                     remove = Some(index);

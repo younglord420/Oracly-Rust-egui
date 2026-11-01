@@ -10,7 +10,8 @@ use egui::{Rect, Response, Sense, Ui, Vec2};
 /// Icon button with theme-aware styling
 ///
 /// A square button containing a single icon. Supports hover, pressed, selected
-/// and disabled states with proper theme colors; a selected button is filled with the accent.
+/// and disabled states with proper theme colors; a selected button uses soft
+/// `selection_bg` / `selection_text`.
 ///
 /// # Example
 ///
@@ -110,19 +111,21 @@ impl<'a> IconButton<'a> {
         if ui.is_rect_visible(rect) {
             let hovered = response.hovered();
             let pressed = response.is_pointer_button_down_on();
-            let variant = if self.selected == Some(true) {
-                ButtonVariant::Primary
+            let selected = self.selected == Some(true);
+            let theme = ui.active_theme();
+            let bg = if selected {
+                if pressed {
+                    theme.ui.selection_bg.gamma_multiply(0.85)
+                } else {
+                    theme.ui.selection_bg
+                }
             } else {
-                ButtonVariant::Ghost
+                ButtonVariant::Ghost.bg_color(ui, hovered, pressed)
             };
-            ui.painter().rect_filled(
-                rect,
-                ui.active_theme().radius.sm,
-                variant.bg_color(ui, hovered, pressed),
-            );
+            ui.painter().rect_filled(rect, theme.radius.sm, bg);
 
-            let icon_color = if self.selected == Some(true) {
-                variant.fg_color(ui)
+            let icon_color = if selected {
+                theme.ui.selection_text
             } else {
                 ui.style().interact(&response).fg_stroke.color
             };

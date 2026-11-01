@@ -67,8 +67,7 @@ impl<'a> PanelHeader<'a> {
 
         if self.separator {
             let inset = theme.spacing.md;
-            let (rule, _) =
-                ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+            let (rule, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
             ui.painter().hline(
                 (rule.left() + inset)..=(rule.right() - inset),
                 rule.center().y,

@@ -609,9 +609,7 @@ pub fn crosshair_price_action(
         );
     }
     let label = l10n::text(ui.ctx(), "Add at price");
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str())
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str()));
     response.on_hover_text(label).clicked().then_some(price)
 }
 
@@ -633,9 +631,7 @@ pub fn axis_settings_button(ui: &mut egui::Ui, corner: Rect) -> egui::Response {
             Rect::from_center_size(target.center(), Vec2::splat(16.0)),
         );
     let label = l10n::text(ui.ctx(), "Scale settings");
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str())
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str()));
     response.on_hover_text(label)
 }
 

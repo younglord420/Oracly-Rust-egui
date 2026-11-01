@@ -75,8 +75,8 @@ use super::{
     state::{MagnetType, ToolbarState},
     submenu_builder::{flyout_id, show_flyout},
     utilities::{
-        FavoritesButton, HideMenu, LockButton, MagnetButton, MeasureButton,
-        RemoveMenu, StayInDrawingButton, TemplatesButton, ZoomInButton, ZoomOutButton,
+        FavoritesButton, HideMenu, LockButton, MagnetButton, MeasureButton, RemoveMenu,
+        StayInDrawingButton, TemplatesButton, ZoomInButton, ZoomOutButton,
     },
 };
 
@@ -663,8 +663,11 @@ impl DrawingToolbar {
         let right = anchor.right().max(popup.left());
         let top = anchor.top().min(popup.top());
         let bottom = anchor.bottom().max(popup.bottom());
-        Rect::from_min_max(Pos2::new(left - gap, top - gap), Pos2::new(right + gap, bottom + gap))
-            .contains(pos)
+        Rect::from_min_max(
+            Pos2::new(left - gap, top - gap),
+            Pos2::new(right + gap, bottom + gap),
+        )
+        .contains(pos)
     }
 
     /// Show the flyout of `category`, apply what the user picked in it to the toolbar state and
@@ -1055,7 +1058,10 @@ mod tests {
         let rect = Rect::from_min_size(Pos2::new(0.0, 40.0), Vec2::splat(36.0));
 
         toolbar.open_flyout(&ctx, "Fibonacci", rect);
-        assert_eq!(toolbar.state.expanded_category.as_deref(), Some("Fibonacci"));
+        assert_eq!(
+            toolbar.state.expanded_category.as_deref(),
+            Some("Fibonacci")
+        );
         assert_eq!(toolbar.expanded_category_rect, Some(rect));
 
         toolbar.open_flyout(&ctx, "Lines", rect);
@@ -1145,7 +1151,6 @@ mod tests {
         assert!(labels.contains(&DrawingToolType::HorizontalLine.as_str()));
         output.drop_without_applying_deltas();
     }
-
 
     /// The bar keeps its grid and utility order, with distinct selection and magnet fills.
     #[test]

@@ -1478,6 +1478,31 @@ impl DemoApp {
     }
 }
 
+/// Removes the page's loading overlay once the first frame has reached the screen.
+///
+/// The canvas stays blank through module instantiation and `DemoApp::new`, so the overlay has to
+/// outlive both: it is cleared on the second frame, when the first one has been presented.
+#[cfg(target_arch = "wasm32")]
+fn clear_loading_overlay(ctx: &egui::Context) {
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    static FRAMES: AtomicU8 = AtomicU8::new(0);
+    if FRAMES.load(Ordering::Relaxed) >= 2 {
+        return;
+    }
+    if FRAMES.fetch_add(1, Ordering::Relaxed) == 0 {
+        // An idle first frame would leave the overlay up, so ask for the frame that clears it.
+        ctx.request_repaint();
+        return;
+    }
+    if let Some(overlay) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id("loading"))
+    {
+        overlay.remove();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // eframe::App: per-frame update that drives the panels, toolbars and dialogs.
 // ---------------------------------------------------------------------------
@@ -1513,6 +1538,8 @@ impl eframe::App for DemoApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        #[cfg(target_arch = "wasm32")]
+        clear_loading_overlay(&ctx);
         self.update_theme(&ctx);
         egui_charts::theme::apply_to_egui(&ctx, &self.theme);
         // The root Ui was created before the theme was applied this frame.
@@ -6643,7 +6670,11 @@ mod tests {
                 "{text:?}"
             );
             assert!(text.iter().any(|text| text == "Gap: Missing"), "{text:?}");
-            assert!(text.iter().any(|text| text == "∅"), "{text:?}");
+            assert!(
+                text.iter()
+                    .any(|text| text == egui_charts::scales::NO_VALUE),
+                "{text:?}"
+            );
             assert!(
                 !text
                     .iter()

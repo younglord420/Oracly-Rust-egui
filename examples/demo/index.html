@@ -62,20 +62,14 @@
     <link data-trunk rel="copy-file" href="LICENSE-fonts.txt" />
     <link data-trunk rel="copy-file" href="../../assets/icons/LICENSE-lucide.txt" />
     <script>
-        // Hide loading overlay once the canvas starts rendering
-        const canvas = document.getElementById('demo_canvas');
-        const observer = new MutationObserver(() => {
-            if (canvas.width > 0 && canvas.height > 0) {
-                document.getElementById('loading').style.display = 'none';
-                observer.disconnect();
-            }
-        });
-        observer.observe(canvas, { attributes: true });
-        // Fallback: hide after 8s regardless
+        // The module removes this overlay once its first frame has been painted, so the canvas is
+        // never shown blank. This message only appears when the module never got that far.
         setTimeout(() => {
-            const el = document.getElementById('loading');
-            if (el) el.style.display = 'none';
-        }, 8000);
+            const overlay = document.getElementById('loading');
+            if (overlay) {
+                overlay.textContent = 'The chart could not start. Please reload the page.';
+            }
+        }, 20000);
     </script>
 </body>
 </html>

@@ -59,7 +59,7 @@ impl Drawing {
     ) {
         // VWAP, then the bands, in standard deviations from it.
         const OFFSETS: [f64; 5] = [0.0, 1.0, -1.0, 2.0, -2.0];
-        const NAMES: [&str; 4] = ["+1σ", "-1σ", "+2σ", "-2σ"];
+        const NAMES: [&str; 4] = ["+1 SD", "-1 SD", "+2 SD", "-2 SD"];
 
         // Only bars inside the clip rect (plus one on each side) become
         // points; bar_to_x is linear, so they are found without a scan.

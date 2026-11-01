@@ -245,21 +245,28 @@ impl<'a> Widget for Button<'a> {
         if ui.is_rect_visible(rect) {
             let hovered = response.hovered();
             let pressed = response.is_pointer_button_down_on();
-            let variant = if self.selected == Some(true) {
-                ButtonVariant::Primary
-            } else {
-                self.variant
-            };
-            let fg = if variant.is_inverse() {
-                variant.fg_color(ui)
-            } else {
-                ui.style().interact(&response).fg_stroke.color
-            };
+            let selected = self.selected == Some(true);
             let rounding = theme.radius.sm;
+            // Selected state stays soft (`selection_bg` / `selection_text`), never a loud accent fill.
+            let (bg, fg) = if selected {
+                let bg = if pressed {
+                    theme.ui.selection_bg.gamma_multiply(0.85)
+                } else {
+                    theme.ui.selection_bg
+                };
+                (bg, theme.ui.selection_text)
+            } else {
+                let bg = self.variant.bg_color(ui, hovered, pressed);
+                let fg = if self.variant.is_inverse() {
+                    self.variant.fg_color(ui)
+                } else {
+                    ui.style().interact(&response).fg_stroke.color
+                };
+                (bg, fg)
+            };
 
-            ui.painter()
-                .rect_filled(rect, rounding, variant.bg_color(ui, hovered, pressed));
-            if let Some(border) = variant.border_color(ui) {
+            ui.painter().rect_filled(rect, rounding, bg);
+            if !selected && let Some(border) = self.variant.border_color(ui) {
                 ui.painter().rect_stroke(
                     rect,
                     rounding,

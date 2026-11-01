@@ -1,3 +1,1 @@
-<svg color="#fff" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12 17H6C4.89543 17 4 16.10457 4 15C4 14 5 14 5 13V10C5 6.13401 8.13401 3 12 3C15.86599 3 19 6.13401 19 10V13C19 14 20 14 20 15C20 16.10457 19.10457 17 18 17H12M9 17V18C9 19.65685 10.34315 21 12 21C13.65685 21 15 19.65685 15 18V17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Notifications"><title>Notifications</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M6 9a6 6 0 0 1 12 0v4l2 3H4l2-3Z"/><path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor"/><circle cx="18" cy="5" r="1.0" fill="currentColor" stroke="currentColor"/></g></svg>

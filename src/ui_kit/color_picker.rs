@@ -209,6 +209,8 @@ pub struct ColorPicker<'a> {
     config: ColorPickerConfig,
     state: &'a mut ColorPickerState,
     id: Id,
+    /// Outer well size; `None` uses the default toolbar-sized well.
+    well_size: Option<f32>,
 }
 
 impl<'a> ColorPicker<'a> {
@@ -221,12 +223,20 @@ impl<'a> ColorPicker<'a> {
             config: ColorPickerConfig::default(),
             state,
             id: Id::unique(id_src),
+            well_size: None,
         }
     }
 
     /// Use the supplied display and layout options.
     pub fn with_config(mut self, config: ColorPickerConfig) -> Self {
         self.config = config;
+        self
+    }
+
+    /// Use a compact outer well (e.g. dense property rows). Defaults to the toolbar well.
+    #[must_use]
+    pub fn well_size(mut self, size: f32) -> Self {
+        self.well_size = Some(size);
         self
     }
 
@@ -264,43 +274,52 @@ impl<'a> ColorPicker<'a> {
         let visuals = ui.style().visuals.clone();
         let bg_color = visuals.faint_bg_color;
 
-        let btn_size = Vec2::splat(
+        let well = self.well_size.unwrap_or_else(|| {
             ui.spacing()
                 .interact_size
                 .y
-                .max(DESIGN_TOKENS.sizing.button_md),
-        );
+                .max(DESIGN_TOKENS.sizing.button_md)
+        });
+        let compact = self.well_size.is_some();
+        let btn_size = Vec2::splat(well);
         let (btn_rect, mut btn_res) = ui.allocate_exact_size(btn_size, Sense::click());
         let translated_label = l10n::text(ui.ctx(), hex(self.state.sel_color));
         btn_res.widget_info(|| {
             WidgetInfo::labeled(Role::ColorWell, ui.is_enabled(), &translated_label)
         });
 
+        let outer_radius = if compact {
+            theme.radius.sm
+        } else {
+            theme.radius.md
+        };
+        let inset = if compact { theme.spacing.xs * 0.5 } else { 4.0 };
+        let inner_radius = if compact { theme.radius.xs } else { 2.0 };
+
         // Draw dark background then blend color on top
         // This avoids the "checkered pattern" look for semi-transparent colors
-        ui.painter()
-            .rect_filled(btn_rect, ui.active_theme().radius.md, bg_color);
+        ui.painter().rect_filled(btn_rect, outer_radius, bg_color);
 
         // Keep the surface border separate from the colour, including white and black.
         ui.painter()
-            .rect_filled(btn_rect.shrink(4.0), 2.0, self.state.sel_color);
+            .rect_filled(btn_rect.shrink(inset), inner_radius, self.state.sel_color);
 
         // The inset leaves the control border visible beside any swatch colour.
         let border_color = if self.state.is_open {
-            ui.active_theme().ui.accent
+            theme.ui.accent
         } else if btn_res.hovered() {
             visuals.widgets.hovered.fg_stroke.color
         } else {
-            ui.active_theme().ui.border_control
+            theme.ui.border_control
         };
         ui.painter().rect_stroke(
             btn_rect,
-            ui.active_theme().radius.md,
+            outer_radius,
             Stroke::new(DESIGN_TOKENS.stroke.hairline, border_color),
             StrokeKind::Inside,
         );
 
-        crate::styles::focus::draw_focus_ring(ui, &btn_res, ui.active_theme().radius.md);
+        crate::styles::focus::draw_focus_ring(ui, &btn_res, outer_radius);
 
         if btn_res.clicked() {
             self.state.is_open = !self.state.is_open;
@@ -692,7 +711,8 @@ pub fn show_palette(ui: &mut Ui, color: &mut Color32) -> bool {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
         for &c in recent.iter().take(5) {
-            let (rect, response) = ui.allocate_exact_size(Vec2::splat(swatch + 2.0), Sense::click());
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::splat(swatch + 2.0), Sense::click());
             ui.painter().rect_filled(rect, rounding, c);
             if response.clicked() {
                 let a = color.a();
@@ -700,8 +720,7 @@ pub fn show_palette(ui: &mut Ui, color: &mut Color32) -> bool {
                 changed = true;
             }
         }
-        let (add, response) =
-            ui.allocate_exact_size(Vec2::splat(swatch + 2.0), Sense::click());
+        let (add, response) = ui.allocate_exact_size(Vec2::splat(swatch + 2.0), Sense::click());
         ui.painter().rect_stroke(
             add,
             rounding,
@@ -766,7 +785,8 @@ fn hex_edit(ui: &mut Ui, color: &mut Color32) -> bool {
     let id = hex_edit_id();
     let current = hex(*color);
     let mut draft = ui.ctx().data_mut(|d| {
-        d.get_temp_mut_or_insert_with(id, || current.clone()).clone()
+        d.get_temp_mut_or_insert_with(id, || current.clone())
+            .clone()
     });
     // Always mirror the live colour when not typing (incl. opacity slider).
     let focused = ui.memory(|m| m.has_focus(id.with("text")));
@@ -794,8 +814,7 @@ fn hex_edit(ui: &mut Ui, color: &mut Color32) -> bool {
             *color = parsed;
             changed = true;
         }
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(id, hex(*color)));
+        ui.ctx().data_mut(|d| d.insert_temp(id, hex(*color)));
     }
     changed
 }
@@ -856,7 +875,10 @@ fn opacity_bar(ui: &mut Ui, color: &mut Color32, width: f32) -> bool {
     // Leave room for the knob so 0%/100% never clip past the track ends.
     let track = Rect::from_min_max(
         Pos2::new(row.min.x + knob_r, row.center().y - track_h * 0.5),
-        Pos2::new(pct_rect.min.x - theme.spacing.sm - knob_r, row.center().y + track_h * 0.5),
+        Pos2::new(
+            pct_rect.min.x - theme.spacing.sm - knob_r,
+            row.center().y + track_h * 0.5,
+        ),
     );
 
     let track_resp = ui.interact(
@@ -910,10 +932,7 @@ fn opacity_bar(ui: &mut Ui, color: &mut Color32, width: f32) -> bool {
         let x1 = track.min.x + t1 * track.width();
         let a = (t1 * 255.0).round() as u8;
         track_painter.rect_filled(
-            Rect::from_min_max(
-                Pos2::new(x0, track.min.y),
-                Pos2::new(x1, track.max.y),
-            ),
+            Rect::from_min_max(Pos2::new(x0, track.min.y), Pos2::new(x1, track.max.y)),
             0.0,
             Color32::from_rgba_unmultiplied(opaque.r(), opaque.g(), opaque.b(), a),
         );

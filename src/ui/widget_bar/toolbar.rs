@@ -68,7 +68,7 @@ impl RightBarIcon {
             RightBarIcon::Highlights => &embedded_icons::WIDGET_BAR_HIGHLIGHTS,
             RightBarIcon::Screener => &embedded_icons::WIDGET_BAR_SCREENER,
             RightBarIcon::Hotlists => &embedded_icons::WIDGET_BAR_HOTLISTS,
-            RightBarIcon::MarketHeatmap => &embedded_icons::LAYOUT_GRID,
+            RightBarIcon::MarketHeatmap => &embedded_icons::WIDGET_BAR_MARKET_HEATMAP,
             RightBarIcon::Calendar => &embedded_icons::WIDGET_BAR_CALENDAR,
             RightBarIcon::News => &embedded_icons::WIDGET_BAR_NEWS,
             RightBarIcon::Notifications => &embedded_icons::WIDGET_BAR_NOTIFICATIONS,

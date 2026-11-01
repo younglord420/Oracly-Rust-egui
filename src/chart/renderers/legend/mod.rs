@@ -644,7 +644,7 @@ impl<'a> Legend<'a> {
                                 study.format_value(value)
                             }
                         } else {
-                            "∅".to_owned()
+                            crate::scales::NO_VALUE.to_owned()
                         };
                         // A fully transparent colour holds no RGB, so it has no opaque form.
                         let color = study_colors

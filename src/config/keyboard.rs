@@ -421,8 +421,8 @@ impl KeyboardAction {
     /// Short display text for default bindings. Menus format `shortcuts` for the platform.
     pub fn shortcut_key(&self) -> &'static str {
         match self {
-            Self::PanLeft => "←",
-            Self::PanRight => "→",
+            Self::PanLeft => "Left",
+            Self::PanRight => "Right",
             Self::PanLeftFast => "Ctrl+Left",
             Self::PanRightFast => "Ctrl+Right",
             Self::ZoomIn => "+ / = / Ctrl+Up",

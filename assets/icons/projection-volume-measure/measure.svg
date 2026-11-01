@@ -1,3 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="m3 17 14-14 4 4L7 21Zm3-3 2 2m1-5 2 2m1-5 2 2m1-5 2 2"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Ruler"><title>Ruler</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M3 16L16 3L21.5 8.5L8.5 21.5Z"/><path d="M6.5 12.5l2.5 2.5M9.5 9.5l2 2M12.5 6.5l2.5 2.5" stroke="currentColor"/></g></svg>

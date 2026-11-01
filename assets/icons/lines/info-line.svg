@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M6.257 17.319L13.743 6.681"/>
-  <circle cx="5.25" cy="18.75" r="1.75"/>
-  <circle cx="14.75" cy="5.25" r="1.75"/>
-  <rect x="13.25" y="14.75" width="8" height="6" rx="1"/>
-  <path d="M15.75 17.75H18.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Info Line"><title>Info Line</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M5.48 17.89L18.52 8.11"/><circle cx="4" cy="19" r="1.85" stroke="currentColor"/><circle cx="20" cy="7" r="1.85" stroke="currentColor"/><rect x="6" y="4" width="7" height="5" rx="1" stroke="currentColor"/><path d="M8 6.5L11 6.5" stroke="currentColor"/></g></svg>

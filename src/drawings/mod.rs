@@ -42,7 +42,5 @@ pub use domain::{
 };
 
 // Re-export manager types
-pub use manager::{
-    DrawingManager, DrawingManagerOptions, DrawingState, default_drawing_color,
-};
+pub use manager::{DrawingManager, DrawingManagerOptions, DrawingState, default_drawing_color};
 pub use registry::{DrawingRenderer, DrawingToolRegistry, RegisteredDrawingTool, ToolAvailability};

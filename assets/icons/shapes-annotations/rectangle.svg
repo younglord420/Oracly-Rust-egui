@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M6.5 6.75H19.25V15.5M17.5 17.25H4.75V8.5"/>
-  <circle cx="4.75" cy="6.75" r="1.75"/>
-  <circle cx="19.25" cy="17.25" r="1.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Rectangle"><title>Rectangle</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M5.8 5H20V17.2M18.2 19H4V6.8"/><circle cx="4" cy="5" r="1.85" stroke="currentColor"/><circle cx="20" cy="19" r="1.85" stroke="currentColor"/></g></svg>

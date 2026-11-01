@@ -2,15 +2,21 @@
 
 Oracly Chart includes or adapts the following third-party materials.
 
+## Oracly Icons
+
+Most toolbar and drawing-tool SVGs under `assets/icons/` are from the Oracly Icons
+550 pack (`Oracly-500-Icons/oracly-icons-500`, mono theme), embedded at compile
+time. Generated assets are provided for use and modification in Oracly.
+
 ## Coolicons
 
 Source: https://github.com/krystonschwarze/coolicons  
 Copyright (c) Kryston Schwarze  
 License: MIT
 
-UI chrome icons and selected chart-type SVGs under `assets/icons/` were adapted
-from Coolicons (line/regular, and fill/regular for the filled star), with stroke
-width normalized for toolbar density. See `assets/icons/COOLICONS-LICENSE.txt`.
+A small set of remaining chrome glyphs under `assets/icons/` (icons without an
+Oracly equivalent) were adapted from Coolicons. See
+`assets/icons/COOLICONS-LICENSE.txt`.
 
 ## egui / eframe and Rust crate dependencies
 

@@ -379,8 +379,7 @@ fn dialogs_expose_titles_and_label_their_fields() {
             },
             &[
                 (Role::TextInput, "Price"),
-                (Role::TextInput, "Date (UTC)"),
-                (Role::TextInput, "Time (UTC)"),
+                (Role::TextInput, "Date and time (UTC)"),
             ],
         ),
         (
@@ -524,7 +523,11 @@ fn dialogs_expose_titles_and_label_their_fields() {
                 dialog.open(DrawingId(1), "Trend Line".into(), DrawingProps::default());
                 dialog.show(ctx);
             },
-            &[(Role::ComboBox, "Line style")],
+            &[
+                (Role::ComboBox, "Line style"),
+                (Role::ComboBox, "Line width"),
+                (Role::ComboBox, "Show on chart"),
+            ],
         ),
         (
             "Main series · Candles",

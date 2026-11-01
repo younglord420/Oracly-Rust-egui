@@ -1,7 +1,7 @@
 //! Drawing properties dialog - modal popup for editing drawing properties.
 
 use crate::localization as l10n;
-use egui::{Align, Context, Event, Key, Modifiers, Ui, Vec2};
+use egui::{Context, Event, Key, Modifiers, Ui, Vec2};
 
 use super::actions::{DrawingId, DrawingPropertiesAction, DrawingProps};
 use super::config::DrawingPropertiesConfig;
@@ -10,12 +10,12 @@ use super::tabs::{
 };
 use crate::drawings::{Drawing, DrawingTemplate};
 use crate::services::StoreKind;
+use crate::theme::ThemeExt;
 use crate::ui::dialogs::templates::TemplateStore;
 use crate::ui::drawing_toolbar::{DrawingToolbarAction, utilities::TemplatesButton};
 use crate::ui_kit::ColorPickerState;
 use crate::ui_kit::buttons::Button;
 use crate::ui_kit::dialog::{DialogFooter, DialogFrame, dialog_header};
-use crate::ui_kit::ext::UiExt;
 
 /// Drawing properties dialog
 pub struct DrawingPropertiesDialog {
@@ -39,6 +39,8 @@ pub struct DrawingPropertiesDialog {
     template_name: String,
     saving_template: bool,
     default_template: Option<DrawingTemplate>,
+    /// Clear leftover popups (e.g. Template menu) once on the next show after open/close.
+    clear_popups: bool,
     /// Validation error from the most recent edit.
     pub error: Option<String>,
 }
@@ -66,6 +68,7 @@ impl DrawingPropertiesDialog {
             template_name: String::new(),
             saving_template: false,
             default_template: None,
+            clear_popups: false,
         }
     }
 
@@ -78,6 +81,7 @@ impl DrawingPropertiesDialog {
         self.error = None;
         self.template_name.clear();
         self.saving_template = false;
+        self.clear_popups = true;
         self.default_template = props.tool_settings.as_ref().map(|template| {
             DrawingTemplate::from_drawing(&Drawing::new(0, template.settings.tool_type))
         });
@@ -259,6 +263,7 @@ impl DrawingPropertiesDialog {
     pub fn close(&mut self) {
         self.is_open = false;
         self.drawing_id = None;
+        self.clear_popups = true;
     }
 
     /// Sync dialog open/close state from an external flag.
@@ -273,17 +278,28 @@ impl DrawingPropertiesDialog {
     /// Show the dialog
     pub fn show(&mut self, ctx: &Context) -> DrawingPropertiesAction {
         self.templates.poll(ctx);
+        if self.clear_popups {
+            egui::Popup::close_all(ctx);
+            self.clear_popups = false;
+        }
         if !self.is_open {
             return DrawingPropertiesAction::None;
         }
 
         let mut action = DrawingPropertiesAction::None;
 
-        DialogFrame::new(
-            "Drawing Properties",
-            Vec2::new(self.config.width, self.config.height),
-        )
-        .show(ctx, |ui| {
+        // Compact tools should not inherit the maximum dialog height. Auto-height keeps the
+        // footer directly below the visible sections, while a configured positive height remains
+        // available to hosts that deliberately want a fixed-size dialog.
+        let frame = if self.config.height > 0.0 {
+            DialogFrame::new(
+                "Drawing Properties",
+                Vec2::new(self.config.width, self.config.height),
+            )
+        } else {
+            DialogFrame::with_width("Drawing Properties", self.config.width)
+        };
+        frame.show(ctx, |ui| {
             action = self.render_contents(ui);
         });
 
@@ -342,7 +358,7 @@ impl DrawingPropertiesDialog {
 
     fn template_menu(&mut self, ui: &mut Ui) {
         let mut load = None;
-        let menu = Button::new("Template").ghost().show(ui);
+        let menu = Button::new("Template").outlined().show(ui);
         egui::Popup::menu(&menu).show(|ui| {
             if ui
                 .button(l10n::text(ui.ctx(), "Save as template…"))
@@ -430,22 +446,28 @@ impl DrawingPropertiesDialog {
 
     fn render_contents(&mut self, ui: &mut Ui) -> DrawingPropertiesAction {
         let ctx = ui.ctx().clone();
+        // This dialog follows the toolbars' neutral interaction language. Accent remains reserved
+        // for semantic selection; pressing or focusing a control uses the theme's grey outline.
+        let control_border = ui.active_theme().ui.border_control;
+        ui.visuals_mut().widgets.active.bg_stroke =
+            egui::Stroke::new(crate::tokens::DESIGN_TOKENS.stroke.hairline, control_border);
         // Read before the body: a combo popup closes itself on the Escape it receives there.
         let popup_open = egui::Popup::is_any_open(&ctx);
         let state_id = ui.scope_id().with("keyboard_and_pickers");
         let mut state: UiState = ui.data(|d| d.get_temp(state_id)).unwrap_or_default();
 
         let mut cancel = dialog_header(ui, &self.drawing_name);
-        let has_inputs = self
+        // Prevent dense control rows from widening the fixed dialog frame.
+        let dialog_width = ui.available_width();
+        ui.set_max_width(dialog_width);
+        let tool = self
             .props
             .tool_settings
             .as_ref()
-            .is_some_and(|t| InputsTab::available(t.settings.tool_type));
-        let has_text = self
-            .props
-            .tool_settings
-            .as_ref()
-            .is_some_and(|t| t.settings.tool_type.supports_text());
+            .map(|t| t.settings.tool_type);
+        let has_inputs = tool.is_some_and(InputsTab::available);
+        let has_text = tool.is_some_and(|t| t.supports_text());
+        let has_fill = tool.is_some_and(|t| t.supports_fill());
         let section_available = |tab: PropertiesTab| match tab {
             PropertiesTab::Inputs => has_inputs,
             PropertiesTab::Text => has_text,
@@ -468,24 +490,59 @@ impl DrawingPropertiesDialog {
                 .max(0.0),
             )
             .show(ui, |ui| {
+                // Keep dense rows wrapping inside the dialog instead of growing it.
+                let body_width = ui.available_width();
+                ui.set_width(body_width);
+                ui.set_max_width(body_width);
+
                 let mut first = true;
-                for tab in PropertiesTab::all() {
-                    if !section_available(tab) {
-                        continue;
-                    }
+                let mut begin_section = |ui: &mut Ui, tab: Option<PropertiesTab>| {
                     if !first {
-                        ui.spaced_separator();
+                        super::section::section_divider(ui);
                     }
                     first = false;
-                    if scroll_to == Some(tab) {
-                        ui.scroll_to_cursor(Some(Align::TOP));
-                    }
-                    ui.section_header(tab.label());
-                    match tab {
-                        PropertiesTab::Style => {
-                            StyleTab::show(ui, &mut self.props, &mut state.pickers);
-                        }
-                        PropertiesTab::Inputs => {
+                    tab.is_some_and(|t| scroll_to == Some(t))
+                };
+
+                let scroll_appearance = begin_section(ui, Some(PropertiesTab::Style));
+                super::section::properties_section(
+                    ui,
+                    "drawing_props_appearance",
+                    "Appearance",
+                    scroll_appearance,
+                    |ui| StyleTab::show(ui, &mut self.props, &mut state.pickers),
+                );
+
+                if has_text {
+                    let scroll = begin_section(ui, Some(PropertiesTab::Text));
+                    super::section::properties_section(
+                        ui,
+                        "drawing_props_label",
+                        "Label",
+                        scroll,
+                        |ui| TextTab::show(ui, &mut self.props),
+                    );
+                }
+
+                if has_fill {
+                    let scroll = begin_section(ui, None);
+                    super::section::properties_section(
+                        ui,
+                        "drawing_props_fill",
+                        "Fill",
+                        scroll,
+                        |ui| StyleTab::show_fill(ui, &mut self.props, &mut state.pickers),
+                    );
+                }
+
+                if has_inputs {
+                    let scroll = begin_section(ui, Some(PropertiesTab::Inputs));
+                    super::section::properties_section(
+                        ui,
+                        "drawing_props_inputs",
+                        "Inputs",
+                        scroll,
+                        |ui| {
                             let color = self.props.color.to_srgba_unmultiplied();
                             if let Some(template) = &mut self.props.tool_settings {
                                 template.settings.color = color;
@@ -495,14 +552,27 @@ impl DrawingPropertiesDialog {
                                     &mut state.level_pickers,
                                 );
                             }
-                        }
-                        PropertiesTab::Text => TextTab::show(ui, &mut self.props),
-                        PropertiesTab::Coordinates => {
-                            CoordinatesTab::show(ui, &mut self.coordinates)
-                        }
-                        PropertiesTab::Visibility => VisibilityTab::show(ui, &mut self.props),
-                    }
+                        },
+                    );
                 }
+
+                let scroll_coords = begin_section(ui, Some(PropertiesTab::Coordinates));
+                super::section::properties_section(
+                    ui,
+                    "drawing_props_coordinates",
+                    "Coordinates",
+                    scroll_coords,
+                    |ui| CoordinatesTab::show(ui, &mut self.coordinates),
+                );
+
+                let scroll_vis = begin_section(ui, Some(PropertiesTab::Visibility));
+                super::section::properties_section(
+                    ui,
+                    "drawing_props_visibility",
+                    "Visibility",
+                    scroll_vis,
+                    |ui| VisibilityTab::show(ui, &mut self.props),
+                );
             });
         state.scrolled_tab = Some(self.active_tab);
 
@@ -566,8 +636,7 @@ impl DrawingPropertiesDialog {
     }
 }
 
-/// Height of the `DialogFooter` block below the body: two `spacing.lg` gaps, the rule and a
-/// `ButtonSize::MD` row, with their item spacing.
+/// Height reserved for the properties footer below the scroll body.
 const FOOTER_HEIGHT: f32 = 60.0;
 
 /// Keyboard and colour picker state kept in egui memory between frames.
@@ -672,7 +741,10 @@ mod tests {
                 for (label, present) in [
                     ("Fill", fill),
                     ("Extend", extend),
-                    ("Text", text),
+                    ("Appearance", true),
+                    ("Coordinates", true),
+                    ("Visibility", true),
+                    ("Label", text),
                     ("Template", true),
                     ("Ok", true),
                     ("Delete", false),
@@ -854,6 +926,8 @@ mod tests {
         frame(&mut dialog, &mut chart, &ctx, vec![]);
         chart.drawings_mut().drawings[0].tool_type = Tool::TrendLine;
         dialog.open_for_chart(&chart, DrawingId(7));
+        // Let the dialog finish its sizing pass before clicking footer controls.
+        frame(&mut dialog, &mut chart, &ctx, vec![]);
         click(&mut dialog, &mut chart, &ctx, "Template");
         click(&mut dialog, &mut chart, &ctx, "Delete Thick line");
         assert!(dialog.templates.entries().is_empty());

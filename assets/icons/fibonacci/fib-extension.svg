@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M13.25 4.75H21.25M13.25 9.25H21.25M13.25 13.75H21.25M5.344 16.604 7.406 10.896M8.733 10.839 10.267 14.161"/>
-  <circle cx="4.75" cy="18.25" r="1.75"/>
-  <circle cx="8" cy="9.25" r="1.75"/>
-  <circle cx="11" cy="15.75" r="1.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Fibonacci Extension"><title>Fibonacci Extension</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M3 4L21 4" stroke-dasharray="2.5 2.5" stroke="currentColor"/><path d="M3 9.5L21 9.5"/><path d="M3 15L21 15" stroke-dasharray="2.5 2.5" stroke="currentColor"/><path d="M3 20L21 20"/><path d="M4.89 18.44L9.11 11.06" stroke="currentColor"/><path d="M11.21 10.83L13.79 13.67" stroke="currentColor"/><path d="M15.74 13.36L20.0 4.0" stroke-dasharray="2 2" stroke="currentColor"/><circle cx="4" cy="20" r="1.8" stroke="currentColor"/><circle cx="10" cy="9.5" r="1.8" stroke="currentColor"/><circle cx="15" cy="15" r="1.8" stroke="currentColor"/></g></svg>

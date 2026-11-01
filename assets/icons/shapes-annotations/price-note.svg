@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="8.75" y="3.75" width="11.5" height="9.5" rx="1"/>
-  <path d="M12.25 7.25H16.75M12.25 10.25H15.25M14.75 13.25V18.75M6.5 18.75H20.25"/>
-  <circle cx="4.75" cy="18.75" r="1.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Price Note"><title>Price Note</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M3 5h15v10H9l-6 5Z"/><path d="M18 10L22 10" stroke="currentColor"/></g></svg>

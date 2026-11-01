@@ -1,3 +1,1 @@
-<svg color="#fff" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M9.02899 4.28501L19.02899 10.28501C20.32367 11.06182 20.32367 12.93818 19.02899 13.71499L9.02899 19.71499C7.69594 20.51482 6 19.55459 6 18L6 6C6 4.44541 7.69594 3.48518 9.02899 4.28501Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Replay Play"><title>Replay Play</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M7 4.5L19 12L7 19.5Z" stroke="currentColor"/><path d="M4 5v14"/></g></svg>

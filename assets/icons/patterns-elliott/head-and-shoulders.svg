@@ -1,9 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M6 15H18" stroke-opacity=".45"/>
-  <path d="M4.33 17.60 7 10 9.5 15 12 4.75 14.5 15 17 10 19.67 17.60"/>
-  <circle cx="3.75" cy="19.25" r="1.75"/>
-  <circle cx="7" cy="10" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="12" cy="4.75" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="17" cy="10" r="1.25" fill="currentColor" stroke="none"/>
-  <circle cx="20.25" cy="19.25" r="1.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Head And Shoulders"><title>Head And Shoulders</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M2 18L22 18" stroke-dasharray="2.5 2.5" stroke="currentColor"/><path d="M3.54 16.55L5.46 11.45"/><path d="M6.54 11.45L8.46 16.55"/><path d="M9.32 16.48L11.68 5.52"/><path d="M12.32 5.52L14.68 16.48"/><path d="M15.54 16.55L17.46 11.45"/><path d="M18.54 11.45L20.46 16.55"/><circle cx="3" cy="18" r="1.55" stroke="currentColor"/><circle cx="6" cy="10" r="1.55" stroke="currentColor"/><circle cx="9" cy="18" r="1.55" stroke="currentColor"/><circle cx="12" cy="4" r="1.55" stroke="currentColor"/><circle cx="15" cy="18" r="1.55" stroke="currentColor"/><circle cx="18" cy="10" r="1.55" stroke="currentColor"/><circle cx="21" cy="18" r="1.55" stroke="currentColor"/></g></svg>

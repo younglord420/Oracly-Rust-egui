@@ -30,11 +30,7 @@ fn main() -> eframe::Result {
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .unwrap();
 
-        // Hide loading overlay.
-        if let Some(el) = document.get_element_by_id("loading") {
-            let _ = el.set_attribute("style", "display:none");
-        }
-
+        // The overlay stays up until the first frame reaches the screen; `DemoApp` clears it.
         wasm_bindgen_futures::spawn_local(async move {
             eframe::WebRunner::new()
                 .start(

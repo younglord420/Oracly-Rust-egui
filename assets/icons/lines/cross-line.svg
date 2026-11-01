@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M2.75 12.25H10.5M14 12.25H21.25M12.25 2.75V10.5M12.25 14V21.25"/>
-  <circle cx="12.25" cy="12.25" r="1.75"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Cross Line"><title>Cross Line</title><g transform="translate(1.2 1.2) scale(.9)"><path d="M2 12h8M14 12h8M12 2v8M12 14v8"/><circle cx="12" cy="12" r="2.0" stroke="currentColor"/></g></svg>

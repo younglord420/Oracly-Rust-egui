@@ -1,4 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" color="#fff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2.75" y="2.75" width="18.5" height="18.5"/>
-  <path d="M6.25 12.25h11.5M12.25 6.25v11.5m-2-9.5 2-2 2 2m-4 7.5 2 2 2-2m-6-5.5-2 2 2 2m7.5-4 2 2-2 2"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.944444" stroke-linecap="round" stroke-linejoin="round" color="#fff" role="img" aria-label="Date Price Range"><title>Date Price Range</title><g transform="translate(1.2 1.2) scale(.9)"><rect x="3" y="3" width="18" height="18" rx="1" stroke-dasharray="2.5 2.5"/><path d="M12 18L12 6" stroke="currentColor"/><path d="M13.94 8.55L12 6L10.06 8.55" stroke="currentColor"/><path d="M6 12L18 12" stroke="currentColor"/><path d="M15.45 13.94L18 12L15.45 10.06" stroke="currentColor"/></g></svg>
