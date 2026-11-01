@@ -370,7 +370,7 @@ mod tests {
             ("grid", dark.chart.grid_line, [24, 27, 30]),
             ("up candle", dark.chart.candle_up, [58, 211, 137]),
             ("down candle", dark.chart.candle_down, [255, 100, 101]),
-            ("active toggle", dark.ui.accent, [146, 129, 247]),
+            ("active toggle", dark.ui.accent, [255, 181, 0]),
         ] {
             assert_eq!(
                 actual,

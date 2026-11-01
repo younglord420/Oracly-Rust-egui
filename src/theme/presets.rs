@@ -18,15 +18,15 @@ pub fn presets() -> [(&'static str, Theme); 3] {
 }
 
 impl Theme {
-    /// Dark UI and chart ("black velvet with violet neon"). This is the default theme.
+    /// Dark UI and chart ("black velvet with Oracly orange #FFB500"). This is the default theme.
     pub fn dark() -> Self {
-        // Refero Resend palette:
+        // Refero Resend surface & neutral tokens paired with Oracly brand orange (#FFB500):
         // Void Black (#000000), Surface Lift (#0b0e14), Graphite Hairline (#292d30),
         // Charcoal (#464a4d), Iron (#6e727a), Ash Gray (#a1a4a5), Smoke Gray (#abafb4),
-        // Bone White (#f0f0f0), White (#ffffff), Iris Violet (#9281f7), Iris Violet Glow (#baa7ff),
+        // Bone White (#f0f0f0), White (#ffffff), Oracly Orange (#ffb500),
         // Signal Blue (#3b9eff), Sky Blue (#70b8ff), Pulse Green (#3ad389),
         // Alarm Red (#ff9592), Crimson (#ff6465), Amber (#ffca16).
-        let accent = rgb(146, 129, 247);
+        let accent = rgb(255, 181, 0);
         Self {
             dark: true,
             ui: UiColors {
@@ -42,12 +42,12 @@ impl Theme {
                 border_control: rgb(110, 114, 122),
                 btn_bg_hover: rgb(27, 29, 32),
                 btn_bg_active: rgb(41, 45, 48),
-                selection_bg: rgb(72, 58, 160),
+                selection_bg: rgb(115, 77, 0),
                 selection_text: Color32::WHITE,
                 focus: Color32::WHITE,
                 accent,
-                accent_hover: rgb(166, 150, 251),
-                accent_active: rgb(186, 167, 255),
+                accent_hover: rgb(224, 152, 0),
+                accent_active: rgb(191, 125, 0),
                 accent_text: Color32::BLACK,
                 danger_bg: rgb(204, 48, 50),
                 danger_bg_hover: rgb(186, 40, 42),
@@ -76,7 +76,7 @@ impl Theme {
                 volume_up_color: rgb(58, 211, 137),
                 volume_down_color: rgb(255, 100, 101),
                 volume_alpha: 112,
-                session_quote_tag: rgb(255, 202, 22),
+                session_quote_tag: rgb(255, 181, 0),
                 volume_tag: rgb(58, 211, 137),
                 marker_outline: rgb(240, 240, 240),
             },
@@ -89,9 +89,9 @@ impl Theme {
     /// Light UI and chart.
     pub fn light() -> Self {
         let dark = Self::dark();
-        let accent = rgb(109, 86, 224);
-        let accent_hover = rgb(93, 70, 207);
-        let accent_active = rgb(76, 55, 186);
+        let accent = rgb(158, 98, 0);
+        let accent_hover = rgb(133, 81, 0);
+        let accent_active = rgb(107, 64, 0);
         Self {
             dark: false,
             ui: UiColors {
@@ -111,7 +111,7 @@ impl Theme {
                 accent_hover,
                 accent_active,
                 accent_text: Color32::WHITE,
-                selection_bg: rgb(229, 224, 255),
+                selection_bg: rgb(255, 241, 204),
                 selection_text: accent_active,
                 focus: accent_active,
                 success: rgb(20, 118, 66),
