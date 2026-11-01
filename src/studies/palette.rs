@@ -26,8 +26,8 @@ pub const DARK_GREEN: Color32 = Color32::from_rgb(67, 160, 71);
 /// Default dark red study colour.
 pub const DARK_RED: Color32 = Color32::from_rgb(183, 28, 28);
 
-/// Default warm orange study colour.
-pub const WARM_ORANGE: Color32 = Color32::from_rgb(255, 152, 0);
+/// Default warm orange study colour (Oracly Orange `#FFB500`).
+pub const WARM_ORANGE: Color32 = Color32::from_rgb(255, 181, 0);
 
 /// Default deep purple study colour.
 pub const DEEP_PURPLE: Color32 = Color32::from_rgb(103, 58, 183);

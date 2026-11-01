@@ -30,7 +30,7 @@ pub const GRAYSCALE: [Color32; 10] = [
 /// Main colors (row 2)
 pub const MAIN_COLORS: [Color32; 10] = [
     Color32::from_rgb(242, 54, 69),  // red
-    Color32::from_rgb(255, 152, 0),  // orange
+    Color32::from_rgb(255, 181, 0),  // Oracly orange (#FFB500)
     Color32::from_rgb(255, 235, 59), // yellow
     Color32::from_rgb(76, 175, 80),  // green
     Color32::from_rgb(8, 153, 129),  // teal

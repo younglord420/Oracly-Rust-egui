@@ -553,16 +553,10 @@ impl DemoApp {
         // Modern chart-first chrome: left Symbol·TF·Type·Indicators; right Alert·Replay·Search·Settings.
         top_toolbar.call_to_action = None;
         for control in [
-            egui_charts::ui::Control::Layouts,
             egui_charts::ui::Control::Trading,
             egui_charts::ui::Control::Theme,
             egui_charts::ui::Control::Publish,
-            egui_charts::ui::Control::Compare,
             egui_charts::ui::Control::Templates,
-            egui_charts::ui::Control::Undo,
-            egui_charts::ui::Control::Redo,
-            egui_charts::ui::Control::Fullscreen,
-            egui_charts::ui::Control::Snapshot,
         ] {
             top_toolbar.set_control_visible(control, false);
         }
@@ -1697,6 +1691,8 @@ impl DemoApp {
         self.top_toolbar.sync_from_app_state(&self.state);
         self.top_toolbar.state.can_undo = self.chart.can_undo();
         self.top_toolbar.state.can_redo = self.chart.can_redo();
+        let mut brand_menu_action: Option<TopToolbarAction> = None;
+        let mut open_shortcuts = false;
         // Same panel fill as left/right rails — separated from the workspace by a 1px hairline rule.
         egui::Panel::top("toolbar")
             .exact_size(self.top_toolbar.config.height)
@@ -1708,8 +1704,8 @@ impl DemoApp {
                     ui,
                     &self.state,
                     |ui| {
-                        let dark = egui_charts::theme::ThemeExt::active_theme(ui).dark;
-                        let image = if dark {
+                        let theme = egui_charts::theme::ThemeExt::active_theme(ui);
+                        let image = if theme.dark {
                             egui::Image::from_bytes(
                                 "bytes://oracly/brand/dark-icon-64.png",
                                 include_bytes!("../../assets/branding/oracly-dark-icon-64w.png"),
@@ -1721,11 +1717,76 @@ impl DemoApp {
                             )
                         };
                         let (rect, response) =
-                            ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                        image
-                            .fit_to_exact_size(egui::vec2(24.0, 24.0))
-                            .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::vec2(24.0, 24.0)));
-                        response.on_hover_text("Oracly");
+                            ui.allocate_exact_size(egui::vec2(32.0, 28.0), egui::Sense::click());
+                        if response.hovered() || response.is_pointer_button_down_on() {
+                            ui.painter().rect_filled(
+                                rect,
+                                theme.radius.sm,
+                                ui.visuals().widgets.hovered.bg_fill,
+                            );
+                        }
+                        image.fit_to_exact_size(egui::vec2(24.0, 24.0)).paint_at(
+                            ui,
+                            egui::Rect::from_center_size(rect.center(), egui::vec2(24.0, 24.0)),
+                        );
+                        egui::Popup::menu(&response)
+                            .frame(egui_charts::ui_kit::glass_menu(ui))
+                            .show(|ui| {
+                                ui.set_min_width(200.0);
+                                let header_img = if theme.dark {
+                                    egui::Image::from_bytes(
+                                        "bytes://oracly/brand/dark-compact-344.png",
+                                        include_bytes!(
+                                            "../../assets/branding/oracly-dark-compact-344w.png"
+                                        ),
+                                    )
+                                } else {
+                                    egui::Image::from_bytes(
+                                        "bytes://oracly/brand/light-compact-344.png",
+                                        include_bytes!(
+                                            "../../assets/branding/oracly-light-compact-344w.png"
+                                        ),
+                                    )
+                                };
+                                ui.add_space(4.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(8.0);
+                                    ui.add(header_img.fit_to_exact_size(egui::vec2(108.0, 28.0)));
+                                });
+                                ui.add_space(4.0);
+                                ui.separator();
+                                use egui_charts::icons::icons as ic;
+                                use egui_charts::ui_kit::list_item::ListItem;
+                                if ListItem::new()
+                                    .show_with_icon(ui, "Quick Search", &ic::COMMAND_SEARCH)
+                                    .clicked()
+                                {
+                                    brand_menu_action = Some(TopToolbarAction::OpenQuickSearch);
+                                    ui.close();
+                                }
+                                if ListItem::new()
+                                    .show_with_icon(ui, "Toggle Theme", &ic::THEME_TOGGLE)
+                                    .clicked()
+                                {
+                                    brand_menu_action = Some(TopToolbarAction::ThemeToggle);
+                                    ui.close();
+                                }
+                                if ListItem::new()
+                                    .show_with_icon(ui, "Chart Settings", &ic::SETTINGS)
+                                    .clicked()
+                                {
+                                    brand_menu_action = Some(TopToolbarAction::OpenSettings);
+                                    ui.close();
+                                }
+                                if ListItem::new()
+                                    .show_with_icon(ui, "Keyboard Shortcuts", &ic::KEYBOARD)
+                                    .clicked()
+                                {
+                                    open_shortcuts = true;
+                                    ui.close();
+                                }
+                            });
+                        response.on_hover_text("Oracly menu");
                     },
                     |_| {},
                 );
@@ -1736,7 +1797,10 @@ impl DemoApp {
                     rect.bottom() - 0.5,
                     egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
                 );
-                self.handle_top_toolbar(ui.ctx(), action);
+                self.handle_top_toolbar(ui.ctx(), brand_menu_action.unwrap_or(action));
+                if open_shortcuts {
+                    self.keyboard_shortcuts.toggle();
+                }
             });
     }
 
