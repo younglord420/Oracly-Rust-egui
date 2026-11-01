@@ -403,10 +403,10 @@ impl<'a> TextIconButton<'a> {
     }
 }
 
-/// Neutral colour of the toolbar's group rules and pill outlines.
+/// Neutral colour of the toolbar's group rules and pill outlines (`#292d30` Graphite Hairline in dark).
 pub(crate) fn rule_color(theme: &Theme) -> Color32 {
     if theme.dark {
-        theme.ui.border.lerp_to_gamma(theme.ui.text, 0.18)
+        theme.ui.border
     } else {
         theme.ui.panel_bg.lerp_to_gamma(theme.ui.text, 0.085)
     }
@@ -666,7 +666,17 @@ pub fn toolbar_tooltip(
             .unwrap_or_default()
             .shortcut(action)
     });
-    let fill = Color32::from_gray(28);
+    let theme = response.ctx.active_theme();
+    let fill = if theme.dark {
+        theme.ui.panel_bg_floating
+    } else {
+        Color32::from_gray(28)
+    };
+    let border_stroke = if theme.dark {
+        egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border)
+    } else {
+        egui::Stroke::NONE
+    };
     egui::Popup::from_response(&response)
         .id(response.id.with("toolbar_tooltip"))
         .kind(egui::PopupKind::Tooltip)
@@ -678,7 +688,8 @@ pub fn toolbar_tooltip(
         .frame(
             egui::Frame::new()
                 .fill(fill)
-                .corner_radius(response.ctx.active_theme().radius.sm)
+                .stroke(border_stroke)
+                .corner_radius(theme.radius.sm)
                 .inner_margin(egui::Margin::symmetric(8, 3)),
         )
         .show(|ui| {
@@ -697,7 +708,7 @@ pub fn toolbar_tooltip(
                             ui.label(egui::RichText::new("+").size(14.0).color(Color32::WHITE));
                         }
                         egui::Frame::new()
-                            .fill(Color32::from_gray(80))
+                            .fill(Color32::from_rgb(41, 45, 48))
                             .corner_radius(ui.active_theme().radius.xs)
                             .inner_margin(egui::Margin::symmetric(4, 0))
                             .show(ui, |ui| {

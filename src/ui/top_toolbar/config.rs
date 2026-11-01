@@ -20,7 +20,7 @@ pub const ICON_SIZE: f32 = 18.0;
 pub const PADDING: f32 = 4.0;
 
 /// Default corner radius in egui logical points.
-pub const ROUNDING: f32 = 8.0;
+pub const ROUNDING: f32 = 6.0;
 
 // =============================================================================
 // Config Struct

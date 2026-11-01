@@ -84,7 +84,7 @@ pub(super) fn rail_icon_color(ui: &Ui) -> egui::Color32 {
     let theme = ui.active_theme();
     if !ui.is_enabled() {
         theme.ui.text_disabled
-    } else if !theme.dark && theme.ui.text == egui::Color32::from_gray(26) {
+    } else if !theme.dark && theme.ui.text == egui::Color32::from_rgb(18, 20, 22) {
         egui::Color32::BLACK
     } else {
         theme.ui.text

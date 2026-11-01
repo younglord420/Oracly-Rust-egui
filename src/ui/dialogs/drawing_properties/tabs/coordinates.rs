@@ -339,19 +339,17 @@ fn styled_text_field(ui: &mut Ui, edit: TextEdit<'_>) -> egui::Response {
     let theme = ui.active_theme().clone();
     ui.scope(|ui| {
         let visuals = ui.visuals_mut();
-        visuals.extreme_bg_color = theme.ui.btn_bg_hover;
+        visuals.extreme_bg_color = theme.ui.panel_bg;
         visuals.widgets.inactive.bg_stroke =
-            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border_control);
+            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border);
         visuals.widgets.hovered.bg_stroke =
-            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text_muted);
+            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border_control);
         visuals.widgets.active.bg_stroke =
-            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text_secondary);
+            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
         visuals.widgets.open.bg_stroke =
-            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text_secondary);
-        // A focused text edit uses the selection stroke as its outline. Keep that outline neutral
-        // in both themes instead of inheriting the light theme's accent colour.
+            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
         visuals.selection.stroke =
-            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text_secondary);
+            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
         ui.add(edit.margin(egui::Margin::symmetric(8, 4)))
     })
     .inner

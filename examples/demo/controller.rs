@@ -1698,7 +1698,7 @@ impl DemoApp {
         self.top_toolbar.sync_from_app_state(&self.state);
         self.top_toolbar.state.can_undo = self.chart.can_undo();
         self.top_toolbar.state.can_redo = self.chart.can_redo();
-        // Same panel fill as left/right rails — no separate tint strip.
+        // Same panel fill as left/right rails — separated from the workspace by a 1px hairline rule.
         egui::Panel::top("toolbar")
             .exact_size(self.top_toolbar.config.height)
             .show_separator_line(false)
@@ -1706,6 +1706,13 @@ impl DemoApp {
             .show(ui, |ui| {
                 // Menu slot hidden; strip is symbol · interval · type · indicators · …
                 let action = self.top_toolbar.show_with_slots(ui, &self.state, |_| {}, |_| {});
+                let rect = ui.max_rect();
+                let border = egui_charts::theme::ThemeExt::active_theme(ui).ui.border;
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.bottom() - 0.5,
+                    egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
+                );
                 self.handle_top_toolbar(ui.ctx(), action);
             });
     }
@@ -1890,6 +1897,13 @@ impl DemoApp {
             .frame(panel_frame(bg))
             .show(ui, |ui| {
                 let action = self.drawing_toolbar.show_with_action(ui);
+                let rect = ui.max_rect();
+                let border = egui_charts::theme::ThemeExt::active_theme(ui).ui.border;
+                ui.painter().vline(
+                    rect.right() - 0.5,
+                    rect.y_range(),
+                    egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
+                );
                 self.handle_drawing_toolbar(action);
             });
     }
@@ -2071,6 +2085,13 @@ impl DemoApp {
             .frame(panel_frame(bg))
             .show(ui, |ui| {
                 let action = self.widget_bar.show(ui);
+                let rect = ui.max_rect();
+                let border = egui_charts::theme::ThemeExt::active_theme(ui).ui.border;
+                ui.painter().vline(
+                    rect.left() + 0.5,
+                    rect.y_range(),
+                    egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
+                );
                 match action {
                     WidgetBarAction::Clicked(icon) => self.toggle_panel(icon),
                     WidgetBarAction::WidgetClicked(id) => {
@@ -2680,6 +2701,13 @@ impl DemoApp {
             .show(ui, |ui| {
                 self.timeframe_toolbar.state.date_picker_open = self.date_picker.is_open;
                 let action = self.timeframe_toolbar.show(ui);
+                let rect = ui.max_rect();
+                let border = egui_charts::theme::ThemeExt::active_theme(ui).ui.border;
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.top() + 0.5,
+                    egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
+                );
                 self.handle_timeframe_toolbar(action);
                 self.show_timeframe_menus(ui.ctx());
             });

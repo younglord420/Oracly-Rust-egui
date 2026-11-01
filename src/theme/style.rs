@@ -111,11 +111,10 @@ pub(crate) fn apply_to_style(style: &mut egui::Style, theme: &Theme) {
         7.0,
     );
 
-    // Floating chrome: hairline border, small radius and a tight shadow that stays close to
-    // the surface instead of smearing over neighbouring toolbars.
+    // Floating chrome: hairline border (#292d30 in dark), 16px card/window radius, 6px menu radius.
     let shadow_alpha = if theme.dark { 96 } else { 32 };
     visuals.window_stroke = egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, ui.border);
-    visuals.window_corner_radius = theme.radius.md.into();
+    visuals.window_corner_radius = theme.radius.xl.into();
     visuals.menu_corner_radius = theme.radius.sm.into();
     visuals.window_shadow = egui::epaint::Shadow {
         offset: [0, 4],
@@ -358,20 +357,20 @@ mod tests {
             ("panel", dark.ui.panel_bg, [0, 0, 0]),
             ("plot", dark.chart.bg, [0, 0, 0]),
             ("axis", dark.chart.bg_axis, [0, 0, 0]),
-            ("separator", dark.ui.border, [42, 42, 42]),
-            ("text", dark.ui.text, [219, 219, 219]),
-            ("secondary text", dark.ui.text_secondary, [184, 184, 184]),
-            ("disabled text", dark.ui.text_disabled, [87, 87, 87]),
-            ("price text", dark.chart.axis_text, [255, 255, 255]),
+            ("separator", dark.ui.border, [41, 45, 48]),
+            ("text", dark.ui.text, [240, 240, 240]),
+            ("secondary text", dark.ui.text_secondary, [171, 175, 180]),
+            ("disabled text", dark.ui.text_disabled, [70, 74, 77]),
+            ("price text", dark.chart.axis_text, [240, 240, 240]),
             (
                 "secondary axis text",
                 dark.chart.axis_text_secondary,
-                [184, 184, 184],
+                [161, 164, 165],
             ),
-            ("grid", dark.chart.grid_line, [34, 34, 34]),
-            ("up candle", dark.chart.candle_up, [8, 153, 129]),
-            ("down candle", dark.chart.candle_down, [242, 54, 69]),
-            ("active toggle", dark.ui.accent, [41, 98, 255]),
+            ("grid", dark.chart.grid_line, [24, 27, 30]),
+            ("up candle", dark.chart.candle_up, [58, 211, 137]),
+            ("down candle", dark.chart.candle_down, [255, 100, 101]),
+            ("active toggle", dark.ui.accent, [146, 129, 247]),
         ] {
             assert_eq!(
                 actual,

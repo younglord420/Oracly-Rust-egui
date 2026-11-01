@@ -19,7 +19,7 @@ impl SymbolSearchDialog {
         let theme = ui.active_theme();
         let (rect, response) =
             ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
-        crate::styles::focus::draw_focus_ring(ui, &response, 4.0);
+        crate::styles::focus::draw_focus_ring(ui, &response, theme.radius.sm);
         response.widget_info(|| {
             egui::WidgetInfo::labeled(
                 egui::Role::ListBoxOption,
@@ -30,7 +30,8 @@ impl SymbolSearchDialog {
         ui.ctx()
             .accesskit_node_builder(response.id, |node| node.set_selected(is_sel));
         if is_sel || response.hovered() {
-            ui.painter().rect_filled(rect, 4.0, theme.ui.btn_bg_hover);
+            ui.painter()
+                .rect_filled(rect, theme.radius.sm, theme.ui.btn_bg_hover);
         }
         let mut right = rect.right() - 8.0;
         // The exchange mark column exists once any row has one, so the other columns line up.
@@ -205,8 +206,8 @@ impl SymbolSearchDialog {
     }
 }
 
-/// Corner radius of the symbol search and comparison dialogs.
-pub(super) const SEARCH_RADIUS: f32 = 20.0;
+/// Corner radius of the symbol search and comparison dialogs (matched to 16px Refero card/window radius).
+pub(super) const SEARCH_RADIUS: f32 = 16.0;
 
 /// The backdrop of the search dialogs: a faint veil, #F1F1F1 over white, on light themes, and the
 /// theme's modal overlay on dark ones.

@@ -320,11 +320,16 @@ impl Card {
     /// Show the card with content
     pub fn show<R>(self, ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         let theme = ui.active_theme();
+        let fill = if theme.dark {
+            theme.ui.panel_bg
+        } else {
+            theme.ui.panel_bg_secondary
+        };
         Frame::new()
-            .fill(theme.ui.panel_bg_secondary)
-            .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-            .corner_radius(self.rounding.unwrap_or(theme.radius.sm))
-            .inner_margin(self.padding.unwrap_or(theme.spacing.lg))
+            .fill(fill)
+            .stroke(Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border))
+            .corner_radius(self.rounding.unwrap_or(theme.radius.xl))
+            .inner_margin(self.padding.unwrap_or(theme.spacing.xxl))
             .show(ui, content)
     }
 }
@@ -350,14 +355,15 @@ pub fn glass_fill(theme: &Theme) -> Color32 {
     Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha)
 }
 
-/// Soft edge for glass panels — theme border, not a white Apple-glass highlight.
+/// Soft edge for glass panels — hairline `#292d30` in dark UI, subtle border in light UI.
 pub fn glass_stroke(theme: &Theme) -> Stroke {
-    let border = theme.ui.border_control;
-    let alpha = if theme.dark { 64 } else { 110 };
-    Stroke::new(
-        DESIGN_TOKENS.stroke.hairline,
-        Color32::from_rgba_unmultiplied(border.r(), border.g(), border.b(), alpha),
-    )
+    let border = if theme.dark {
+        theme.ui.border
+    } else {
+        let c = theme.ui.border_control;
+        Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 110)
+    };
+    Stroke::new(DESIGN_TOKENS.stroke.hairline, border)
 }
 
 fn glass_shadow(theme: &Theme) -> Shadow {

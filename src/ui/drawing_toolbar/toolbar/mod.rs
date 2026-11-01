@@ -1164,7 +1164,7 @@ mod tests {
         // 48×36 rail, 18px Coolicons: hover opens a flyout, so only count icons in the rail column.
         let pill = Rect::from_min_size(Pos2::ZERO, vec2(33.0, 33.0));
         for (theme, text) in [
-            (crate::theme::Theme::dark(), Color32::from_gray(219)),
+            (crate::theme::Theme::dark(), Color32::from_gray(240)),
             (crate::theme::Theme::light(), Color32::BLACK),
             (custom, Color32::GREEN),
         ] {

@@ -596,11 +596,19 @@ impl SymbolDetailsPanel {
                             }
                         };
                         if title == "Key statistics" {
-                            // The key facts stand apart from the profile on an accent-tinted card.
+                            // Bordered card surface per Refero guidelines (black canvas + 1px #292d30 border).
                             egui::Frame::new()
-                                .fill(theme.ui.accent.gamma_multiply(0.1))
-                                .corner_radius(theme.radius.md)
-                                .inner_margin(theme.spacing.md)
+                                .fill(if theme.dark {
+                                    theme.ui.panel_bg
+                                } else {
+                                    theme.ui.panel_bg_secondary
+                                })
+                                .stroke(Stroke::new(
+                                    crate::tokens::DESIGN_TOKENS.stroke.hairline,
+                                    theme.ui.border,
+                                ))
+                                .corner_radius(theme.radius.xl)
+                                .inner_margin(theme.spacing.lg)
                                 .show(ui, |ui| {
                                     ui.set_width(ui.available_width());
                                     facts(ui);
