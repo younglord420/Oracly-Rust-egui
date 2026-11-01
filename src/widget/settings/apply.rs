@@ -130,6 +130,7 @@ impl ChartSettingsState {
         settings.margins.bottom_percent =
             (chart.state().price_scale().options().scale_margins.bottom * 100.0) as f32;
         settings.margins.right_bars = chart.chart_options().time_scale.right_offset.max(0.0) as u32;
+        settings.motion.zoom_ms = chart.chart_options().animations.zoom_ms.unwrap_or(0);
         let scale = chart.state().price_scale();
         settings.scales_and_lines.auto_scale = !scale.is_manual();
         settings.scales_and_lines.log_scale = scale.options().mode == PriceScaleMode::Logarithmic;
@@ -235,6 +236,9 @@ impl ChartSettingsState {
         if !self.crosshair.line_width.is_finite() || self.crosshair.line_width <= 0.0 {
             return Err("Crosshair width must be above zero");
         }
+        if self.motion.zoom_ms > 1_000 {
+            return Err("Zoom smoothing must be between 0 and 1000 ms");
+        }
         if self.scales_appearance.font_size == 0 {
             return Err("Font sizes must be between 1 and 256");
         }
@@ -299,6 +303,7 @@ impl ChartSettingsState {
             chart.chart_options.time_scale.border_visible = line.is_some();
             chart.chart_options.time_scale.border_color = line;
         }
+        chart.chart_options.animations.zoom_ms = Some(self.motion.zoom_ms);
         let crosshair = &mut chart.chart_options.crosshair;
         crosshair.horz_line_color = self.crosshair.color;
         crosshair.vert_line_color = self.crosshair.color;
@@ -644,6 +649,28 @@ mod tests {
         }
     }
 
+    /// Zoom smoothing defaults to 120 ms, applies any value up to a second, 0 included, and
+    /// reads back from the chart.
+    #[test]
+    fn zoom_smoothing_applies_and_reads_back() {
+        let mut chart = crate::widget::test_frames::chart(&[100.0], &[110.0]);
+        assert_eq!(ChartSettingsState::default().motion.zoom_ms, 120);
+        assert_eq!(ChartSettingsState::from_chart(&chart).motion.zoom_ms, 120);
+        let mut settings = ChartSettingsState::from_chart(&chart);
+        for ms in [0, 70, 1_000] {
+            settings.motion.zoom_ms = ms;
+            settings.apply_to_chart(&mut chart).unwrap();
+            assert_eq!(chart.chart_options().animations.zoom_ms, Some(ms));
+            assert_eq!(
+                ChartSettingsState::from_chart(&chart).motion,
+                settings.motion
+            );
+        }
+        settings.motion.zoom_ms = 1_001;
+        assert!(settings.apply_to_chart(&mut chart).is_err());
+        assert_eq!(chart.chart_options().animations.zoom_ms, Some(1_000));
+    }
+
     /// The saved scale font size, axis line colour and pane button visibility render on the main,
     /// study and time axes and in a maximized pane, and read back from the chart.
     #[test]
@@ -712,13 +739,21 @@ mod tests {
                 if text.galley.text() == "..." && pane.panel_rect.contains(text.pos))
             });
             assert_eq!(menu, visibility == ButtonVisibility::AlwaysVisible);
-            let icon = painted
-                .iter()
-                .any(|shape| matches!(shape, Shape::Rect(rect) if button.contains_rect(rect.rect)));
+            let expect_icon = visibility == ButtonVisibility::AlwaysVisible
+                || (visibility == ButtonVisibility::VisibleOnMouseOver && maximized);
+            let icon = painted.iter().any(|shape| match shape {
+                Shape::LineSegment { points, .. } => {
+                    button.contains(points[0]) || button.contains(points[1])
+                }
+                Shape::Rect(rect) => {
+                    button.intersects(rect.rect)
+                        && rect.rect.width() <= 20.0
+                        && rect.rect.height() <= 20.0
+                }
+                _ => false,
+            });
             assert_eq!(
-                icon,
-                visibility == ButtonVisibility::AlwaysVisible
-                    || (visibility == ButtonVisibility::VisibleOnMouseOver && maximized),
+                icon, expect_icon,
                 "{visibility:?}, maximized={maximized}"
             );
             // A layout saved with this size could not be restored.

@@ -250,6 +250,10 @@ impl DrawingPropertiesDialog {
                 drawing.regression_trend = old.regression_trend;
                 drawing.channel_midline = old.channel_midline;
                 drawing.font_weight = old.font_weight;
+                drawing.font_italic = old.font_italic;
+                drawing.text_color = old.text_color;
+                drawing.text_v_align = old.text_v_align;
+                drawing.text_h_align = old.text_h_align;
                 drawing.arrow_start_style = old.arrow_start_style;
                 drawing.arrow_end_style = old.arrow_end_style;
                 drawing.custom_settings = old.custom_settings;
@@ -359,65 +363,88 @@ impl DrawingPropertiesDialog {
     fn template_menu(&mut self, ui: &mut Ui) {
         let mut load = None;
         let menu = Button::new("Template").outlined().show(ui);
-        egui::Popup::menu(&menu).show(|ui| {
-            if ui
-                .button(l10n::text(ui.ctx(), "Save as template…"))
-                .clicked()
-            {
-                self.saving_template = true;
-                ui.close();
-            }
-            if ui
-                .button(l10n::text(ui.ctx(), "Save as default for this tool"))
-                .clicked()
-            {
-                self.props.save_as_default = true;
-                ui.close();
-            }
-            if ui
-                .button(l10n::text(ui.ctx(), "Reset to defaults"))
-                .clicked()
-            {
-                load = self.default_template.clone();
-                ui.close();
-            }
-            ui.separator();
-            let mut delete = None;
-            if let Some(current) = &self.props.tool_settings {
-                for (name, template) in self.templates.entries() {
-                    if template.settings.tool_type != current.settings.tool_type
-                        || template.settings.custom_tool != current.settings.custom_tool
-                    {
-                        continue;
+        let menu_w = 240.0;
+        egui::Popup::menu(&menu)
+            .frame(crate::ui_kit::glass_menu(ui))
+            .width(menu_w)
+            .show(|ui| {
+                let inner_w = menu_w - 8.0;
+                ui.set_width(inner_w);
+                ui.set_max_width(inner_w);
+                ui.spacing_mut().item_spacing.y = 2.0;
+
+                if Self::template_menu_row(ui, &l10n::text(ui.ctx(), "Save as template…"), inner_w)
+                {
+                    self.saving_template = true;
+                    ui.close();
+                }
+                if Self::template_menu_row(
+                    ui,
+                    &l10n::text(ui.ctx(), "Save as default for this tool"),
+                    inner_w,
+                ) {
+                    self.props.save_as_default = true;
+                    ui.close();
+                }
+                if Self::template_menu_row(
+                    ui,
+                    &l10n::text(ui.ctx(), "Reset to defaults"),
+                    inner_w,
+                ) {
+                    load = self.default_template.clone();
+                    ui.close();
+                }
+
+                let mut delete: Option<String> = None;
+                if let Some(current) = &self.props.tool_settings {
+                    let matching: Vec<(String, DrawingTemplate)> = self
+                        .templates
+                        .entries()
+                        .iter()
+                        .filter(|(_, template)| {
+                            template.settings.tool_type == current.settings.tool_type
+                                && template.settings.custom_tool == current.settings.custom_tool
+                        })
+                        .map(|(n, t)| (n.clone(), t.clone()))
+                        .collect();
+
+                    if !matching.is_empty() {
+                        ui.add_space(4.0);
+                        ui.separator();
+                        ui.add_space(4.0);
                     }
-                    if ui.button(name).clicked() {
-                        load = Some(template.clone());
-                        ui.close();
-                    }
-                    if ui
-                        .button(l10n::format_text(
-                            ui.ctx(),
-                            "Delete {name}",
-                            &[("name", name.clone())],
-                        ))
-                        .clicked()
-                    {
-                        delete = Some(name.clone());
+
+                    for (name, template) in matching {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            let load_w = (inner_w - 76.0).max(80.0);
+                            if Self::template_menu_row(ui, &name, load_w) {
+                                load = Some(template);
+                                ui.close();
+                            }
+                            let del_label = l10n::format_text(
+                                ui.ctx(),
+                                "Delete {name}",
+                                &[("name", name.clone())],
+                            );
+                            if Self::template_delete_chip(ui, &del_label, 68.0) {
+                                delete = Some(name);
+                            }
+                        });
                     }
                 }
-            }
-            if let Some(name) = delete
-                && let Err(error) = self.templates.delete(&name)
-            {
-                self.templates.error = Some(error);
-            }
-        });
+                if let Some(name) = delete
+                    && let Err(error) = self.templates.delete(&name)
+                {
+                    self.templates.error = Some(error);
+                }
+            });
         if let Some(template) = load {
             self.load_template(template);
         }
         if self.saving_template
             && let Some(action) =
-                TemplatesButton::show_name_dialog(ui, ui.min_rect(), &mut self.template_name)
+                TemplatesButton::show_name_dialog(ui, menu.rect, &mut self.template_name)
         {
             match action {
                 DrawingToolbarAction::SaveTemplate { name } => {
@@ -444,6 +471,54 @@ impl DrawingPropertiesDialog {
         }
     }
 
+    fn template_menu_row(ui: &mut Ui, label: &str, width: f32) -> bool {
+        let theme = ui.active_theme();
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect, egui::CornerRadius::same(4), theme.ui.btn_bg_hover);
+        }
+        let galley = ui.painter().layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(theme.text.body),
+            theme.ui.text,
+        );
+        ui.painter().galley(
+            egui::pos2(rect.min.x + 8.0, rect.center().y - galley.size().y * 0.5),
+            galley,
+            theme.ui.text,
+        );
+        response.clicked()
+    }
+
+    fn template_delete_chip(ui: &mut Ui, a11y_label: &str, width: f32) -> bool {
+        let theme = ui.active_theme();
+        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect, egui::CornerRadius::same(4), theme.ui.btn_bg_hover);
+        }
+        let color = if response.hovered() {
+            theme.ui.text
+        } else {
+            theme.ui.text_muted
+        };
+        let galley = ui.painter().layout_no_wrap(
+            a11y_label.to_owned(),
+            egui::FontId::proportional(theme.text.label),
+            color,
+        );
+        ui.painter().galley(
+            egui::pos2(
+                rect.center().x - galley.size().x * 0.5,
+                rect.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            color,
+        );
+        response.clicked()
+    }
+
     fn render_contents(&mut self, ui: &mut Ui) -> DrawingPropertiesAction {
         let ctx = ui.ctx().clone();
         // This dialog follows the toolbars' neutral interaction language. Accent remains reserved
@@ -466,7 +541,7 @@ impl DrawingPropertiesDialog {
             .as_ref()
             .map(|t| t.settings.tool_type);
         let has_inputs = tool.is_some_and(InputsTab::available);
-        let has_text = tool.is_some_and(|t| t.supports_text());
+        let has_text = tool.is_some_and(|t| t.supports_text_style());
         let has_fill = tool.is_some_and(|t| t.supports_fill());
         let section_available = |tab: PropertiesTab| match tab {
             PropertiesTab::Inputs => has_inputs,
@@ -520,7 +595,7 @@ impl DrawingPropertiesDialog {
                         "drawing_props_label",
                         "Label",
                         scroll,
-                        |ui| TextTab::show(ui, &mut self.props),
+                        |ui| TextTab::show(ui, &mut self.props, &mut state.text_picker),
                     );
                 }
 
@@ -601,6 +676,7 @@ impl DrawingPropertiesDialog {
         if state
             .pickers
             .iter()
+            .chain(std::iter::once(&state.text_picker))
             .chain(&state.level_pickers)
             .any(|p| p.is_open)
         {
@@ -608,6 +684,7 @@ impl DrawingPropertiesDialog {
                 state
                     .pickers
                     .iter_mut()
+                    .chain(std::iter::once(&mut state.text_picker))
                     .chain(&mut state.level_pickers)
                     .for_each(|p| p.is_open = false);
             }
@@ -644,6 +721,8 @@ const FOOTER_HEIGHT: f32 = 60.0;
 struct UiState {
     /// Colour and fill colour pickers of the Style section.
     pickers: [ColorPickerState; 2],
+    /// Text colour picker of the Label section.
+    text_picker: ColorPickerState,
     /// Pickers for the current tool's editable levels.
     level_pickers: Vec<ColorPickerState>,
     /// Whether a widget had keyboard focus at the end of the previous frame.
@@ -727,12 +806,12 @@ mod tests {
             let mut chart = Chart::new(BarData::new());
             let mut dialog = DrawingPropertiesDialog::new();
             for (tool, fill, extend, text) in [
-                (Tool::HorizontalLine, false, false, false),
-                (Tool::Rect, true, true, false),
-                (Tool::Brush, false, false, false),
-                (Tool::TrendLine, false, true, false),
+                (Tool::HorizontalLine, false, false, true),
+                (Tool::Rect, true, true, true),
+                (Tool::Brush, false, false, true),
+                (Tool::TrendLine, false, true, true),
                 (Tool::TextLabel, true, false, true),
-                (Tool::Highlighter, false, false, false),
+                (Tool::Highlighter, false, false, true),
             ] {
                 chart.drawings_mut().drawings = vec![Drawing::new(7, tool)];
                 dialog.open_for_chart(&chart, DrawingId(7));

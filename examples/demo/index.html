@@ -75,13 +75,15 @@
     <link data-trunk rel="copy-file" href="../../assets/icons/LICENSE-lucide.txt" />
     <script>
         // The module removes this overlay once its first frame has been painted, so the canvas is
-        // never shown blank. This message only appears when the module never got that far.
-        setTimeout(() => {
+        // never shown blank. Show an error message only if initialization actually fails.
+        const showBootError = () => {
             const overlay = document.getElementById('loading');
             if (overlay) {
                 overlay.textContent = 'The chart could not start. Please reload the page.';
             }
-        }, 20000);
+        };
+        window.addEventListener('TrunkApplicationStarted', () => {}, { once: true });
+        window.addEventListener('unhandledrejection', showBootError, { once: true });
     </script>
 </body>
 </html>

@@ -103,8 +103,13 @@ impl DialogFrame {
             - frame.total_margin().sum();
         let inner = self.size.min(max).max(Vec2::ZERO);
 
+        let offset_id = egui::Id::unique("dialog_drag_offset").with(&self.id);
+        let drag_offset = ctx
+            .data(|d| d.get_temp::<Vec2>(offset_id))
+            .unwrap_or(Vec2::ZERO);
+
         let window = egui::Window::new(&self.id)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .anchor(Align2::CENTER_CENTER, drag_offset)
             .title_bar(false)
             .collapsible(false)
             .resizable(false)
@@ -127,7 +132,8 @@ impl DialogFrame {
                 egui::WidgetInfo::labeled(egui::Role::Dialog, ui.is_enabled(), &translated_label)
             });
             ui.data_mut(|d| {
-                d.insert_temp(ui.layer_id().id.with("dialog_input_blocked"), input_blocked)
+                d.insert_temp(ui.layer_id().id.with("dialog_input_blocked"), input_blocked);
+                d.insert_temp(ui.layer_id().id.with("dialog_offset_id"), offset_id);
             });
             // A non-resizable window shrinks to its content, so hold the preferred size here.
             ui.set_min_size(inner);
@@ -180,28 +186,62 @@ fn dialog_key(ui: &Ui, key: egui::Key) -> bool {
 }
 
 /// Title row shared with the modal dialogs, which hide the close button when not closable.
+///
+/// Supports dragging the parent [`DialogFrame`] window by its header and draws a subtle
+/// separator line below the title row.
 pub(crate) fn title_row(ui: &mut Ui, title: &str, closable: bool) -> bool {
     // Fix the row height before placing the title so the title centres on the button.
     let row = Vec2::new(ui.available_width(), ButtonSize::MD.pixels());
-    let close = ui
-        .allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
-            ui.label(
-                RichText::new(l10n::text(ui.ctx(), title))
-                    .strong()
-                    .size(ui.active_theme().text.dialog_title)
-                    .variation("wght", 600.0),
-            );
-            closable
-                && ui
-                    .with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        IconButton::new(&icons::CLOSE)
-                            .tooltip("Close")
-                            .show(ui)
-                            .clicked()
-                    })
-                    .inner
-        })
-        .inner;
+    let allocated = ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
+        ui.label(
+            RichText::new(l10n::text(ui.ctx(), title))
+                .strong()
+                .size(ui.active_theme().text.dialog_title)
+                .variation("wght", 600.0),
+        );
+        closable
+            && ui
+                .with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    IconButton::new(&icons::CLOSE)
+                        .tooltip("Close")
+                        .show(ui)
+                        .clicked()
+                })
+                .inner
+    });
+    let close = allocated.inner;
+    let header_rect = allocated.response.rect;
+    let drag_rect = if closable {
+        egui::Rect::from_min_max(
+            header_rect.min,
+            egui::pos2(
+                (header_rect.max.x - ButtonSize::MD.pixels() - 4.0).max(header_rect.min.x),
+                header_rect.max.y,
+            ),
+        )
+    } else {
+        header_rect
+    };
+    let drag_resp = ui.interact(
+        drag_rect,
+        ui.layer_id().id.with("dialog_header_drag"),
+        egui::Sense::drag(),
+    );
+    if drag_resp.dragged() {
+        let delta = drag_resp.drag_delta();
+        if let Some(offset_id) =
+            ui.data(|d| d.get_temp::<egui::Id>(ui.layer_id().id.with("dialog_offset_id")))
+        {
+            ui.data_mut(|d| {
+                let current = d.get_temp::<Vec2>(offset_id).unwrap_or(Vec2::ZERO);
+                d.insert_temp(offset_id, current + delta);
+            });
+        }
+    }
+    drag_resp.on_hover_cursor(egui::CursorIcon::Grab);
+
+    ui.add_space(ui.active_theme().spacing.sm);
+    ui.separator();
     ui.add_space(ui.active_theme().spacing.sm);
     close
 }

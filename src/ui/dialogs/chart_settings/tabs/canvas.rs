@@ -315,6 +315,22 @@ impl SettingsDialog {
 
                 ui.add_space(ui.active_theme().spacing.xxl);
 
+                // MOTION
+                self.draw_section_header(ui, "MOTION", theme);
+
+                self.draw_setting_row_with_controls(ui, "Zoom smoothing", theme, |ui, dialog| {
+                    ui.add(
+                        egui::DragValue::new(&mut dialog.settings.motion.zoom_ms)
+                            .range(0..=1_000)
+                            .speed(5.0)
+                            .suffix(" ms"),
+                    )
+                    .on_hover_text(l10n::text(ui.ctx(), "0 ms zooms instantly"))
+                    .accessible_name(l10n::text(ui.ctx(), "Zoom smoothing"));
+                });
+
+                ui.add_space(ui.active_theme().spacing.xxl);
+
                 // NAVIGATION BUTTONS
                 self.draw_section_header(ui, "NAVIGATION BUTTONS", theme);
 

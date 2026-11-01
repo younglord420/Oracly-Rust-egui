@@ -76,6 +76,8 @@ pub struct FloatingSelectionToolbar {
     is_visible: bool,
     /// Whether to offer an alert on the object
     alert_available: bool,
+    /// Whether to offer the Text / Label action for the object
+    text_available: bool,
     /// Last rendered rect (for hit testing)
     last_rect: Rect,
     /// Drawing id the toolbar was last anchored to (reposition when it changes)
@@ -104,6 +106,7 @@ impl FloatingSelectionToolbar {
             is_locked: false,
             is_visible: true,
             alert_available: false,
+            text_available: false,
             last_rect: Rect::NOTHING,
             anchored_to: None,
         }
@@ -136,12 +139,13 @@ impl FloatingSelectionToolbar {
         let button = DESIGN_TOKENS.sizing.floating_toolbar.button_size;
         let gap = 4.0;
         let colors = self.color_slots.len().max(1) as f32;
+        let action_icons = 4.0 + if self.text_available { 1.0 } else { 0.0 };
         Vec2::new(
             DESIGN_TOKENS.sizing.floating_toolbar.drag_handle_width
                 + colors * (button + gap)
                 + 56.0
                 + 52.0
-                + 5.0 * (button + gap)
+                + action_icons * (button + gap)
                 + 2.0 * (button + gap)
                 + 48.0,
             DESIGN_TOKENS.sizing.floating_toolbar.height,
@@ -212,6 +216,11 @@ impl FloatingSelectionToolbar {
         self.alert_available = available;
     }
 
+    /// Show the Text / Label button when the selected object supports editable text.
+    pub fn set_text_available(&mut self, available: bool) {
+        self.text_available = available;
+    }
+
     /// Render the toolbar
     pub fn show(&mut self, ui: &mut Ui) -> Option<FloatingToolbarAction> {
         if !self.visible {
@@ -264,6 +273,7 @@ impl FloatingSelectionToolbar {
         let is_locked = self.is_locked;
         let is_visible = self.is_visible;
         let alert_available = self.alert_available;
+        let text_available = self.text_available;
         let mut stroke_width = self.stroke_width;
         let mut line_style = self.line_style;
         let mut color_changes: Vec<(usize, Color32)> = Vec::new();
@@ -315,11 +325,12 @@ impl FloatingSelectionToolbar {
                             // Group 2: annotate / settings
                             Self::render_separator(ui);
 
-                            if IconButton::new(&icons::TEXT)
-                                .size(ButtonSize::MD)
-                                .tooltip("Text")
-                                .show(ui)
-                                .clicked()
+                            if text_available
+                                && IconButton::new(&icons::TEXT)
+                                    .size(ButtonSize::MD)
+                                    .tooltip("Label")
+                                    .show(ui)
+                                    .clicked()
                             {
                                 inner_action = Some(FloatingToolbarAction::OpenText);
                             }
@@ -397,8 +408,8 @@ impl FloatingSelectionToolbar {
         let drag = DESIGN_TOKENS.sizing.floating_toolbar.drag_handle_width;
         // width + style chips are wider than a plain icon.
         let chips = 56.0 + 52.0;
-        // text, settings, more, lock, delete
-        let icons = 5.0 * (button + gap);
+        // optional text, settings, more, lock, delete
+        let icons = (4.0 + if self.text_available { 1.0 } else { 0.0 }) * (button + gap);
         Vec2::new(
             drag + sep
                 + color_count as f32 * (color + gap)
@@ -595,28 +606,29 @@ impl FloatingSelectionToolbar {
             .on_hover_text(l10n::text(ui.ctx(), "Line width"));
 
         let mut picked = None;
+        let menu_w = 108.0;
         egui::Popup::menu(&response)
             .id(id)
+            .width(menu_w)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .align(RectAlign::BOTTOM_START)
             .align_alternatives(&[])
             .frame(crate::ui_kit::glass_menu(ui))
             .gap(theme.spacing.xs)
             .show(|ui| {
-                ui.set_min_width(108.0);
+                ui.set_width(menu_w);
+                ui.set_max_width(menu_w);
                 ui.spacing_mut().item_spacing.y = theme.spacing.xs;
                 for preset in LINE_WIDTHS {
                     let selected = (*width - preset).abs() < f32::EPSILON;
                     let row_h = 28.0;
-                    let (row, resp) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width(), row_h),
-                        Sense::click(),
-                    );
+                    let (row, resp) =
+                        ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
                     if selected || resp.hovered() {
                         ui.painter().rect_filled(
                             row,
                             theme.radius.sm,
-                            if selected {
+                            if resp.hovered() {
                                 theme.ui.btn_bg_active
                             } else {
                                 theme.ui.btn_bg_hover
@@ -639,7 +651,11 @@ impl FloatingSelectionToolbar {
                         egui::Align2::LEFT_CENTER,
                         format!("{preset}px"),
                         FontId::proportional(theme.text.small),
-                        theme.ui.text,
+                        if selected {
+                            theme.ui.accent
+                        } else {
+                            theme.ui.text
+                        },
                     );
                     resp.widget_info(|| {
                         WidgetInfo::selected(
@@ -700,24 +716,27 @@ impl FloatingSelectionToolbar {
             .on_hover_text(l10n::text(ui.ctx(), "Line style"));
 
         let mut picked = None;
+        let menu_w = 132.0;
         egui::Popup::menu(&response)
             .id(id)
+            .width(menu_w)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .align(RectAlign::BOTTOM_START)
             .align_alternatives(&[])
             .frame(crate::ui_kit::glass_menu(ui))
             .gap(theme.spacing.xs)
             .show(|ui| {
-                ui.set_min_width(132.0);
+                ui.set_width(menu_w);
+                ui.set_max_width(menu_w);
                 for choice in LineStyle::all() {
                     let selected = *style == *choice;
-                    let (row, resp) = ui
-                        .allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click());
+                    let (row, resp) =
+                        ui.allocate_exact_size(Vec2::new(menu_w, 28.0), Sense::click());
                     if selected || resp.hovered() {
                         ui.painter().rect_filled(
                             row,
                             theme.radius.sm,
-                            if selected {
+                            if resp.hovered() {
                                 theme.ui.btn_bg_active
                             } else {
                                 theme.ui.btn_bg_hover
@@ -734,7 +753,11 @@ impl FloatingSelectionToolbar {
                         egui::Align2::LEFT_CENTER,
                         l10n::text(ui.ctx(), choice.name()),
                         FontId::proportional(theme.text.small),
-                        theme.ui.text,
+                        if selected {
+                            theme.ui.accent
+                        } else {
+                            theme.ui.text
+                        },
                     );
                     resp.widget_info(|| {
                         WidgetInfo::selected(Role::Button, ui.is_enabled(), selected, choice.name())
@@ -851,6 +874,7 @@ mod tests {
             toolbar.set_locked(locked);
             toolbar.set_object_visible(!locked);
             toolbar.set_alert_available(locked);
+            toolbar.set_text_available(true);
             let mut frame = |tab| {
                 ctx.run_ui(
                     egui::RawInput {
@@ -881,7 +905,7 @@ mod tests {
             let expected = [
                 "2px",
                 "Solid",
-                "Text",
+                "Label",
                 "Settings",
                 "More",
                 if locked { "Unlock" } else { "Lock" },

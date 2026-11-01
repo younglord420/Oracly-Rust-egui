@@ -12,7 +12,6 @@ use crate::chart::series::calculate_dot_interval;
 use crate::localization as l10n;
 use crate::studies::{CustomIndicator, Indicator};
 use crate::theme::ThemeExt;
-use crate::tokens::DESIGN_TOKENS;
 use egui::{Pos2, Rect, Response, Sense, Ui};
 
 impl Chart {
@@ -51,7 +50,7 @@ impl Chart {
             &crate::chart::overlays::FootprintConfig,
         )>,
     ) -> Response {
-        // Panes are stacked edge to edge with explicit gaps; restore the host spacing after.
+        // Panes share one canvas surface (no gutter between price and studies).
         let host_spacing = std::mem::take(&mut ui.spacing_mut().item_spacing);
 
         let available = ui.available_rect_before_wrap();
@@ -71,14 +70,7 @@ impl Chart {
             .collect();
         let pane_count = panes.len().saturating_sub(1);
         let axis_height = self.time_axis_height().min(available.height());
-        let gap = if maximized.is_some() {
-            0.0
-        } else {
-            DESIGN_TOKENS
-                .spacing
-                .hairline
-                .min((available.height() - axis_height).max(0.0) / pane_count.max(1) as f32)
-        };
+        let gap = 0.0;
         let usable_height = (available.height() - axis_height - gap * pane_count as f32).max(0.0);
         let auto_collapse = usable_height / (3.0 + pane_count as f32) < 40.0;
         let row_height = 24.0_f32.min(usable_height / pane_count.max(1) as f32);
@@ -185,13 +177,17 @@ impl Chart {
             Pos2::new(plot.left(), available.bottom() - axis_height),
             Pos2::new(plot.right(), available.bottom()),
         );
-        let maximized_plot = maximized.filter(|id| *id != PaneId::MAIN).map(|id| {
+        // One background for the whole stack so price and study panes share a surface.
+        self.draw_background(ui.painter(), available);
+        // Shared time navigation (wheel zoom, pinch, pan) covers every pane's plot column —
+        // not only the price pane — so scrolling an indicator zooms the same timeframe.
+        let shared_plot = (panes.len() > 1).then(|| {
             ui.interact(
                 Rect::from_min_max(
                     Pos2::new(plot.left(), available.top()),
                     Pos2::new(plot.right(), time_axis.top()),
                 ),
-                ui.scope_id().with((id, "plot")),
+                ui.scope_id().with("shared_panes_plot"),
                 Sense::click_and_drag(),
             )
         });
@@ -200,7 +196,15 @@ impl Chart {
                 egui::UiBuilder::new()
                     .max_rect(main_rect)
                     .layout(egui::Layout::top_down(egui::Align::LEFT)),
-                |ui| self.show_internal(ui, Some(time_axis), maximized_plot.as_ref(), footprint),
+                |ui| {
+                    self.show_internal(
+                        ui,
+                        Some(time_axis),
+                        shared_plot.as_ref(),
+                        footprint,
+                        false,
+                    )
+                },
             )
             .inner;
 
@@ -599,6 +603,8 @@ impl Chart {
 
                 panel.legend_offset = member_row as f32 * legend_row_height;
                 panel.pane_controls = true;
+                // Parent already filled the shared stack surface.
+                panel.skip_background = true;
                 // A series legend reports its value at any bar, the last close without a crosshair.
                 panel.bar_index = hovered.or(id.filter(|_| study.is_none()).map(|_| 0));
                 let mut hover = self
@@ -712,6 +718,7 @@ impl Chart {
                         .flat_map(|id| self.primitives_of(id))
                         .collect::<Vec<_>>(),
                     study.is_none() && id.is_some(),
+                    self.shared_time_grid.as_ref(),
                 ) {
                     if !collapsed
                         && let Some(item) =
@@ -741,7 +748,7 @@ impl Chart {
                         menu,
                     } = interaction;
 
-                    let pane_response = match &maximized_plot {
+                    let pane_response = match &shared_plot {
                         Some(plot) => pane_response.union(plot.clone()),
                         None => pane_response.interact(Sense::click_and_drag()),
                     };
@@ -926,14 +933,32 @@ impl Chart {
                                 pos,
                             )
                         });
-                        if let Some(hit) = primitive_hit.or(renderer).filter(|_| {
-                            drawing.is_none()
-                                && pane_response.hovered()
-                                && !pane_response.dragged()
-                                && !eraser_mode
-                                && !drawing_tool_active
-                        }) {
-                            ui.ctx().set_cursor_icon(hit.cursor);
+                        // Crosshair stays on empty pane; drawings / studies switch to Arrow / Grab.
+                        let can_retarget_cursor = pane_response.hovered()
+                            && !pane_response.dragged()
+                            && !eraser_mode
+                            && !drawing_tool_active;
+                        if can_retarget_cursor {
+                            if let Some(hit) =
+                                primitive_hit.or(renderer).filter(|_| drawing.is_none())
+                            {
+                                ui.ctx().set_cursor_icon(hit.cursor);
+                            } else if drawing.is_some() {
+                                #[cfg(feature = "drawings")]
+                                let on_handle = drawing.is_some_and(|id| {
+                                    self.drawings.is_selected(id)
+                                        && self.drawings.hit_test_handle_by_id(pos, id).is_some()
+                                });
+                                #[cfg(not(feature = "drawings"))]
+                                let on_handle = false;
+                                ui.ctx().set_cursor_icon(if on_handle {
+                                    egui::CursorIcon::Grab
+                                } else {
+                                    egui::CursorIcon::Default
+                                });
+                            } else if study_at(pos).is_some() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                            }
                         }
                         self.host_events.target = drawing
                             .map(super::PointerTarget::Drawing)
@@ -1353,6 +1378,78 @@ mod tests {
             pointer(&ctx, &mut chart, Pos2::ZERO, None);
             assert_eq!(chart.state.time_scale().right_offset_precise(), offset);
             assert_eq!(chart.state.time_scale().bar_spacing(), spacing);
+        }
+    }
+
+    /// Stacked study panes reuse the price pane's time-grid marks and share its plot x-range.
+    #[test]
+    fn stacked_indicator_panes_share_time_grid_marks() {
+        use crate::widget::test_frames::frame;
+        let ctx = Context::default();
+        let mut chart = chart(&[100.0, 105.0], &[110.0, 115.0]);
+        chart.set_size(Some(Vec2::new(760.0, 580.0)));
+        chart.add_indicator(Box::new(RSI::new(14)));
+        frame(&ctx, &mut chart, 0.0, Vec::new());
+        let grid = chart
+            .shared_time_grid
+            .as_ref()
+            .expect("price pane caches shared time-grid marks");
+        assert!(!grid.marks.is_empty(), "time grid should have marks");
+        let price = chart.get_rendered_price_rect();
+        let pane = &chart.get_rendered_indicator_panes()[0];
+        assert!(
+            (pane.chart_rect.left() - price.left()).abs() < 0.5
+                && (pane.chart_rect.right() - price.right()).abs() < 0.5,
+            "study plot width must match price plot for continuous vertical lines"
+        );
+        assert_eq!(grid.bar_spacing, pane.coords.bar_spacing);
+        assert_eq!(grid.base_idx, pane.coords.base_idx);
+        assert!((grid.right_offset - pane.coords.right_offset).abs() < f64::EPSILON);
+    }
+
+    /// Wheel and pinch over a stacked (non-maximized) indicator pane zoom the shared timeframe.
+    #[test]
+    fn stacked_indicator_panes_share_wheel_zoom() {
+        use crate::widget::test_frames::frame;
+        let ctx = Context::default();
+        let mut chart = chart(&[100.0, 105.0], &[110.0, 115.0]);
+        chart.set_size(Some(Vec2::new(760.0, 580.0)));
+        let study = chart.add_indicator(Box::new(RSI::new(14)));
+        frame(&ctx, &mut chart, 0.0, Vec::new());
+        frame(&ctx, &mut chart, 0.1, Vec::new());
+        assert!(chart.pane_layout.maximized.is_none());
+        assert!(
+            chart
+                .get_rendered_indicator_panes()
+                .iter()
+                .any(|pane| chart.study_ids.get(pane.indicator_idx) == Some(&study)),
+            "RSI pane should be rendered"
+        );
+        let pos = chart.get_rendered_indicator_panes()[0]
+            .chart_rect
+            .center();
+        for event in [
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -20.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: Modifiers::NONE,
+            },
+            Event::Zoom(1.1),
+        ] {
+            let before = chart.state.time_scale().bar_spacing();
+            let time = ctx.input(|input| input.time) + 1.0;
+            frame(
+                &ctx,
+                &mut chart,
+                time,
+                vec![Event::PointerMoved(pos), event],
+            );
+            assert!(
+                chart.state.time_scale().bar_spacing() > before,
+                "indicator pane should zoom the shared time scale"
+            );
         }
     }
 

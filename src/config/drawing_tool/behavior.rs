@@ -93,7 +93,15 @@ impl DrawingToolType {
     }
 
     /// Whether the renderer displays the drawing's editable text.
+    ///
+    /// Primary text tools always show their content. Line and shape tools also accept an optional
+    /// annotation label painted near the geometry when `Drawing::text` is set.
     pub fn supports_text(&self) -> bool {
+        self.is_text_annotation() || self.supports_line_label()
+    }
+
+    /// Dedicated text / note tools whose body is the drawing itself.
+    pub fn is_text_annotation(&self) -> bool {
         matches!(
             self,
             Self::TextLabel
@@ -109,6 +117,39 @@ impl DrawingToolType {
                 | Self::Tweet
                 | Self::Idea
         )
+    }
+
+    /// Line and shape tools that can carry an optional user label.
+    pub fn supports_line_label(&self) -> bool {
+        matches!(
+            self,
+            Self::TrendLine
+                | Self::Ray
+                | Self::ExtendedLine
+                | Self::HorizontalLine
+                | Self::HorizontalRay
+                | Self::VerticalLine
+                | Self::CrossLine
+                | Self::InfoLine
+                | Self::Arrow
+                | Self::Path
+                | Self::Polyline
+                | Self::Rect
+                | Self::RotatedRect
+                | Self::ParallelChannel
+                | Self::FlatTopBottom
+                | Self::DisjointChannel
+        )
+    }
+
+    /// Whether the drawing properties dialog should show text styling controls
+    /// (text color, font size, bold, italic).
+    ///
+    /// Returns `true` for all non-cursor drawing tools so users can always configure
+    /// text formatting even on tools whose labels are generated automatically (Fibonacci,
+    /// Elliott waves, patterns, measurements, positions) or tools without free-form text input.
+    pub fn supports_text_style(&self) -> bool {
+        !self.is_cursor()
     }
 
     /// Returns the [`DrawingInteractionMode`] that governs how mouse input is

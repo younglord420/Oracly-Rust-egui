@@ -480,7 +480,7 @@ impl Default for ChartConfig {
             padding: 0.0,
             show_time_labels: true,
             show_ohlc_info: true,
-            title_as_description: true,
+            title_as_description: false,
             show_quote_boxes: true,
             show_ohlc_change: true,
             show_ohlc_change_percent: true,

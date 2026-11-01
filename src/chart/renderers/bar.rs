@@ -1,5 +1,6 @@
 use super::context::{BarRenderParams, RenderContext, StyleColors};
 use crate::model::{Bar, BarsStyle};
+use crate::painting::pixel_snap::PixelSnap;
 use crate::scales::PriceMap;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Pos2, Stroke};
@@ -30,39 +31,36 @@ pub fn render_ohlc_bar(
     let open_y = price_scale.price_to_y(bar.open);
     let close_y = price_scale.price_to_y(bar.close);
 
+    let snap = PixelSnap::of(context.painter);
     let stroke = Stroke::new(
-        if style.thin_bars {
+        snap.line_width(if style.thin_bars {
             params.wick_width
         } else {
             (params.width / 2.0).max(DESIGN_TOKENS.stroke.medium)
-        },
+        }),
         color,
     );
+    let x = snap.line_center(params.x, stroke.width);
+    let y = |price_y| snap.line_center(price_y, stroke.width);
 
     // Draw vertical line from high to low
-    context.painter.line_segment(
-        [Pos2::new(params.x, high_y), Pos2::new(params.x, low_y)],
-        stroke,
-    );
+    let (top, bottom) = snap.vertical_span(high_y.min(low_y), high_y.max(low_y), 0.0);
+    context
+        .painter
+        .line_segment([Pos2::new(x, top), Pos2::new(x, bottom)], stroke);
 
     // Draw horizontal tick for open (left side)
-    let tick_width = params.width / 2.0;
+    let (left, right) = snap.bar_span(params.x, params.width);
     if style.open_visible {
         context.painter.line_segment(
-            [
-                Pos2::new(params.x - tick_width, open_y),
-                Pos2::new(params.x, open_y),
-            ],
+            [Pos2::new(left, y(open_y)), Pos2::new(x, y(open_y))],
             stroke,
         );
     }
 
     // Draw horizontal tick for close (right side)
     context.painter.line_segment(
-        [
-            Pos2::new(params.x, close_y),
-            Pos2::new(params.x + tick_width, close_y),
-        ],
+        [Pos2::new(x, y(close_y)), Pos2::new(right, y(close_y))],
         stroke,
     );
 }

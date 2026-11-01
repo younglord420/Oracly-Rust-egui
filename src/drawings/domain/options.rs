@@ -88,6 +88,62 @@ impl ArrowStyle {
 
 pub use crate::config::FontWeight;
 
+/// Vertical placement of a label relative to its line or shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+pub enum TextVerticalAlign {
+    /// Positioned above the line or top edge.
+    #[default]
+    Top,
+    /// Centered on the line or middle of the shape.
+    Middle,
+    /// Positioned below the line or bottom edge.
+    Bottom,
+}
+
+impl TextVerticalAlign {
+    /// All vertical alignment choices in UI order.
+    pub fn all() -> &'static [Self] {
+        &[Self::Top, Self::Middle, Self::Bottom]
+    }
+
+    /// Display name for UI controls.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Top => "Top",
+            Self::Middle => "Middle",
+            Self::Bottom => "Bottom",
+        }
+    }
+}
+
+/// Horizontal placement of a label along its line or shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
+pub enum TextHorizontalAlign {
+    /// Near the start anchor / left edge.
+    Left,
+    /// Centered between the anchors.
+    #[default]
+    Center,
+    /// Near the end anchor / right edge.
+    Right,
+}
+
+impl TextHorizontalAlign {
+    /// All horizontal alignment choices in UI order.
+    pub fn all() -> &'static [Self] {
+        &[Self::Left, Self::Center, Self::Right]
+    }
+
+    /// Display name for UI controls.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Center => "Center",
+            Self::Right => "Right",
+        }
+    }
+}
+
 /// Per-timeframe visibility configuration
 ///
 /// Allows drawings to be visible only on specific timeframes.

@@ -1,8 +1,14 @@
 //! Common drawing styles applied to renderer primitives.
 
-use crate::drawings::{ArrowStyle, Drawing, DrawingToolType, FontWeight};
+use crate::drawings::{
+    ArrowStyle, Drawing, DrawingToolType, FontWeight, TextHorizontalAlign, TextVerticalAlign,
+};
 use crate::model::LineStyle;
-use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, epaint::ColorMode, layers::ShapeIdx};
+use egui::{
+    Color32, Painter, Pos2, Rect, Shape, Stroke,
+    epaint::{ColorMode, TextShape},
+    layers::ShapeIdx,
+};
 
 impl Drawing {
     /// Size annotations before laying out both the text and its surrounding box.
@@ -10,11 +16,172 @@ impl Drawing {
         egui::FontId::proportional(crate::styles::typography::font_size(self.font_size))
     }
 
+    /// Optional user label for line/shape tools that support annotations.
+    ///
+    /// Primary text tools already paint their body; this only draws when `supports_line_label`
+    /// is set and `text` is non-empty. Sloped lines rotate the label to match the line angle
+    /// (always kept upright right-side-up) and offset it above, on, or below the line.
+    /// When `TextVerticalAlign::Middle` is active on a line tool, the underlying line segment
+    /// is split around the label so the line does not strike through the text.
+    pub(super) fn paint_optional_line_label(&self, painter: &Painter, start: usize, rect: Rect) {
+        if !self.tool_type.supports_line_label() {
+            return;
+        }
+        let Some(text) = self.text.as_deref().filter(|t| !t.is_empty()) else {
+            return;
+        };
+        let color = self.text_color32();
+        let font = self.annotation_font();
+        let galley = if self.font_italic {
+            let mut job =
+                egui::text::LayoutJob::single_section(text.to_owned(), egui::TextFormat {
+                    font_id: font.clone(),
+                    color,
+                    italics: true,
+                    ..Default::default()
+                });
+            job.wrap.max_width = f32::INFINITY;
+            painter.layout_job(job)
+        } else {
+            painter.layout_no_wrap(text.to_owned(), font.clone(), color)
+        };
+        let Some((shape, line_cut)) = self.place_line_label_shape(galley, color, rect) else {
+            return;
+        };
+        if let Some((left_pt, u, t0, t1)) = line_cut {
+            painter.ctx().graphics_mut(|g| {
+                let list = g.entry(painter.layer_id());
+                for index in start..list.next_idx().0 {
+                    list.mutate_shape(ShapeIdx(index), |s| {
+                        cut_line_segment_for_label(&mut s.shape, left_pt, u, t0, t1);
+                    });
+                }
+            });
+        }
+        if self.font_weight == FontWeight::Bold {
+            let mut weighted = shape.clone();
+            let dir = egui::vec2(shape.angle.cos(), shape.angle.sin());
+            weighted.pos += dir * 0.5;
+            painter.add(Shape::Text(shape));
+            painter.add(Shape::Text(weighted));
+        } else {
+            painter.add(Shape::Text(shape));
+        }
+    }
+
+    fn place_line_label_shape(
+        &self,
+        galley: std::sync::Arc<egui::Galley>,
+        color: Color32,
+        rect: Rect,
+    ) -> Option<(TextShape, Option<(Pos2, egui::Vec2, f32, f32)>)> {
+        let size = galley.size();
+        let gap = (self.stroke_width * 0.5 + 5.0).max(6.0);
+
+        // Axis-aligned rectangle: place horizontally at top/middle/bottom and left/center/right.
+        if self.tool_type == DrawingToolType::Rect
+            && let [p1, p2, ..] = self.points.as_slice()
+        {
+            let r = Rect::from_two_pos(*p1, *p2);
+            let x = match self.text_h_align {
+                TextHorizontalAlign::Left => r.left() + 8.0,
+                TextHorizontalAlign::Center => r.center().x - size.x * 0.5,
+                TextHorizontalAlign::Right => (r.right() - 8.0 - size.x).max(r.left() + 4.0),
+            }
+            .round();
+            let y = match self.text_v_align {
+                TextVerticalAlign::Top => r.top() - size.y - 4.0,
+                TextVerticalAlign::Middle => r.center().y - size.y * 0.5,
+                TextVerticalAlign::Bottom => r.bottom() + 4.0,
+            }
+            .round();
+            return Some((TextShape::new(Pos2::new(x, y), galley, color), None));
+        }
+
+        // Determine the primary segment (a -> b) along which the label runs.
+        let (a, b) = match (self.tool_type, self.points.as_slice()) {
+            (_, []) => return None,
+            (DrawingToolType::HorizontalLine, [only, ..]) => (
+                Pos2::new(rect.left() + 16.0, only.y),
+                Pos2::new(rect.right() - 16.0, only.y),
+            ),
+            (DrawingToolType::HorizontalRay, [only, ..]) => (
+                Pos2::new(only.x.max(rect.left() + 8.0), only.y),
+                Pos2::new(rect.right() - 16.0, only.y),
+            ),
+            (DrawingToolType::VerticalLine, [only, ..]) => (
+                Pos2::new(only.x, rect.top() + 16.0),
+                Pos2::new(only.x, rect.bottom() - 16.0),
+            ),
+            (DrawingToolType::CrossLine, [only, ..]) => (
+                Pos2::new(rect.left() + 16.0, only.y),
+                Pos2::new(rect.right() - 16.0, only.y),
+            ),
+            (_, [only]) => (*only, *only + egui::vec2(1.0, 0.0)),
+            (_, [p0, p1, ..]) => (*p0, *p1),
+        };
+
+        // Ensure left-to-right reading order so rotated text is never upside-down.
+        let (left_pt, right_pt) = if a.x < b.x || (a.x == b.x && a.y <= b.y) {
+            (a, b)
+        } else {
+            (b, a)
+        };
+
+        let delta = right_pt - left_pt;
+        let len = delta.length();
+        let (u, mut angle) = if len > 1e-3 {
+            (delta / len, delta.angle())
+        } else {
+            (egui::vec2(1.0, 0.0), 0.0)
+        };
+        if angle.abs() < 1e-3 {
+            angle = 0.0;
+        }
+        // Screen-upward normal vector (`u` points rightwards, so `n.y <= 0`).
+        let n_up = egui::vec2(u.y, -u.x);
+
+        let anchor_t = match self.text_h_align {
+            TextHorizontalAlign::Left => 8.0_f32.min(len * 0.25),
+            TextHorizontalAlign::Center => len * 0.5,
+            TextHorizontalAlign::Right => len - 8.0_f32.min(len * 0.25),
+        };
+        let anchor = left_pt + u * anchor_t;
+
+        let along_shift = match self.text_h_align {
+            TextHorizontalAlign::Left => 0.0,
+            TextHorizontalAlign::Center => -size.x * 0.5,
+            TextHorizontalAlign::Right => -size.x,
+        };
+        let perp_shift = match self.text_v_align {
+            TextVerticalAlign::Top => size.y + gap,
+            TextVerticalAlign::Middle => size.y * 0.5,
+            TextVerticalAlign::Bottom => -gap,
+        };
+
+        let mut top_left = anchor + u * along_shift + n_up * perp_shift;
+        if angle == 0.0 {
+            top_left = Pos2::new(top_left.x.round(), top_left.y.round());
+        }
+
+        let line_cut = (self.text_v_align == TextVerticalAlign::Middle && len > size.x + 12.0)
+            .then(|| {
+                let pad = 6.0;
+                let t0 = anchor_t + along_shift - pad;
+                let t1 = anchor_t + along_shift + size.x + pad;
+                (left_pt, u, t0, t1)
+            });
+
+        Some((TextShape::new(top_left, galley, color).with_angle(angle), line_cut))
+    }
+
     /// Apply line patterns and font weight without changing the renderer's widths or fills.
     pub(super) fn finish_style(&self, painter: &Painter, start: usize, rect: Rect) {
         let styled = self.fill_color.is_some()
+            || self.text_color.is_some()
             || self.line_style != LineStyle::Solid
             || self.font_weight == FontWeight::Bold
+            || self.font_italic
             || self.extend_left
             || self.extend_right;
         let clip = crate::painting::dashed_line::finite_clip(painter);
@@ -94,10 +261,29 @@ impl Drawing {
             return;
         }
         if let Shape::Text(t) = shape {
+            if let Some(custom_color) = self
+                .text_color
+                .map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+            {
+                t.override_text_color = Some(custom_color);
+                t.fallback_color = custom_color;
+            }
+            if self.font_italic && !t.galley.job.sections.iter().any(|s| s.format.italics) {
+                let mut galley = (*t.galley).clone();
+                for placed in &mut galley.rows {
+                    let bottom = placed.rect().height();
+                    let row = std::sync::Arc::make_mut(&mut placed.row);
+                    for v in &mut row.visuals.mesh.vertices {
+                        v.pos.x += (bottom - v.pos.y) * 0.18;
+                    }
+                }
+                t.galley = std::sync::Arc::new(galley);
+            }
             if self.font_weight == FontWeight::Bold {
                 // Synthetic weight keeps host font families and fallback glyphs intact.
                 let mut weighted = t.clone();
-                weighted.pos.x += 0.6;
+                let dir = egui::vec2(t.angle.cos(), t.angle.sin());
+                weighted.pos += dir * 0.5;
                 *shape = Shape::Vec(vec![Shape::Text(t.clone()), Shape::Text(weighted)]);
             }
             return;
@@ -344,6 +530,65 @@ impl Drawing {
                 ));
             }
         }
+    }
+}
+
+/// Cuts any line segment that lies collinearly on the ray `(left_pt, u)` across `[t0, t1]`
+/// so a `TextVerticalAlign::Middle` label sits inside a clean gap in the line.
+fn cut_line_segment_for_label(
+    shape: &mut Shape,
+    left_pt: Pos2,
+    u: egui::Vec2,
+    t0: f32,
+    t1: f32,
+) {
+    match shape {
+        Shape::Vec(shapes) => {
+            for s in shapes {
+                cut_line_segment_for_label(s, left_pt, u, t0, t1);
+            }
+        }
+        Shape::LineSegment { points, stroke } => {
+            let [p0, p1] = *points;
+            let stroke = *stroke;
+            let n = egui::vec2(u.y, -u.x);
+            let d0 = (p0 - left_pt).dot(n).abs();
+            let d1 = (p1 - left_pt).dot(n).abs();
+            if d0 > 2.0 || d1 > 2.0 {
+                return;
+            }
+            let s0 = (p0 - left_pt).dot(u);
+            let s1 = (p1 - left_pt).dot(u);
+            let (seg_min, seg_max, a_pt, b_pt) = if s0 <= s1 {
+                (s0, s1, p0, p1)
+            } else {
+                (s1, s0, p1, p0)
+            };
+            if t1 <= seg_min || t0 >= seg_max {
+                return;
+            }
+            let mut pieces = Vec::new();
+            if t0 > seg_min + 1.0 {
+                let cut_a = left_pt + u * t0 + n * (a_pt - left_pt).dot(n);
+                pieces.push(Shape::LineSegment {
+                    points: [a_pt, cut_a],
+                    stroke,
+                });
+            }
+            if t1 < seg_max - 1.0 {
+                let cut_b = left_pt + u * t1 + n * (b_pt - left_pt).dot(n);
+                pieces.push(Shape::LineSegment {
+                    points: [cut_b, b_pt],
+                    stroke,
+                });
+            }
+            *shape = match pieces.len() {
+                0 => Shape::Noop,
+                1 => pieces.pop().unwrap(),
+                _ => Shape::Vec(pieces),
+            };
+        }
+        _ => {}
     }
 }
 

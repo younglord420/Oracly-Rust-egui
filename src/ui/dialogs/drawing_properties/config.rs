@@ -26,11 +26,11 @@ impl Default for DrawingPropertiesConfig {
         let settings = &DESIGN_TOKENS.sizing.settings_dialog;
         let theme = crate::theme::Theme::default();
         Self {
-            width: 360.0,
+            width: 332.0,
             height: 0.0,
             tab_height: settings.tab_height,
-            content_padding: theme.spacing.md,
-            row_spacing: theme.spacing.sm,
+            content_padding: theme.spacing.sm,
+            row_spacing: theme.spacing.xs,
             label_width: settings.label_width,
             control_width: settings.dropdown_width,
         }

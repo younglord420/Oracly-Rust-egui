@@ -396,39 +396,47 @@ impl ChartLayout {
                     if focus {
                         response.request_focus();
                     }
-                    if index == self.active
-                        && (ui.rect_contains_pointer(rect) || egui::Popup::is_any_open(ui.ctx()))
+                    // Multi-tile layouts expose maximize/restore at the canvas top-right; Detach
+                    // and Sync group stay available through the host API, not this overlay.
+                    if count > 1
+                        && index == self.active
                         && charts[index]
                             .pane_layout
                             .maximized
                             .is_none_or(|pane| pane == super::PaneId::MAIN)
                     {
-                        let button = ui.put(
-                            Rect::from_min_size(
-                                rect.min
-                                    + Vec2::new(
-                                        (rect.width()
-                                            - if rect.width() < 600.0 { 22.0 } else { 100.0 })
-                                        .max(0.0),
-                                        2.0,
-                                    ),
-                                Vec2::splat(20.0),
-                            ),
-                            egui::Button::new("…").frame(false),
+                        let plot = charts[index].get_rendered_price_rect();
+                        let button = Rect::from_min_size(
+                            egui::pos2(plot.right() - 22.0, plot.top() + 2.0),
+                            Vec2::splat(20.0),
                         );
-                        egui::Popup::menu(&button)
-                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                            .show(|ui| {
-                                if ui.button(l10n::text(ui.ctx(), "Detach chart")).clicked() {
-                                    self.detached[index] = true;
-                                    ui.close();
-                                }
-                                ui.label(l10n::text(ui.ctx(), "Sync group"));
-                                let mut group = self.groups[index].clone().unwrap_or_default();
-                                if ui.text_edit_singleline(&mut group).changed() {
-                                    self.groups[index] = (!group.is_empty()).then_some(group);
-                                }
-                            });
+                        let maximized = self.maximized == Some(index);
+                        let response = ui
+                            .interact(
+                                button,
+                                ui.scope_id().with(("chart_maximize", index)),
+                                egui::Sense::click(),
+                            )
+                            .on_hover_text(l10n::text(
+                                ui.ctx(),
+                                if maximized {
+                                    "Restore chart"
+                                } else {
+                                    "Maximize chart"
+                                },
+                            ));
+                        if maximized
+                            || response.hovered()
+                            || ui.rect_contains_pointer(rect)
+                            || egui::Popup::is_any_open(ui.ctx())
+                        {
+                            super::pane_layout::paint_maximize_icon(ui, button, maximized);
+                        }
+                        if response.clicked() {
+                            self.maximized = if maximized { None } else { Some(index) };
+                            self.set_active(index);
+                            ui.ctx().request_repaint();
+                        }
                     }
                 },
             );
@@ -684,14 +692,27 @@ mod tests {
                     );
                 },
             );
-            let group = output.shapes.iter().find_map(|shape| match &shape.shape {
-                egui::Shape::Text(text) if text.galley.text() == "Sync group" => {
-                    Some(text.pos + text.galley.size() / 2.0)
+            let active = layout.active().min(charts.len() - 1);
+            let plot = charts[active].get_rendered_price_rect();
+            let button = Rect::from_min_size(
+                pos2(plot.right() - 22.0, plot.top() + 2.0),
+                vec2(20.0, 20.0),
+            );
+            let control = output.shapes.iter().any(|shape| match &shape.shape {
+                egui::Shape::LineSegment { points, .. } => {
+                    button.contains(points[0]) || button.contains(points[1])
                 }
-                _ => None,
+                egui::Shape::Rect(rect)
+                    if rect.stroke.width > 0.0
+                        && rect.rect.width() <= 14.0
+                        && rect.rect.height() <= 14.0 =>
+                {
+                    button.intersects(rect.rect)
+                }
+                _ => false,
             });
             output.drop_without_applying_deltas();
-            group
+            control
         };
         frame(&mut layout, &mut charts, vec![]);
         let point = charts[1].get_rendered_price_rect().center();
@@ -750,35 +771,29 @@ mod tests {
                 modifiers: Default::default(),
             }],
         );
-        // A group editor can overlap the next panel without activating that panel.
+        // Maximize sits at the tile's top-right and toggles without activating the neighbour.
         let click = |pos, pressed| Event::PointerButton {
             pos,
             button: PointerButton::Primary,
             pressed,
             modifiers: Default::default(),
         };
-        let corner = pos2(308.0, 12.0);
+        let corner = {
+            let plot = charts[0].get_rendered_price_rect();
+            pos2(plot.right() - 12.0, plot.top() + 12.0)
+        };
         frame(&mut layout, &mut charts, vec![Event::PointerMoved(corner)]);
+        assert!(
+            frame(&mut layout, &mut charts, vec![]),
+            "maximize control paints on the active tile"
+        );
         frame(&mut layout, &mut charts, vec![click(corner, true)]);
         frame(&mut layout, &mut charts, vec![click(corner, false)]);
-        frame(&mut layout, &mut charts, vec![]);
-        let input =
-            frame(&mut layout, &mut charts, vec![]).expect("group editor") + vec2(100.0, 18.0);
-        assert!(input.x > 320.0);
-        frame(&mut layout, &mut charts, vec![Event::PointerMoved(input)]);
-        frame(&mut layout, &mut charts, vec![click(input, true)]);
-        frame(&mut layout, &mut charts, vec![click(input, false)]);
-        frame(&mut layout, &mut charts, vec![Event::Text("Desk".into())]);
-        assert_eq!(layout.sync_group(0), Some("Desk"));
+        assert_eq!(layout.maximized, Some(0));
         assert_eq!(layout.active(), 0);
-        let escape = Event::Key {
-            key: egui::Key::Escape,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: Default::default(),
-        };
-        frame(&mut layout, &mut charts, vec![escape]);
+        layout.maximized = None;
+        layout.set_sync_group(0, Some("Desk".into()));
+        assert_eq!(layout.sync_group(0), Some("Desk"));
         layout.set_sync_group(0, None);
         frame(&mut layout, &mut charts, vec![Event::PointerMoved(point)]);
         frame(&mut layout, &mut charts, vec![click(point, true)]);

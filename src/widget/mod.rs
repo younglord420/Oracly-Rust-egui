@@ -401,6 +401,9 @@ pub struct Chart {
     /// Last rendered indicator pane info for hit testing
     /// Each entry: (indicator_index, panel_rect, chart_rect, y_min, y_max, coords)
     pub(crate) last_rendered_indicator_panes: Vec<RenderedIndicatorPane>,
+    /// Time-grid marks painted on the price pane this frame, reused by study panes so vertical
+    /// lines stay continuous across the stack.
+    pub(crate) shared_time_grid: Option<indicator_pane::SharedTimeGrid>,
     // =========================================================================
     // Multi-Chart Sync State
     // =========================================================================

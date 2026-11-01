@@ -274,12 +274,7 @@ impl<'a> ColorPicker<'a> {
         let visuals = ui.style().visuals.clone();
         let bg_color = visuals.faint_bg_color;
 
-        let well = self.well_size.unwrap_or_else(|| {
-            ui.spacing()
-                .interact_size
-                .y
-                .max(DESIGN_TOKENS.sizing.button_md)
-        });
+        let well = self.well_size.unwrap_or(26.0);
         let compact = self.well_size.is_some();
         let btn_size = Vec2::splat(well);
         let (btn_rect, mut btn_res) = ui.allocate_exact_size(btn_size, Sense::click());
@@ -349,103 +344,35 @@ impl<'a> ColorPicker<'a> {
     fn show_popup(&mut self, ui: &mut Ui) -> Option<Color32> {
         let mut color_changed = None;
         let popup_pos = self.state.popup_pos.unwrap_or(ui.cursor().min);
-
-        // Get colors from theme (fall back to config if set, otherwise use visuals)
-        let visuals = ui.style().visuals.clone();
-        let popup_bg = if self.config.bg_color == Color32::TRANSPARENT {
-            visuals.window_fill
-        } else {
-            self.config.bg_color
-        };
-        // The floating border, which dialogs that restyle their widgets leave alone.
-        let popup_border = if self.config.border_color == Color32::TRANSPARENT {
-            visuals.window_stroke.color
-        } else {
-            self.config.border_color
-        };
-        let separator_color = popup_border;
-
-        // Calculate popup size
-        let cols = 10;
-        let popup_width = self.config.padding * 2.0
-            + (self.config.swatch_size * cols as f32)
-            + (self.config.swatch_spacing * (cols - 1) as f32);
-        // Draw popup using an egui Area
         let nested_popup_open = egui::Popup::is_any_open(ui.ctx());
+
         let area = egui::Area::new(self.id.with("popup"))
             .fixed_pos(popup_pos)
             .order(egui::Order::Foreground)
+            .constrain(true)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style())
-                    .fill(popup_bg)
-                    .stroke(Stroke::new(DESIGN_TOKENS.stroke.hairline, popup_border))
-                    .inner_margin(self.config.padding)
-                    .show(ui, |ui| {
-                        ui.set_width(popup_width - self.config.padding * 2.0);
-                        // Grayscale row
-                        if let Some(color) = self.draw_color_row(ui, &GRAYSCALE) {
-                            color_changed = Some(color);
+                crate::ui_kit::glass_menu(ui).show(ui, |ui| {
+                    ui.set_min_width(200.0);
+                    let mut current = self.state.sel_color;
+                    if show_palette(ui, &mut current) {
+                        color_changed = Some(current);
+                    }
+                    if self.state.custom_mode {
+                        ui.add_space(ui.active_theme().spacing.sm);
+                        let mut custom = self.state.custom_color;
+                        if ui.color_edit_button_srgba(&mut custom).changed() {
+                            self.state.custom_color = custom;
+                            color_changed = Some(custom);
                         }
-
-                        // Main colors row
-                        if let Some(color) = self.draw_color_row(ui, &MAIN_COLORS) {
-                            color_changed = Some(color);
-                        }
-
-                        ui.add_space(ui.active_theme().spacing.lg);
-
-                        // Separator
-                        let sep_rect = ui.available_rect_before_wrap();
-                        ui.painter().hline(
-                            sep_rect.x_range(),
-                            sep_rect.min.y,
-                            Stroke::new(DESIGN_TOKENS.stroke.hairline, separator_color),
-                        );
-                        ui.add_space(ui.active_theme().spacing.lg);
-
-                        // Color variations
-                        for row in &COLOR_VARIATIONS {
-                            if let Some(color) = self.draw_color_row(ui, row) {
-                                color_changed = Some(color);
-                            }
-                        }
-
-                        ui.add_space(ui.active_theme().spacing.lg);
-
-                        // Separator
-                        let sep_rect = ui.available_rect_before_wrap();
-                        ui.painter().hline(
-                            sep_rect.x_range(),
-                            sep_rect.min.y,
-                            Stroke::new(DESIGN_TOKENS.stroke.hairline, separator_color),
-                        );
-                        ui.add_space(ui.active_theme().spacing.lg);
-
-                        // Custom color button
-                        self.draw_custom_color_btn(ui);
-
-                        // If custom mode is active, show color editor
-                        if self.state.custom_mode {
-                            ui.add_space(ui.active_theme().spacing.lg);
-                            let mut custom = self.state.custom_color;
-                            if ui.color_edit_button_srgba(&mut custom).changed() {
-                                self.state.custom_color = custom;
-                                color_changed = Some(custom);
-                            }
-                            ui.add_space(ui.active_theme().spacing.sm);
-                            if ui.small_button(l10n::text(ui.ctx(), "Apply")).clicked() {
-                                color_changed = Some(self.state.custom_color);
-                                self.state.is_open = false;
-                            }
-                        }
-                    });
+                    }
+                });
             });
 
         if self.state.just_opened {
             self.state.just_opened = false;
         } else if !nested_popup_open
             && !egui::Popup::is_any_open(ui.ctx())
-            && ui.input(|i| i.pointer.any_released())
+            && ui.input(|i| i.pointer.any_pressed())
             && ui
                 .input(|i| i.pointer.interact_pos())
                 .is_some_and(|pos| !area.response.rect.contains(pos))
@@ -453,17 +380,15 @@ impl<'a> ColorPicker<'a> {
             self.state.is_open = false;
         }
 
-        // If color changed, update state and close popup
         if let Some(color) = color_changed {
             self.state.sel_color = color;
-            if !self.state.custom_mode {
-                self.state.is_open = false;
-            }
+            self.state.custom_color = color;
         }
 
         color_changed
     }
 
+    #[cfg(test)]
     fn draw_color_row(&self, ui: &mut Ui, colors: &[Color32]) -> Option<Color32> {
         let mut selected = None;
 
@@ -535,75 +460,6 @@ impl<'a> ColorPicker<'a> {
         ui.add_space(self.config.row_spacing);
 
         selected
-    }
-
-    /// The hex and opacity row; clicking it toggles the custom colour editor.
-    fn draw_custom_color_btn(&mut self, ui: &mut Ui) {
-        let visuals = ui.style().visuals.clone();
-        let (rect, response) = ui.allocate_exact_size(
-            Vec2::new(ui.available_width(), DESIGN_TOKENS.sizing.button_md),
-            Sense::click(),
-        );
-        let translated_label = l10n::text(ui.ctx(), "Custom colour");
-        response
-            .widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), &translated_label));
-
-        let border_color = if response.hovered() || self.state.custom_mode {
-            visuals.widgets.hovered.fg_stroke.color
-        } else {
-            visuals.window_stroke.color
-        };
-        crate::styles::focus::draw_focus_ring(ui, &response, ui.active_theme().radius.sm);
-        let painter = ui.painter();
-        painter.rect_stroke(
-            rect,
-            ui.active_theme().radius.sm,
-            Stroke::new(DESIGN_TOKENS.stroke.hairline, border_color),
-            StrokeKind::Inside,
-        );
-
-        let font = egui::TextStyle::Body.resolve(ui.style());
-        let label_color = visuals.widgets.noninteractive.fg_stroke.color;
-        let value_color = visuals.widgets.hovered.fg_stroke.color;
-        let gap = ui.active_theme().spacing.sm;
-        let y = rect.center().y;
-        let opacity = format!("{}%", (f32::from(self.state.sel_color.a()) / 2.55).round());
-
-        let label = painter.text(
-            egui::pos2(rect.left() + ui.active_theme().spacing.lg, y),
-            egui::Align2::LEFT_CENTER,
-            l10n::text(ui.ctx(), "Hex"),
-            font.clone(),
-            label_color,
-        );
-        painter.text(
-            egui::pos2(label.right() + gap, y),
-            egui::Align2::LEFT_CENTER,
-            l10n::text(ui.ctx(), hex(self.state.sel_color)),
-            font.clone(),
-            value_color,
-        );
-        let value = painter.text(
-            egui::pos2(rect.right() - ui.active_theme().spacing.lg, y),
-            egui::Align2::RIGHT_CENTER,
-            l10n::text(ui.ctx(), opacity),
-            font.clone(),
-            value_color,
-        );
-        painter.text(
-            egui::pos2(value.left() - gap, y),
-            egui::Align2::RIGHT_CENTER,
-            l10n::text(ui.ctx(), "Opacity"),
-            font,
-            label_color,
-        );
-
-        if response.clicked() {
-            if !self.state.custom_mode {
-                self.state.custom_color = self.state.sel_color;
-            }
-            self.state.custom_mode = !self.state.custom_mode;
-        }
     }
 }
 
@@ -998,7 +854,7 @@ mod tests {
                 ColorPickerState::new(current)
             };
             let mut frame = |events: Vec<Event>| {
-                let mut hex_row = Rect::NOTHING;
+                let mut opacity_row = Rect::NOTHING;
                 let mut well = Rect::NOTHING;
                 let output = ctx.run_ui(
                     RawInput {
@@ -1010,21 +866,21 @@ mod tests {
                         ..Default::default()
                     },
                     |ui| {
-                        well = Rect::from_min_size(ui.cursor().min, Vec2::splat(28.0));
+                        well = Rect::from_min_size(ui.cursor().min, Vec2::splat(26.0));
                         ColorPicker::new(&mut state, "picker-test").show(ui);
                     },
                 );
                 for shape in &output.shapes {
                     if let egui::Shape::Text(text) = &shape.shape
-                        && text.galley.job.text == "Hex"
+                        && text.galley.job.text == "Opacity"
                     {
-                        hex_row = text.visual_bounding_rect();
+                        opacity_row = text.visual_bounding_rect();
                     }
                 }
                 output.drop_without_applying_deltas();
                 (
                     well,
-                    hex_row,
+                    opacity_row,
                     state.clone(),
                     ctx.input(|i| i.key_pressed(Key::Escape)),
                 )
@@ -1048,12 +904,9 @@ mod tests {
             };
             let (well, _, _, _) = frame(vec![]);
             frame(click(well.center()));
-            let (_, row, _, _) = frame(vec![]);
+            let (_, row, state, _) = frame(vec![]);
             assert!(row.is_finite());
-            frame(click(row.center()));
-            let (_, _, state, _) = frame(vec![]);
-            assert!(state.is_open && state.custom_mode, "Hex closed the popup");
-            assert_eq!(state.custom_color, current);
+            assert!(state.is_open);
             let (_, _, state, escape) = frame(vec![Event::Key {
                 key: Key::Escape,
                 physical_key: None,
@@ -1061,10 +914,10 @@ mod tests {
                 repeat: false,
                 modifiers: Modifiers::NONE,
             }]);
-            assert!(!state.is_open && !state.custom_mode);
+            assert!(!state.is_open);
             assert!(!escape, "Escape must be consumed");
             let (_, _, state, _) = frame(click(well.center()));
-            assert!(state.is_open && !state.custom_mode);
+            assert!(state.is_open);
         }
     }
 

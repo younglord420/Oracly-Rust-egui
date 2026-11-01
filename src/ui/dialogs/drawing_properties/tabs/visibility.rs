@@ -3,8 +3,6 @@
 use crate::localization as l10n;
 use crate::theme::ThemeExt;
 use crate::ui::dialogs::drawing_properties::actions::DrawingProps;
-use crate::ui_kit::buttons::combo_chevron;
-use crate::ui_kit::form_control_width_for;
 use egui::{Align, Layout, Ui};
 
 /// Available timeframes, named as `Timeframe::as_str` names them for the chart's interval label.
@@ -78,9 +76,12 @@ impl VisibilityTab {
     pub fn show(ui: &mut Ui, props: &mut DrawingProps) {
         let mut preset = ShowOnPreset::from_props(props);
         let theme = ui.active_theme();
-        let combo_w = form_control_width_for(ui).min(160.0);
+        let control_h = super::style::control_row_height(ui);
+        ui.spacing_mut().interact_size.y = control_h;
+        let combo_w = super::style::control_column_width(ui);
 
         ui.horizontal(|ui| {
+            ui.set_min_height(control_h);
             ui.spacing_mut().item_spacing.x = theme.spacing.sm;
             ui.label(
                 egui::RichText::new(l10n::text(ui.ctx(), "Show on chart"))
@@ -88,54 +89,60 @@ impl VisibilityTab {
                     .color(theme.ui.text_secondary),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let selected = l10n::text(ui.ctx(), preset.label());
-                let response = egui::ComboBox::from_id_salt("drawing_props_show_on")
-                    .icon(combo_chevron)
-                    .selected_text(egui::RichText::new(selected).size(theme.text.body))
-                    .width(combo_w)
-                    .show_ui(ui, |ui| {
-                        for choice in [
-                            ShowOnPreset::All,
-                            ShowOnPreset::Intraday,
-                            ShowOnPreset::HourlyAndUp,
-                            ShowOnPreset::Custom,
-                        ] {
-                            let label = l10n::text(ui.ctx(), choice.label());
-                            if ui.selectable_label(preset == choice, label).clicked()
-                                && preset != choice
-                            {
-                                choice.apply(props);
-                                preset = choice;
-                            }
-                        }
-                    })
-                    .response;
-                response.accessible_name(l10n::text(ui.ctx(), "Show on chart"));
+                let before = preset;
+                let ctx = ui.ctx().clone();
+                super::style::text_combo_popup(
+                    ui,
+                    "drawing_props_show_on",
+                    "Show on chart",
+                    &mut preset,
+                    &[
+                        ShowOnPreset::All,
+                        ShowOnPreset::Intraday,
+                        ShowOnPreset::HourlyAndUp,
+                        ShowOnPreset::Custom,
+                    ],
+                    |choice| l10n::text(&ctx, choice.label()),
+                    combo_w.min(ui.available_width()),
+                    control_h,
+                );
+                if preset != before {
+                    preset.apply(props);
+                }
             });
         });
 
         if matches!(preset, ShowOnPreset::Custom) {
-            ui.add_space(theme.spacing.sm);
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing.x = theme.spacing.md;
-                ui.spacing_mut().item_spacing.y = theme.spacing.xs;
-                for tf in TIMEFRAMES {
-                    let mut is_visible = props.visible_timeframes.contains(&tf.to_string());
-                    if ui
-                        .checkbox(&mut is_visible, l10n::text(ui.ctx(), *tf))
-                        .changed()
-                    {
-                        if is_visible {
-                            if !props.visible_timeframes.contains(&tf.to_string()) {
-                                props.visible_timeframes.push(tf.to_string());
+            ui.add_space(theme.spacing.xs);
+            egui::Grid::new("drawing_props_custom_timeframes")
+                .num_columns(3)
+                .spacing([theme.spacing.lg, theme.spacing.xs])
+                .min_col_width((ui.available_width() - theme.spacing.lg * 2.0) / 3.0)
+                .show(ui, |ui| {
+                    for (idx, tf) in TIMEFRAMES.iter().enumerate() {
+                        let mut is_visible = props.visible_timeframes.contains(&(*tf).to_string());
+                        if ui
+                            .checkbox(
+                                &mut is_visible,
+                                egui::RichText::new(l10n::text(ui.ctx(), *tf))
+                                    .size(theme.text.body),
+                            )
+                            .changed()
+                        {
+                            if is_visible {
+                                if !props.visible_timeframes.contains(&(*tf).to_string()) {
+                                    props.visible_timeframes.push((*tf).to_string());
+                                }
+                            } else {
+                                props.visible_timeframes.retain(|t| t != *tf);
                             }
-                        } else {
-                            props.visible_timeframes.retain(|t| t != *tf);
+                            props.visible_all_timeframes = false;
                         }
-                        props.visible_all_timeframes = false;
+                        if (idx + 1) % 3 == 0 {
+                            ui.end_row();
+                        }
                     }
-                }
-            });
+                });
         }
     }
 }

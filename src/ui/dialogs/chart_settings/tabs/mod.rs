@@ -39,6 +39,7 @@ impl SettingsDialog {
             "Top margin (%)",
             "Bottom margin (%)",
             "Right margin (bars)",
+            "Zoom smoothing",
             "Visibility",
             "Timezone",
         ]

@@ -29,7 +29,7 @@ use std::collections::HashSet;
 // ============================================================================
 
 /// Width of the tab sidebar, before it yields to narrow windows.
-const SIDEBAR_WIDTH: f32 = 206.0;
+const SIDEBAR_WIDTH: f32 = 164.0;
 
 /// Modal settings dialog with tabbed interface.
 ///
@@ -285,22 +285,21 @@ impl SettingsDialog {
             self.config.height
         } else {
             match self.active_tab {
-                SettingsTab::Symbol => 616.0,
-                SettingsTab::Alerts | SettingsTab::Events => 500.0,
-                _ => 840.0,
+                SettingsTab::Alerts | SettingsTab::Events => 460.0,
+                _ => 520.0,
             }
         };
         let width = if self.config.width > 0.0 {
             self.config.width
         } else {
-            752.0
+            600.0
         };
         Modal::new("chart_settings", "Chart settings")
             .width(width)
             .height(height)
             .dim_background(false)
             .show(ctx, &mut is_open, |ui| {
-                ui.add_space(theme.spacing.xxl);
+                ui.add_space(theme.spacing.sm);
                 action = self.draw_content(ui, theme);
             });
 

@@ -290,7 +290,7 @@ impl Chart {
     }
 
     /// Draw the chart background (solid or gradient)
-    fn draw_background(&self, painter: &egui::Painter, rect: Rect) {
+    pub(super) fn draw_background(&self, painter: &egui::Painter, rect: Rect) {
         // Skip background when chart is inside a container that handles its own background
         if self.config.skip_background {
             return;
@@ -514,7 +514,7 @@ impl Chart {
         let response = if has_panes {
             self.show_with_panes(ui, footprint)
         } else {
-            let response = self.show_internal(ui, None, None, footprint);
+            let response = self.show_internal(ui, None, None, footprint, true);
             if let Some(main) = self
                 .pane_layout
                 .panes
@@ -756,6 +756,7 @@ impl Chart {
         shared_time_axis: Option<Rect>,
         shared_plot: Option<&Response>,
         footprint: Option<(&Footprint, &FootprintConfig)>,
+        paint_background: bool,
     ) -> Response {
         // Register the SVG and icon image loaders once per context so the
         // embedded icons used by the toolbars and panels decode without the
@@ -1048,16 +1049,18 @@ impl Chart {
             }
         }
 
-        // Draw background (solid or gradient)
-        self.draw_background(&painter, rect);
-        if let Some(axis) = shared_time_axis {
-            self.draw_background(
-                &painter,
-                Rect::from_min_max(
-                    Pos2::new(rect.left(), axis.top()),
-                    Pos2::new(rect.right(), axis.bottom()),
-                ),
-            );
+        // Draw background (solid or gradient). Pane stacks paint one shared surface first.
+        if paint_background {
+            self.draw_background(&painter, rect);
+            if let Some(axis) = shared_time_axis {
+                self.draw_background(
+                    &painter,
+                    Rect::from_min_max(
+                        Pos2::new(rect.left(), axis.top()),
+                        Pos2::new(rect.right(), axis.bottom()),
+                    ),
+                );
+            }
         }
 
         self.pump_signals(ui.ctx());
@@ -1408,30 +1411,42 @@ impl Chart {
                 .config
                 .vertical_grid_line_style
                 .unwrap_or(self.config.grid_line_style);
+            let color = self
+                .config
+                .vertical_grid_color
+                .unwrap_or(self.config.grid_color);
             if time_based {
                 renderers::render_time_grid(
                     &RenderContext::new(&painter, chart_rect),
                     &time_marks,
                     &time_points,
                     &time_coords,
-                    self.config
-                        .vertical_grid_color
-                        .unwrap_or(self.config.grid_color),
+                    color,
                     style,
                     // Horizontal grid already painted with sliding ticks above.
                     None,
                 );
+                self.shared_time_grid = Some(super::indicator_pane::SharedTimeGrid {
+                    marks: time_marks.clone(),
+                    points: time_points.clone(),
+                    bar_spacing: time_coords.bar_spacing,
+                    base_idx: time_coords.base_idx,
+                    right_offset: time_coords.right_offset,
+                    color,
+                    style,
+                });
             } else {
                 rendering::render_vertical_grid(
                     &painter,
                     chart_rect,
                     &coords,
-                    self.config
-                        .vertical_grid_color
-                        .unwrap_or(self.config.grid_color),
+                    color,
                     style,
                 );
+                self.shared_time_grid = None;
             }
+        } else {
+            self.shared_time_grid = None;
         }
 
         let session_tf = self.resolve_session_timeframe(visible_data);
@@ -2094,26 +2109,42 @@ impl Chart {
         }
 
         // What the pointer is over, for host pointer events, in the right-click priority.
+        // Crosshair (Full) is the empty-pane cursor; interactive targets switch to Arrow / Grab /
+        // the primitive's requested icon so the pointer matches what can be selected or dragged.
         if let Some(pos) = pointer {
             #[cfg(feature = "drawings")]
             let drawing = self.drawings.hit_test(pos);
             #[cfg(not(feature = "drawings"))]
             let drawing: Option<usize> = None;
-            if let Some(hit) = primitive_hit
-                .or(renderer_hit.filter(|hit| {
+            let can_retarget_cursor = response.hovered()
+                && !response.dragged()
+                && !self.zoom_mode_active
+                && !eraser_mode
+                && !drawing_tool_active;
+            if can_retarget_cursor {
+                if let Some(hit) = primitive_hit.or(renderer_hit.filter(|hit| {
                     element_at(pos).map(|(id, _)| super::PointerTarget::Element(id))
                         == Some(hit.target)
                 }))
-                .filter(|_| {
-                    drawing.is_none()
-                        && response.hovered()
-                        && !response.dragged()
-                        && !self.zoom_mode_active
-                        && !eraser_mode
-                        && !drawing_tool_active
-                })
-            {
-                ui.ctx().set_cursor_icon(hit.cursor);
+                .filter(|_| drawing.is_none())
+                {
+                    ui.ctx().set_cursor_icon(hit.cursor);
+                } else if drawing.is_some() {
+                    #[cfg(feature = "drawings")]
+                    let on_handle = drawing.is_some_and(|id| {
+                        self.drawings.is_selected(id)
+                            && self.drawings.hit_test_handle_by_id(pos, id).is_some()
+                    });
+                    #[cfg(not(feature = "drawings"))]
+                    let on_handle = false;
+                    ui.ctx().set_cursor_icon(if on_handle {
+                        egui::CursorIcon::Grab
+                    } else {
+                        egui::CursorIcon::Default
+                    });
+                } else if element_at(pos).is_some() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                }
             }
             self.host_events.target = drawing
                 .map(super::PointerTarget::Drawing)
@@ -2764,19 +2795,42 @@ impl Chart {
         let mut study_action = None;
         let mut series_action = None;
         let mut legend_bottom = price_rect.top() + 8.0;
+        let over_legend_readout = ui
+            .input(|input| input.pointer.hover_pos())
+            .is_some_and(|pos| {
+                ui.ctx().data(|data| {
+                    data.get_temp::<egui::Rect>(crate::chart::renderers::legend_readout_id(
+                        &self.symbol,
+                    ))
+                    .is_some_and(|rect| rect.contains(pos))
+                })
+            });
+        if over_legend_readout {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        }
         {
             let visible_data = self.state.visible_data();
-            let selected = hover_pos
-                .and_then(|pos| coords.local_idx_at_x(pos.x, visible_data.len()))
-                .map(|index| start_idx + index)
-                .unwrap_or_else(|| {
-                    // The last bar with a value, before any whitespace bars at the end.
-                    let shown = self.state.shown();
-                    shown
-                        .iter()
-                        .rposition(|bar| !bar.is_whitespace())
-                        .unwrap_or(shown.len().saturating_sub(1))
-                });
+            // Over the title/OHLC strip the readout freezes on the last valued bar and the
+            // crosshair yields to Arrow — values must not track the pointer there.
+            let selected = if over_legend_readout {
+                let shown = self.state.shown();
+                shown
+                    .iter()
+                    .rposition(|bar| !bar.is_whitespace())
+                    .unwrap_or(shown.len().saturating_sub(1))
+            } else {
+                hover_pos
+                    .and_then(|pos| coords.local_idx_at_x(pos.x, visible_data.len()))
+                    .map(|index| start_idx + index)
+                    .unwrap_or_else(|| {
+                        // The last bar with a value, before any whitespace bars at the end.
+                        let shown = self.state.shown();
+                        shown
+                            .iter()
+                            .rposition(|bar| !bar.is_whitespace())
+                            .unwrap_or(shown.len().saturating_sub(1))
+                    })
+            };
             if let Some(bar) = self.state.shown().get(selected) {
                 let timeframe = self.timeframe.map(|tf| tf.as_str()).unwrap_or_default();
                 #[cfg(feature = "ui")]
@@ -2869,7 +2923,7 @@ impl Chart {
             self.paint_targets(ui, &coords, legend_bottom + 4.0, lines);
         }
 
-        if let Some(hover_pos) = hover_pos {
+        if let Some(hover_pos) = hover_pos.filter(|_| !over_legend_readout) {
             // Cache the hover bar index for multi-chart sync
             self.last_hover_bar_idx = coords
                 .local_idx_at_x(hover_pos.x, visible_data.len())

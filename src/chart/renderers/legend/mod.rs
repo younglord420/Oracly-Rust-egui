@@ -50,9 +50,9 @@ pub enum StudyAction {
     },
 }
 
-/// An action on the series a legend reads, from the controls of its title row.
+/// An action the host can apply to the main series (settings, visibility, remove).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(not(feature = "icons"), allow(dead_code))]
+#[allow(dead_code)]
 pub(crate) enum SeriesAction {
     /// Open the series' settings in the host.
     Settings,
@@ -92,8 +92,7 @@ pub struct Legend<'a> {
     pub show_volume: bool,
     /// Display the instrument title and its host status marks.
     pub show_title: bool,
-    /// Whether the series is shown. A hidden series keeps its title and controls, dimmed, so it
-    /// can be shown again.
+    /// Whether the series is shown. A hidden series keeps its title, dimmed.
     pub(crate) series_visible: bool,
     /// Prefer the host description over the ticker.
     pub title_as_description: bool,
@@ -138,7 +137,7 @@ impl<'a> Legend<'a> {
             show_volume: true,
             show_title: true,
             series_visible: true,
-            title_as_description: true,
+            title_as_description: false,
             show_ohlc: true,
             show_change: true,
             show_change_percent: true,
@@ -197,14 +196,14 @@ impl<'a> Legend<'a> {
         if !bounds.is_positive() {
             return (None, None, plot.top(), None, None);
         }
-        #[cfg_attr(not(feature = "icons"), allow(unused_mut))]
-        let mut series_action = None;
         let id = ui.next_auto_id().with(("series_legend", self.symbol));
         ui.skip_ahead_auto_ids(1);
         let painter = ui.painter().with_clip_rect(bounds);
         let mut layout = Layout::new(&painter, bounds, colors);
-        #[cfg(feature = "icons")]
+        // Title and OHLC sit on the chart without a solid strip; study rows opt into a backdrop.
+        layout.backdrop = Color32::TRANSPARENT;
         let title_start = layout.pos;
+        let mut painted_readout = false;
         if self.show_title {
             if let Some(badge) = &self.badge {
                 let rect = layout.reserve(Vec2::splat(18.0));
@@ -243,46 +242,60 @@ impl<'a> Legend<'a> {
             let status_width = statuses
                 .iter()
                 .map(|(status, _)| {
-                    painter
-                        .layout_no_wrap(
-                            status.text.to_owned(),
-                            FontId::proportional(theme.text.small),
-                            status.color,
-                        )
-                        .size()
-                        .x
-                        + 16.0
+                    if is_live_dot_status(status.text) {
+                        18.0
+                    } else {
+                        painter
+                            .layout_no_wrap(
+                                status.text.to_owned(),
+                                FontId::proportional(theme.text.small),
+                                status.color,
+                            )
+                            .size()
+                            .x
+                            + 16.0
+                    }
                 })
                 .sum::<f32>();
-            let title_width = (bounds.right() - layout.pos.x - status_width - 64.0).max(0.0);
+            let title_width = (bounds.right() - layout.pos.x - status_width - 8.0).max(0.0);
             layout.text(
                 title,
                 theme.text.chart_title,
                 if self.series_visible {
-                    colors.text
+                    theme.ui.text
                 } else {
                     theme.ui.text_muted
                 },
                 title_width,
             );
+            painted_readout = true;
             for (status, hint) in statuses {
-                let galley = painter.layout_no_wrap(
-                    status.text.to_owned(),
-                    FontId::proportional(theme.text.small),
-                    status.color,
-                );
-                let rect = layout.reserve(Vec2::new(galley.size().x + 8.0, 18.0));
-                painter.rect_filled(rect, theme.radius.sm, status.background);
-                painter.galley(rect.center() - galley.size() / 2.0, galley, status.color);
+                let rect = if is_live_dot_status(status.text) {
+                    let rect = layout.reserve(Vec2::new(14.0, 18.0));
+                    painter.circle_filled(rect.center(), 3.5, status.color);
+                    rect
+                } else {
+                    let galley = painter.layout_no_wrap(
+                        status.text.to_owned(),
+                        FontId::proportional(theme.text.small),
+                        status.color,
+                    );
+                    let rect = layout.reserve(Vec2::new(galley.size().x + 8.0, 18.0));
+                    painter.rect_filled(rect, theme.radius.sm, status.background);
+                    painter.galley(rect.center() - galley.size() / 2.0, galley, status.color);
+                    rect
+                };
+                let hint = hint.or_else(|| live_dot_hint(status.text));
                 if let Some(hint) = hint {
                     let rect = rect.intersect(bounds);
-                    ui.interact(rect, id.with("data_status"), Sense::hover())
+                    ui.interact(rect, id.with(("status", status.text)), Sense::hover())
                         .on_hover_text(l10n::text(ui.ctx(), hint));
                 }
             }
         }
         let precision = self.price_precision(self.bar.close);
         if self.show_ohlc {
+            painted_readout = true;
             if plot.width() < 600.0 {
                 layout.field(
                     "C ",
@@ -311,6 +324,7 @@ impl<'a> Legend<'a> {
             (change, absolute, percent)
         };
         if self.show_change || self.show_change_percent {
+            painted_readout = true;
             let reference = self.previous_close.unwrap_or(self.bar.open);
             let (change, absolute, percent) = change_text(reference, self.bar.close);
             let text = match (self.show_change, self.show_change_percent) {
@@ -326,6 +340,7 @@ impl<'a> Legend<'a> {
             );
         }
         if let Some((reference, last)) = self.day_change {
+            painted_readout = true;
             let (change, absolute, percent) = change_text(reference, last);
             layout.text(
                 format!("{absolute} ({percent})"),
@@ -334,169 +349,17 @@ impl<'a> Legend<'a> {
                 bounds.width(),
             );
         }
-        // Values follow the title directly; the controls take the space after them on hover.
-        #[cfg(feature = "icons")]
-        if self.show_title {
-            let size = Vec2::new(116.0, 20.0);
-            // On a full row the controls cover its end instead of opening an empty row.
-            let controls = if layout.pos.x + size.x > bounds.right() {
-                Rect::from_min_size(
-                    Pos2::new(
-                        bounds.right() - size.x,
-                        layout.pos.y + (layout.height - size.y) / 2.0,
-                    ),
-                    size,
-                )
-            } else {
-                layout.reserve(size)
-            };
-            let row_right = if layout.pos.y > title_start.y {
-                bounds.right()
-            } else {
-                controls.right().min(bounds.right())
-            };
-            let title_rect =
-                Rect::from_min_max(title_start, Pos2::new(row_right, controls.bottom()));
-            let hovered = ui.rect_contains_pointer(title_rect);
-            let flagged = ui
-                .ctx()
-                .data(|data| data.get_temp::<bool>(id.with("flag")).unwrap_or(false));
-            // Tab reaches the controls through the title, which stays revealed while one of
-            // them has focus. It takes focus only, so clicks on it still reach the chart.
-            let title_response = ui.interact(
-                title_rect,
-                id.with("title"),
-                Sense::focusable_noninteractive(),
-            );
-            let controls_label = l10n::text(ui.ctx(), "Series controls");
-            title_response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::Button, true, &controls_label)
+        if painted_readout {
+            let readout = Rect::from_min_max(
+                title_start,
+                Pos2::new(bounds.right(), layout.pos.y + layout.height),
+            )
+            .intersect(bounds);
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(legend_readout_id(self.symbol), readout);
             });
-            let focused = title_response.has_focus()
-                || title_response.lost_focus()
-                || ui.memory(|memory| {
-                    memory.has_focus(id.with("flag"))
-                        || memory.has_focus(id.with("more"))
-                        || (0..3_usize)
-                            .any(|index| memory.has_focus(id.with(("series_control", index))))
-                });
-            if hovered
-                || flagged
-                || focused
-                || egui::Popup::is_id_open(ui.ctx(), id.with("more").with("popup"))
-            {
-                let flag = Rect::from_min_size(controls.min, Vec2::splat(20.0)).intersect(bounds);
-                let more =
-                    Rect::from_min_size(controls.min + Vec2::new(28.0, 0.0), Vec2::splat(20.0))
-                        .intersect(bounds);
-                painter.rect_stroke(
-                    title_rect,
-                    theme.radius.sm,
-                    Stroke::new(1.0, theme.ui.border_control),
-                    egui::StrokeKind::Inside,
-                );
-                painter.rect_filled(controls, 0.0, theme.chart.bg);
-                let flag_response = ui.interact(flag, id.with("flag"), Sense::click());
-                crate::icons::icons::FLAG_MARK
-                    .as_image_tinted(
-                        Vec2::splat(16.0),
-                        if flagged {
-                            theme.ui.accent
-                        } else {
-                            theme.ui.text
-                        },
-                    )
-                    .paint_at(ui, flag.shrink(2.0));
-                if flag_response
-                    .on_hover_text(l10n::text(ui.ctx(), "Flag instrument"))
-                    .clicked()
-                {
-                    ui.ctx()
-                        .data_mut(|data| data.insert_temp(id.with("flag"), !flagged));
-                }
-                let more_response = ui
-                    .interact(more, id.with("more"), Sense::click())
-                    .on_hover_text(l10n::text(ui.ctx(), "Series actions"));
-                crate::icons::icons::UI_MORE_HORIZONTAL
-                    .as_image_tinted(Vec2::splat(16.0), theme.ui.text)
-                    .paint_at(ui, more.shrink(2.0));
-                egui::Popup::menu(&more_response).show(|ui| {
-                    if ui.button(l10n::text(ui.ctx(), "Copy symbol")).clicked() {
-                        ui.ctx().copy_text(self.symbol.to_owned());
-                        ui.close();
-                    }
-                    if ui.button(l10n::text(ui.ctx(), "Copy values")).clicked() {
-                        let values = [
-                            self.bar.open,
-                            self.bar.high,
-                            self.bar.low,
-                            self.bar.close,
-                            self.bar.volume,
-                        ];
-                        ui.ctx().copy_text(l10n::format_text(
-                            ui.ctx(),
-                            "Open {0} High {1} Low {2} Close {3} Vol {4}",
-                            &[
-                                ("0", values[0].to_string()),
-                                ("1", values[1].to_string()),
-                                ("2", values[2].to_string()),
-                                ("3", values[3].to_string()),
-                                ("4", values[4].to_string()),
-                            ],
-                        ));
-                        ui.close();
-                    }
-                });
-                for (index, (action, icon, label)) in [
-                    (
-                        SeriesAction::ToggleVisibility,
-                        if self.series_visible {
-                            &crate::icons::icons::EYE
-                        } else {
-                            &crate::icons::icons::EYE_HIDE
-                        },
-                        if self.series_visible {
-                            "Hide series"
-                        } else {
-                            "Show series"
-                        },
-                    ),
-                    (
-                        SeriesAction::Settings,
-                        &crate::icons::icons::SETTINGS,
-                        "Series settings",
-                    ),
-                    (
-                        SeriesAction::Remove,
-                        &crate::icons::icons::TRASH,
-                        "Remove series",
-                    ),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    let rect = Rect::from_min_size(
-                        controls.min + Vec2::new(56.0 + index as f32 * 20.0, 0.0),
-                        Vec2::splat(20.0),
-                    )
-                    .intersect(bounds);
-                    let label = l10n::text(ui.ctx(), label);
-                    let response = ui
-                        .interact(rect, id.with(("series_control", index)), Sense::click())
-                        .on_hover_text(&label);
-                    response.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::Role::Button, true, &label)
-                    });
-                    if response.hovered() {
-                        painter.rect_filled(rect, theme.radius.sm, theme.ui.btn_bg_hover);
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    icon.as_image_tinted(Vec2::splat(14.0), theme.ui.text_secondary)
-                        .paint_at(ui, rect.shrink(3.0));
-                    if response.clicked() {
-                        series_action = Some(action);
-                    }
-                }
+            if ui.rect_contains_pointer(readout) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
             }
         }
         if self.show_title
@@ -732,7 +595,7 @@ impl<'a> Legend<'a> {
             study_settings,
             layout.pos.y + layout.height,
             quantity,
-            series_action,
+            None,
         )
     }
 
@@ -761,6 +624,28 @@ impl<'a> Legend<'a> {
         self.instrument
             .and_then(crate::scales::instrument_price_precision)
             .map_or_else(|| price_decimals(price), usize::from)
+    }
+}
+
+/// Temp-data key for the title/OHLC hit rect so the host can freeze the readout.
+pub(crate) fn legend_readout_id(symbol: &str) -> egui::Id {
+    #[allow(deprecated)]
+    {
+        egui::Id::new(("series_legend_readout", symbol))
+    }
+}
+
+fn is_live_dot_status(text: &str) -> bool {
+    text.eq_ignore_ascii_case("LIVE") || text.eq_ignore_ascii_case("SIM")
+}
+
+fn live_dot_hint(text: &str) -> Option<&'static str> {
+    if text.eq_ignore_ascii_case("LIVE") {
+        Some("Live data")
+    } else if text.eq_ignore_ascii_case("SIM") {
+        Some("Simulated data")
+    } else {
+        None
     }
 }
 
@@ -1633,12 +1518,9 @@ mod tests {
         }
     }
 
-    /// The title's hide, settings and remove buttons are keyboard reachable and report their
-    /// action, and a hidden series keeps its title and buttons so it can be shown again.
-    #[cfg(feature = "icons")]
+    /// A hidden series still shows its title so the host can reveal it elsewhere.
     #[test]
-    fn title_controls_report_series_actions_for_a_hidden_series_too() {
-        use egui::{Event, Key};
+    fn hidden_series_keeps_its_title() {
         let bar = Bar::new(
             Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
             100.0,
@@ -1657,63 +1539,25 @@ mod tests {
             bearish_wick: None,
             candle_border_width: 0.0,
         };
-        for series_visible in [true, false] {
-            let ctx = Context::default();
-            let frame = |events| {
-                let mut action = None;
-                let output = ctx.run_ui(
-                    egui::RawInput {
-                        events,
-                        ..Default::default()
-                    },
-                    |ui| {
-                        let mut legend = Legend::new("SAMPLE", "1h", &bar);
-                        legend.series_visible = series_visible;
-                        let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 400.0));
-                        action = legend.show_with_colors(ui, plot, &colors).4;
-                    },
-                );
-                let title = output.shapes.iter().any(|shape| {
-                    matches!(&shape.shape, Shape::Text(text) if text.galley.text() == "SAMPLE · 1h")
-                });
-                output.drop_without_applying_deltas();
-                (action, title)
-            };
-            let key = |pressed| Event::Key {
-                key: Key::Tab,
-                physical_key: None,
-                pressed,
-                repeat: false,
-                modifiers: Default::default(),
-            };
-            assert!(
-                frame(vec![]).1,
-                "the title stays while the series is hidden"
-            );
-            // Tab stops: title, flag, more, then the series buttons.
-            for stop in 0..3 {
-                frame(vec![key(true)]);
-                frame(vec![key(false)]);
-                assert_eq!(frame(vec![]).0, None, "stop {stop}");
-            }
-            for expected in [
-                SeriesAction::ToggleVisibility,
-                SeriesAction::Settings,
-                SeriesAction::Remove,
-            ] {
-                frame(vec![key(true)]);
-                frame(vec![key(false)]);
-                let enter = |pressed| Event::Key {
-                    key: Key::Enter,
-                    physical_key: None,
-                    pressed,
-                    repeat: false,
-                    modifiers: Default::default(),
-                };
-                let (action, _) = frame(vec![enter(true)]);
-                frame(vec![enter(false)]);
-                assert_eq!(action, Some(expected), "visible: {series_visible}");
-            }
-        }
+        let ctx = Context::default();
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut legend = Legend::new("SAMPLE", "1h", &bar);
+            legend.series_visible = false;
+            let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 400.0));
+            assert_eq!(legend.show_with_colors(ui, plot, &colors).4, None);
+        });
+        assert!(output.shapes.iter().any(|shape| {
+            matches!(&shape.shape, Shape::Text(text) if text.galley.text() == "SAMPLE · 1h")
+        }));
+        output.drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn live_and_sim_statuses_use_a_dot() {
+        assert!(is_live_dot_status("LIVE"));
+        assert!(is_live_dot_status("sim"));
+        assert!(!is_live_dot_status("D"));
+        assert_eq!(live_dot_hint("LIVE"), Some("Live data"));
+        assert_eq!(live_dot_hint("SIM"), Some("Simulated data"));
     }
 }

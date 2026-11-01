@@ -482,6 +482,7 @@ impl Drawing {
         if self.tool_type == DrawingToolType::Rect {
             self.render_rect_middle_line(painter, rect);
         }
+        self.paint_optional_line_label(painter, start, rect);
     }
 
     /// Render this drawing using the modular render system

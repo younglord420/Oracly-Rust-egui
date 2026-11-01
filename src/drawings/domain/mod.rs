@@ -19,7 +19,8 @@ pub use gann::{GannConfig, GannFanDirection};
 pub use ghost_feed::{GhostCandle, GhostFeedConfig, MAX_GHOST_CANDLES};
 pub use options::{
     ArrowStyle, DrawingOptions, FibonacciConfig, FibonacciLevel, FontWeight, HandlePos,
-    PositionSize, PositionSizing, RegressionTrendConfig, TimeframeVisibility,
+    PositionSize, PositionSizing, RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign,
+    TimeframeVisibility,
 };
 pub use pitchfork::{PitchforkConfig, PitchforkLevel};
 pub use template::DrawingTemplate;

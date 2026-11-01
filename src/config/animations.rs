@@ -10,7 +10,7 @@
 pub struct ChartAnimations {
     /// Wheel / pinch zoom ease time-constant in milliseconds.
     ///
-    /// `None` or `Some(0)` applies zoom instantly. Default `Some(70)`.
+    /// `None` or `Some(0)` applies zoom instantly. Default `Some(120)`.
     pub zoom_ms: Option<u32>,
 
     /// Auto price-scale ease time-constant in milliseconds.
@@ -28,7 +28,7 @@ pub struct ChartAnimations {
     /// Price-axis wheel zoom ease time-constant in milliseconds.
     ///
     /// `None` or `Some(0)` applies instantly. Drag-zoom on the axis stays instant.
-    /// Default `Some(70)` (aligned with wheel zoom).
+    /// Default `Some(120)` (aligned with wheel zoom).
     pub price_zoom_ms: Option<u32>,
 
     /// Crosshair follow ease time-constant in milliseconds.
@@ -40,10 +40,10 @@ pub struct ChartAnimations {
 impl Default for ChartAnimations {
     fn default() -> Self {
         Self {
-            zoom_ms: Some(70),
+            zoom_ms: Some(120),
             autoscale_ms: Some(80),
             scroll_ms: Some(130),
-            price_zoom_ms: Some(70),
+            price_zoom_ms: Some(120),
             crosshair_ms: Some(45),
         }
     }
@@ -104,12 +104,12 @@ mod tests {
     #[test]
     fn default_matches_documented_constants() {
         let a = ChartAnimations::default();
-        assert_eq!(a.zoom_ms, Some(70));
+        assert_eq!(a.zoom_ms, Some(120));
         assert_eq!(a.autoscale_ms, Some(80));
         assert_eq!(a.scroll_ms, Some(130));
-        assert_eq!(a.price_zoom_ms, Some(70));
+        assert_eq!(a.price_zoom_ms, Some(120));
         assert_eq!(a.crosshair_ms, Some(45));
-        assert!((a.zoom_tau_secs().unwrap() - 0.07).abs() < 1e-6);
+        assert!((a.zoom_tau_secs().unwrap() - 0.12).abs() < 1e-6);
         assert!((a.scroll_tau_secs().unwrap() - 0.13).abs() < 1e-6);
     }
 

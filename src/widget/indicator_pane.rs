@@ -34,15 +34,29 @@
 //! right offset, and base index so that indicator panes draw their data points
 //! at exactly the same x-coordinates as the corresponding candlesticks above.
 
+use crate::chart::renderers::{self, RenderContext};
 use crate::localization as l10n;
-use crate::model::Bar;
+use crate::model::{Bar, LineStyle};
 use crate::painting::dashed_line::draw_dashed_line;
-use crate::scales::{PriceMap, PriceRange, PriceTransform};
+use crate::scales::{PriceMap, PriceRange, PriceTransform, TickMark};
 use crate::studies::Indicator;
 use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
+use chrono::{DateTime, Utc};
 use egui::{Color32, Pos2, Rect, Response, Sense, Stroke, Ui};
 use std::ops::Range;
+
+/// Time-grid marks shared from the price pane so study panes paint the same vertical lines.
+#[derive(Clone, Debug)]
+pub(crate) struct SharedTimeGrid {
+    pub marks: Vec<TickMark>,
+    pub points: Vec<(DateTime<Utc>, usize)>,
+    pub bar_spacing: f32,
+    pub base_idx: usize,
+    pub right_offset: f64,
+    pub color: Color32,
+    pub style: LineStyle,
+}
 
 /// Chart layout constants matching main chart (from ChartConfig defaults)
 mod layout {
@@ -302,6 +316,8 @@ pub struct IndicatorPane {
     pub(super) axis_tags: Vec<Option<Rect>>,
     pub(super) axis_options: crate::config::PriceAxisOptions,
     pub(super) legend_backdrop: f32,
+    /// When true, the host paints the chart surface; the pane skips its solid fill.
+    pub(super) skip_background: bool,
 }
 
 impl IndicatorPane {
@@ -324,6 +340,7 @@ impl IndicatorPane {
             axis_tags: Vec::new(),
             axis_options,
             legend_backdrop: 0.6,
+            skip_background: false,
         }
     }
 
@@ -358,8 +375,9 @@ impl IndicatorPane {
 
         let painter = ui.painter();
 
-        // Fill background
-        painter.rect_filled(rect, 0.0, chart_bg);
+        if !self.skip_background {
+            painter.rect_filled(rect, 0.0, chart_bg);
+        }
 
         // Calculate drawing area to match main chart layout
         let left_padding = layout::LEFT_PADDING;
@@ -447,8 +465,9 @@ impl IndicatorPane {
 
         let painter = ui.painter();
 
-        // Fill background
-        painter.rect_filled(rect, 0.0, chart_bg);
+        if !self.skip_background {
+            painter.rect_filled(rect, 0.0, chart_bg);
+        }
 
         // Calculate drawing area to match main chart layout
         let left_padding = layout::LEFT_PADDING;
@@ -533,6 +552,7 @@ impl IndicatorPane {
             None,
             &[],
             false,
+            None,
         )?;
         if let Some(table) = indicator.table() {
             crate::studies::table::paint(
@@ -559,6 +579,7 @@ impl IndicatorPane {
         hover: Option<(Pos2, crate::config::CrosshairOptions)>,
         primitives: &[&super::primitives::Attached],
         bar_series: bool,
+        time_grid: Option<&SharedTimeGrid>,
     ) -> Option<PaneInteraction> {
         if !indicator.is_visible() {
             return None;
@@ -592,8 +613,8 @@ impl IndicatorPane {
 
         let painter = &ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
 
-        // Fill background
-        if !self.overlay {
+        // Fill background unless the host already paints the chart surface.
+        if !self.overlay && !self.skip_background {
             painter.rect_filled(rect, 0.0, chart_bg);
         }
 
@@ -689,9 +710,15 @@ impl IndicatorPane {
                 indicator,
             );
 
-            // Draw vertical grid lines (aligned with main chart)
+            // Draw vertical grid lines (same marks as the price pane when available)
             if self.config.show_grid {
-                self.draw_vertical_grid_aligned(plot_painter, chart_rect, &coords, grid_color);
+                self.paint_vertical_grid(
+                    plot_painter,
+                    chart_rect,
+                    &coords,
+                    grid_color,
+                    time_grid,
+                );
             }
 
             use crate::chart::primitives::PrimitivePass;
@@ -1096,8 +1123,44 @@ impl IndicatorPane {
         }
     }
 
-    /// Draw vertical grid lines aligned with main chart
-    /// Uses the same coordinate system as the main chart for seamless grid appearance
+    fn paint_vertical_grid(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        coords: &IndicatorCoordParams,
+        grid_color: Color32,
+        time_grid: Option<&SharedTimeGrid>,
+    ) {
+        if let Some(grid) = time_grid {
+            let mapping = ChartMapping::new(
+                rect,
+                grid.bar_spacing,
+                coords.start_idx,
+                grid.base_idx,
+                grid.right_offset,
+                PriceMap::new(
+                    PriceTransform::default(),
+                    PriceRange::new(0.0, 1.0),
+                    rect.min.y,
+                    rect.max.y,
+                    false,
+                ),
+            );
+            renderers::render_time_grid(
+                &RenderContext::new(painter, rect),
+                &grid.marks,
+                &grid.points,
+                &mapping,
+                grid.color,
+                grid.style,
+                None,
+            );
+            return;
+        }
+        self.draw_vertical_grid_aligned(painter, rect, coords, grid_color);
+    }
+
+    /// Fallback vertical grid when the price pane has no shared time marks (e.g. Renko).
     fn draw_vertical_grid_aligned(
         &self,
         painter: &egui::Painter,

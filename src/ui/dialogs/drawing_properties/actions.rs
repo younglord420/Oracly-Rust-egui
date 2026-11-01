@@ -212,6 +212,10 @@ impl DrawingProps {
             {
                 let settings = &template.settings;
                 drawing.font_weight = settings.font_weight;
+                drawing.font_italic = settings.font_italic;
+                drawing.text_color = settings.text_color;
+                drawing.text_v_align = settings.text_v_align;
+                drawing.text_h_align = settings.text_h_align;
                 drawing.arrow_start_style = settings.arrow_start_style;
                 drawing.arrow_end_style = settings.arrow_end_style;
                 drawing.custom_settings = settings.custom_settings.clone();

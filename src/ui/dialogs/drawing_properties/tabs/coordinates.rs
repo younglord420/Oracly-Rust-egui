@@ -4,7 +4,6 @@ use crate::drawings::{ChartPoint, Drawing, DrawingToolType};
 use crate::localization as l10n;
 use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
-use crate::ui_kit::buttons::ButtonSize;
 use crate::widget::Chart;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, Timelike, Utc};
 use egui::{RichText, TextEdit, Ui};
@@ -148,25 +147,21 @@ impl CoordinatesTab {
                     ui.ctx(),
                     "Open a drawing to edit its coordinates.",
                 ))
-                .size(ui.active_theme().text.body)
+                .size(ui.active_theme().text.title)
                 .color(ui.active_theme().ui.text_muted),
             );
             return;
         }
 
         let theme = ui.active_theme();
-        let row_h = DESIGN_TOKENS
-            .sizing
-            .button_md
-            .max(ui.spacing().interact_size.y)
-            .max(ButtonSize::SM.pixels());
+        let row_h = super::style::control_row_height(ui);
+        let col_w = super::style::control_column_width(ui);
         // `#n` + price + short datetime share one aligned, token-sized row.
-        let index_w = DESIGN_TOKENS.sizing.icon_lg + theme.spacing.sm;
+        let index_w = DESIGN_TOKENS.sizing.icon_md + theme.spacing.xs;
+        // TextEdit adds its horizontal margin (2 * 8px = 16px) around `desired_width`.
+        let field_pad = 16.0;
 
         for (i, point) in state.points.iter_mut().enumerate() {
-            if i > 0 {
-                ui.add_space(theme.spacing.xs);
-            }
             let index_label = format!("#{}", i + 1);
             let a11y_prefix = index_label.clone();
 
@@ -178,49 +173,77 @@ impl CoordinatesTab {
                     egui::Label::new(
                         RichText::new(&index_label)
                             .size(theme.text.body)
-                            .color(theme.ui.text_muted)
+                            .color(theme.ui.text_secondary)
                             .strong(),
                     ),
                 );
 
-                if !point.bar_only {
-                    let available_for_fields = (ui.available_width() - theme.spacing.sm).max(0.0);
-                    let price_w = (available_for_fields * 0.46)
-                        .clamp(
-                            DESIGN_TOKENS.sizing.dialog.button_min_width_xs,
-                            DESIGN_TOKENS.sizing.settings_dialog.dropdown_width,
-                        )
-                        .min(available_for_fields);
+                let gap = 6.0;
+                let max_row_w = ui.available_width().max(0.0);
+                let target_w = col_w.min(max_row_w);
+                if point.bar_only {
+                    let outer_w = target_w;
+                    let inner_w = (outer_w - field_pad).max(32.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        compact_field(
+                            ui,
+                            if a11y_prefix == "#1" {
+                                "Bar index".to_owned()
+                            } else {
+                                format!("{a11y_prefix} Bar index")
+                            },
+                            &mut point.bar_index,
+                            "",
+                            inner_w,
+                            row_h,
+                            false,
+                        );
+                    });
+                } else {
+                    let avail_pair = (target_w - gap).max(0.0);
+                    let outer_price_w = (avail_pair * 0.44).round();
+                    let outer_time_w = (avail_pair - outer_price_w).max(0.0);
+                    let inner_price_w = (outer_price_w - field_pad).max(28.0);
+                    let inner_time_w = (outer_time_w - field_pad).max(28.0);
+                    let group_w = (outer_price_w + gap + outer_time_w).min(max_row_w);
                     let exact_price = point
                         .original
                         .map(|(original, _)| original.price.to_string());
-                    price_field(
-                        ui,
-                        &a11y_prefix,
-                        &mut point.price,
-                        exact_price.as_deref(),
-                        price_w,
-                        row_h,
-                    );
-                }
 
-                let trailing_width = ui.available_width().max(0.0);
-                if point.original.is_some_and(|(_, time)| time.is_none()) {
-                    compact_field(
-                        ui,
-                        if a11y_prefix == "#1" {
-                            "Bar index".to_owned()
-                        } else {
-                            format!("{a11y_prefix} Bar index")
-                        },
-                        &mut point.bar_index,
-                        "",
-                        trailing_width,
-                        row_h,
-                        false,
-                    );
-                } else {
-                    datetime_field(ui, i, point, trailing_width, row_h);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::Vec2::new(group_w, row_h),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.x = gap;
+                                price_field(
+                                    ui,
+                                    &a11y_prefix,
+                                    &mut point.price,
+                                    exact_price.as_deref(),
+                                    inner_price_w,
+                                    row_h,
+                                );
+                                if point.original.is_some_and(|(_, time)| time.is_none()) {
+                                    compact_field(
+                                        ui,
+                                        if a11y_prefix == "#1" {
+                                            "Bar index".to_owned()
+                                        } else {
+                                            format!("{a11y_prefix} Bar index")
+                                        },
+                                        &mut point.bar_index,
+                                        "",
+                                        inner_time_w,
+                                        row_h,
+                                        false,
+                                    );
+                                } else {
+                                    datetime_field(ui, i, point, inner_time_w, row_h);
+                                }
+                            },
+                        );
+                    });
                 }
             });
         }
@@ -236,12 +259,13 @@ fn price_field(
     height: f32,
 ) {
     let font = egui::FontId::proportional(ui.active_theme().text.body);
+    let inner_h = (height - 10.0).max(16.0);
     let response = styled_text_field(
         ui,
         TextEdit::singleline(value)
             .font(font)
             .desired_width(width)
-            .min_size(egui::vec2(width, height))
+            .min_size(egui::vec2(width, inner_h))
             .align(egui::Align2::RIGHT_CENTER),
     );
     if let Some(exact) = exact_value {
@@ -315,13 +339,14 @@ fn compact_field(
 ) -> egui::Response {
     let theme = ui.active_theme();
     let font = egui::FontId::proportional(theme.text.body);
+    let inner_h = (height - 10.0).max(16.0);
     let mut edit = TextEdit::singleline(value)
         .font(font)
         .desired_width(width)
-        .min_size(egui::vec2(width, height))
+        .min_size(egui::vec2(width, inner_h))
         .hint_text(
             RichText::new(l10n::text(ui.ctx(), hint))
-                .size(theme.text.marker)
+                .size(theme.text.small)
                 .color(theme.ui.text_muted),
         );
     if muted {
@@ -350,7 +375,7 @@ fn styled_text_field(ui: &mut Ui, edit: TextEdit<'_>) -> egui::Response {
             egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
         visuals.selection.stroke =
             egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
-        ui.add(edit.margin(egui::Margin::symmetric(8, 4)))
+        ui.add(edit.margin(egui::Margin::symmetric(8, 5)))
     })
     .inner
 }

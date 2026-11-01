@@ -11,7 +11,7 @@
 use super::{
     ArrowStyle, ChartPoint, DrawingToolType, FibonacciConfig, FontWeight, GannConfig,
     GhostFeedConfig, PitchforkConfig, PositionSize, PositionSizing, RegressionTrendConfig,
-    TimeframeVisibility,
+    TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility,
 };
 
 use crate::data::VolumeProfileConfig;
@@ -125,6 +125,18 @@ pub struct Drawing {
     pub font_size: f32,
     /// Font weight for text annotations
     pub font_weight: FontWeight,
+    /// Whether text annotations are rendered in italics
+    #[serde(default)]
+    pub font_italic: bool,
+    /// Optional custom color for text annotations (None uses the drawing's primary color)
+    #[serde(default)]
+    pub text_color: Option<[u8; 4]>,
+    /// Vertical placement of line/shape labels relative to the line (Top / Middle / Bottom)
+    #[serde(default)]
+    pub text_v_align: TextVerticalAlign,
+    /// Horizontal placement of line/shape labels along the line (Left / Center / Right)
+    #[serde(default)]
+    pub text_h_align: TextHorizontalAlign,
     /// Extend line to left edge
     pub extend_left: bool,
     /// Extend line to right edge
@@ -231,6 +243,10 @@ impl Drawing {
                 12.0
             },
             font_weight: FontWeight::Normal,
+            font_italic: false,
+            text_color: None,
+            text_v_align: TextVerticalAlign::Top,
+            text_h_align: TextHorizontalAlign::Center,
             extend_left: tool_type == DrawingToolType::ExtendedLine,
             extend_right: matches!(
                 tool_type,
@@ -596,6 +612,14 @@ impl Drawing {
     pub fn fill_color32(&self) -> Option<egui::Color32> {
         self.fill_color
             .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+    }
+
+    /// Get the text color as Color32, falling back to the primary drawing color when unset
+    #[inline]
+    pub fn text_color32(&self) -> egui::Color32 {
+        self.text_color
+            .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+            .unwrap_or_else(|| self.color32())
     }
 
     /// Get the stroke for rendering

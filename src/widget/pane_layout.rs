@@ -801,70 +801,8 @@ impl Chart {
         if rect.height() < 48.0 {
             return;
         }
-        let hovered = self.pane_buttons_visible(ui, rect);
-        let rect = Rect::from_min_max(rect.min + egui::vec2(0.0, 24.0), rect.max);
         if self.has_panes() {
             self.pane_maximize_button(ui, PaneId::MAIN, rect, plot);
-        }
-        let movable: Vec<_> = self
-            .pane_series(PaneId::MAIN)
-            .into_iter()
-            .filter(|id| *id != SeriesId::MAIN)
-            .collect();
-        if movable.is_empty() || !hovered {
-            return;
-        }
-        let button = Rect::from_min_size(
-            Pos2::new(plot.right() - 42.0, rect.top() + 2.0),
-            egui::vec2(20.0, 20.0),
-        );
-        let mut child = ui.new_child(
-            egui::UiBuilder::new()
-                .id_salt("main_pane_actions")
-                .max_rect(button),
-        );
-        let mut moved = None;
-        egui::containers::menu::MenuButton::from_button(
-            egui::Button::new("...").frame_when_inactive(false),
-        )
-        .ui(&mut child, |ui| {
-            for id in movable {
-                ui.menu_button(l10n::text(ui.ctx(), self.member_name(id)), |ui| {
-                    if ui
-                        .button(l10n::text(ui.ctx(), "Move to new pane"))
-                        .clicked()
-                    {
-                        moved = Some((id, None));
-                        ui.close();
-                    }
-                    for pane in &self.pane_layout.panes {
-                        if pane.id == PaneId::MAIN || !self.pane_listed(pane) {
-                            continue;
-                        }
-                        let title = pane
-                            .members
-                            .first()
-                            .map_or("empty", |member| self.member_name(*member));
-                        if ui
-                            .button(l10n::format_text(
-                                ui.ctx(),
-                                "Move to {title} pane",
-                                &[("title", title.to_string())],
-                            ))
-                            .clicked()
-                        {
-                            moved = Some((id, Some(pane.id)));
-                            ui.close();
-                        }
-                    }
-                });
-            }
-        });
-        if let Some((id, pane)) = moved {
-            self.user_action(|chart| match pane {
-                Some(pane) => chart.move_series_to_pane(id, pane),
-                None => chart.move_to_new_pane(id),
-            });
         }
     }
 
@@ -872,8 +810,14 @@ impl Chart {
         if rect.height() < 24.0 || self.config.pane_buttons == NavigationButtons::Never {
             return;
         }
+        // Top-right of this pane's canvas (main plot for the price pane, panel top for studies).
+        let top = if id == PaneId::MAIN {
+            plot.top()
+        } else {
+            rect.top()
+        };
         let button = Rect::from_min_size(
-            Pos2::new(plot.right() - 22.0, rect.top() + 2.0),
+            Pos2::new(plot.right() - 22.0, top + 2.0),
             egui::vec2(20.0, 20.0),
         );
         let maximized = self.pane_layout.maximized == Some(id);
@@ -892,22 +836,7 @@ impl Chart {
             || maximized
             || ui.rect_contains_pointer(rect)
         {
-            let color = ui.visuals().text_color();
-            let icon = button.shrink(5.0);
-            if maximized {
-                ui.painter().rect_stroke(
-                    icon.translate(egui::vec2(2.0, -2.0)),
-                    0.0,
-                    egui::Stroke::new(1.0, color),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            ui.painter().rect_stroke(
-                icon,
-                0.0,
-                egui::Stroke::new(1.0, color),
-                egui::StrokeKind::Inside,
-            );
+            paint_maximize_icon(ui, button, maximized);
         }
         if response.clicked() {
             self.user_action(|chart| {
@@ -1057,8 +986,17 @@ impl Chart {
                 Pos2::new(rect.left(), upper.bottom()),
                 Pos2::new(rect.right(), rect.top()),
             );
+            let seam = if line.height() > 0.5 {
+                line
+            } else {
+                // Zero-gap stack: a 1px band on the join, only drawn while interacting.
+                Rect::from_center_size(
+                    Pos2::new(rect.center().x, rect.top()),
+                    egui::vec2(rect.width(), 1.0),
+                )
+            };
             let response = ui.interact(
-                line.expand2(egui::vec2(0.0, 3.0)),
+                seam.expand2(egui::vec2(0.0, 3.0)),
                 ui.scope_id()
                     .with((self.pane_layout.panes[idx].id, "separator")),
                 if options.resizable {
@@ -1068,16 +1006,19 @@ impl Chart {
                 },
             );
             use crate::theme::ThemeExt;
-            let color = if options.resizable && (response.hovered() || response.dragged()) {
-                options
-                    .separator_hover_color
-                    .unwrap_or(ui.visuals().selection.bg_fill)
-            } else {
-                options
-                    .separator_color
-                    .unwrap_or(ui.active_theme().chart.grid_line)
-            };
-            ui.painter().rect_filled(line, 0.0, color);
+            let interacting = options.resizable && (response.hovered() || response.dragged());
+            if line.height() > 0.5 || interacting {
+                let color = if interacting {
+                    options
+                        .separator_hover_color
+                        .unwrap_or(ui.visuals().selection.bg_fill)
+                } else {
+                    options
+                        .separator_color
+                        .unwrap_or(ui.active_theme().chart.grid_line)
+                };
+                ui.painter().rect_filled(seam, 0.0, color);
+            }
             if !options.resizable {
                 continue;
             }
@@ -1101,5 +1042,31 @@ impl Chart {
                 ui.ctx().request_repaint();
             }
         }
+    }
+}
+
+/// Maximize / restore control shared by the price pane, study panes, and multi-chart tiles.
+///
+/// Drawn as corner brackets (fullscreen / exit-fullscreen) so the glyph stays crisp without
+/// waiting on an SVG texture load.
+pub(super) fn paint_maximize_icon(ui: &Ui, button: Rect, maximized: bool) {
+    let stroke = egui::Stroke::new(1.35, ui.visuals().text_color());
+    let r = button.shrink(4.5);
+    let arm = 3.75;
+    let painter = ui.painter();
+    let corner = |origin: Pos2, dx: f32, dy: f32| {
+        painter.line_segment([origin, origin + egui::vec2(dx, 0.0)], stroke);
+        painter.line_segment([origin, origin + egui::vec2(0.0, dy)], stroke);
+    };
+    if maximized {
+        corner(r.left_top() + egui::vec2(arm, arm), -arm, -arm);
+        corner(r.right_top() + egui::vec2(-arm, arm), arm, -arm);
+        corner(r.left_bottom() + egui::vec2(arm, -arm), -arm, arm);
+        corner(r.right_bottom() + egui::vec2(-arm, -arm), arm, arm);
+    } else {
+        corner(r.left_top(), arm, arm);
+        corner(r.right_top(), -arm, arm);
+        corner(r.left_bottom(), arm, -arm);
+        corner(r.right_bottom(), -arm, -arm);
     }
 }

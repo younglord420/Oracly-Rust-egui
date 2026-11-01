@@ -8,6 +8,7 @@ use crate::drawings::{
 use crate::data::{ProfileDisplay, VolumeProfileConfig};
 use crate::localization as l10n;
 use crate::model::LineStyle;
+use crate::theme::ThemeExt;
 use crate::ui_kit::ext::UiExt;
 use crate::ui_kit::{
     ColorPicker, ColorPickerState, FormGrid, buttons::Button, form_control_width_for, form_label,
@@ -47,7 +48,6 @@ impl InputsTab {
     }
 
     pub(crate) fn show(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
-        ui.space_md();
         match drawing.tool_type {
             Tool::FibonacciRetracement
             | Tool::FibonacciExtension
@@ -353,22 +353,26 @@ fn number(ui: &mut Ui, label: &str, value: &mut f64, range: std::ops::RangeInclu
 }
 
 fn background(ui: &mut Ui, show: &mut bool, opacity: &mut u8) {
+    let theme = ui.active_theme();
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing.sm;
         ui.checkbox(show, l10n::text(ui.ctx(), "Background"));
-        let mut percent = f32::from(*opacity) * 100.0 / 255.0;
-        if ui
-            .add_enabled(
-                *show,
-                egui::DragValue::new(&mut percent)
-                    .range(0.0..=100.0)
-                    .max_decimals(1)
-                    .suffix("%")
-                    .prefix(l10n::text(ui.ctx(), "Opacity ")),
-            )
-            .changed()
-        {
-            *opacity = (percent * 255.0 / 100.0).round() as u8;
-        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let mut percent = f32::from(*opacity) * 100.0 / 255.0;
+            if ui
+                .add_enabled(
+                    *show,
+                    egui::DragValue::new(&mut percent)
+                        .range(0.0..=100.0)
+                        .max_decimals(1)
+                        .suffix("%")
+                        .prefix(l10n::text(ui.ctx(), "Opacity ")),
+                )
+                .changed()
+            {
+                *opacity = (percent * 255.0 / 100.0).round() as u8;
+            }
+        });
     });
 }
 
@@ -390,88 +394,116 @@ fn level_grid<T>(
     new_level: T,
     row: impl Fn(&mut T) -> LevelRow<'_>,
 ) {
+    let theme = ui.active_theme();
     pickers.resize_with(levels.len() + 1, ColorPickerState::default);
     ui.horizontal(|ui| {
-        ui.label(l10n::text(ui.ctx(), "One colour for all levels"));
-        let mut color = levels
-            .first_mut()
-            .map_or([128, 128, 128, 255], |l| *row(l).color);
-        if level_color(ui, &mut color, &mut pickers[0]) {
-            for level in levels.iter_mut() {
-                *row(level).color = color;
+        ui.spacing_mut().item_spacing.x = theme.spacing.sm;
+        ui.label(
+            egui::RichText::new(l10n::text(ui.ctx(), "One colour for all levels"))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let mut color = levels
+                .first_mut()
+                .map_or([128, 128, 128, 255], |l| *row(l).color);
+            if level_color(ui, &mut color, &mut pickers[0]) {
+                for level in levels.iter_mut() {
+                    *row(level).color = color;
+                }
             }
-        }
-    });
-    let mut remove = None;
-    for (i, level) in levels.iter_mut().enumerate() {
-        ui.push_id(i, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                let fields = row(level);
-                let name = |ui: &Ui, property| {
-                    l10n::format_text(ui.ctx(), property, &[("0", (i + 1).to_string())])
-                };
-                ui.checkbox(fields.visible, "")
-                    .accessible_name(name(ui, "Level {0} visible"));
-                if ui
-                    .add(
-                        egui::DragValue::new(fields.value)
-                            .range(fields.range)
-                            .speed(0.001)
-                            .max_decimals(6),
-                    )
-                    .accessible_name(name(ui, "Level {0} ratio"))
-                    .changed()
-                    && let Some(label) = fields.legacy_label
-                {
-                    label.clear();
-                }
-                level_color(ui, fields.color, &mut pickers[i + 1]);
-                if let Some(style) = fields.line_style {
-                    egui::ComboBox::from_id_salt("level_style")
-                        .icon(crate::ui_kit::buttons::combo_chevron)
-                        .selected_text(l10n::text(ui.ctx(), style.name()))
-                        .width(form_control_width_for(ui))
-                        .show_ui(ui, |ui| {
-                            for choice in LineStyle::all() {
-                                ui.selectable_value(
-                                    style,
-                                    *choice,
-                                    l10n::text(ui.ctx(), choice.name()),
-                                );
-                            }
-                        })
-                        .response
-                        .accessible_name(name(ui, "Level {0} line style"));
-                }
-                if let Some((width, inherited)) = fields.width {
-                    let mut value = width.unwrap_or(inherited);
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut value)
-                                .range(
-                                    f32::MIN_POSITIVE
-                                        ..=crate::drawings::validation::MAX_STROKE_WIDTH,
-                                )
-                                .speed(0.1)
-                                .suffix(" px"),
-                        )
-                        .accessible_name(name(ui, "Level {0} width"))
-                        .changed()
-                    {
-                        *width = Some(value);
-                    }
-                }
-                if Button::new("Remove").ghost().show(ui).clicked() {
-                    remove = Some(i);
-                }
-            });
         });
-    }
+    });
+
+    let has_style = levels.first_mut().is_some_and(|l| row(l).line_style.is_some());
+    let has_width = levels.first_mut().is_some_and(|l| row(l).width.is_some());
+    let num_cols = 4 + usize::from(has_style) + usize::from(has_width);
+    let compact = ui.available_width() < 260.0;
+    let ratio_w = if has_style && compact { 44.0 } else { 64.0 };
+    let style_w = if compact { 60.0 } else { 86.0 };
+    let width_w = if compact { 40.0 } else { 52.0 };
+    let grid_gap = if compact {
+        theme.spacing.xs
+    } else {
+        theme.spacing.sm
+    };
+    let mut remove = None;
+
+    egui::Grid::new(ui.scope_id().with("levels_table"))
+        .num_columns(num_cols)
+        .spacing([grid_gap, theme.spacing.xs])
+        .show(ui, |ui| {
+            for (i, level) in levels.iter_mut().enumerate() {
+                ui.push_id(i, |ui| {
+                    let fields = row(level);
+                    let name = |ui: &Ui, property| {
+                        l10n::format_text(ui.ctx(), property, &[("0", (i + 1).to_string())])
+                    };
+                    ui.checkbox(fields.visible, "")
+                        .accessible_name(name(ui, "Level {0} visible"));
+                    if ui
+                        .add_sized(
+                            [ratio_w, ui.spacing().interact_size.y],
+                            egui::DragValue::new(fields.value)
+                                .range(fields.range)
+                                .speed(0.001)
+                                .max_decimals(6),
+                        )
+                        .accessible_name(name(ui, "Level {0} ratio"))
+                        .changed()
+                        && let Some(label) = fields.legacy_label
+                    {
+                        label.clear();
+                    }
+                    level_color(ui, fields.color, &mut pickers[i + 1]);
+                    if let Some(style) = fields.line_style {
+                        super::style::line_style_combo(
+                            ui,
+                            ("level_style", i),
+                            &name(ui, "Level {0} line style"),
+                            style,
+                            style_w,
+                            ui.spacing().interact_size.y.max(28.0),
+                        );
+                    }
+                    if let Some((width, inherited)) = fields.width {
+                        let mut value = width.unwrap_or(inherited);
+                        if ui
+                            .add_sized(
+                                [width_w, ui.spacing().interact_size.y],
+                                egui::DragValue::new(&mut value)
+                                    .range(
+                                        f32::MIN_POSITIVE
+                                            ..=crate::drawings::validation::MAX_STROKE_WIDTH,
+                                    )
+                                    .speed(0.1)
+                                    .suffix(" px"),
+                            )
+                            .accessible_name(name(ui, "Level {0} width"))
+                            .changed()
+                        {
+                            *width = Some(value);
+                        }
+                    }
+                    if Button::icon(&crate::icons::icons::TRASH)
+                        .ghost()
+                        .small()
+                        .tooltip("Remove")
+                        .show(ui)
+                        .clicked()
+                    {
+                        remove = Some(i);
+                    }
+                });
+                ui.end_row();
+            }
+        });
+
     if let Some(i) = remove {
         levels.remove(i);
         pickers.remove(i + 1);
     }
-    if Button::new("Add level").secondary().show(ui).clicked() {
+    if Button::new("Add level").secondary().small().show(ui).clicked() {
         levels.push(new_level);
     }
 }
@@ -507,63 +539,90 @@ fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
         &mut config.show_background,
         &mut config.background_opacity,
     );
-    ui.horizontal_wrapped(|ui| {
-        if matches!(
-            drawing.tool_type,
-            Tool::FibonacciRetracement | Tool::FibonacciExtension | Tool::FibonacciChannel
-        ) {
-            let mut prices = config
-                .show_prices
-                .unwrap_or(drawing.tool_type != Tool::FibonacciChannel);
-            if ui
-                .checkbox(&mut prices, l10n::text(ui.ctx(), "Prices"))
-                .changed()
-            {
-                config.show_prices = Some(prices);
+    let theme = ui.active_theme();
+    egui::Grid::new("drawing_props_fib_options")
+        .num_columns(2)
+        .spacing([theme.spacing.lg, theme.spacing.xs])
+        .min_col_width((ui.available_width() - theme.spacing.lg) * 0.45)
+        .show(ui, |ui| {
+            let mut col = 0;
+            let push_cell = |ui: &mut Ui, col: &mut usize, add: &mut dyn FnMut(&mut Ui)| {
+                add(ui);
+                *col += 1;
+                if *col % 2 == 0 {
+                    ui.end_row();
+                }
+            };
+            if matches!(
+                drawing.tool_type,
+                Tool::FibonacciRetracement | Tool::FibonacciExtension | Tool::FibonacciChannel
+            ) {
+                let mut prices = config
+                    .show_prices
+                    .unwrap_or(drawing.tool_type != Tool::FibonacciChannel);
+                push_cell(ui, &mut col, &mut |ui| {
+                    if ui
+                        .checkbox(&mut prices, l10n::text(ui.ctx(), "Prices"))
+                        .changed()
+                    {
+                        config.show_prices = Some(prices);
+                    }
+                });
             }
-        }
-        let mut levels = config
-            .show_levels
-            .unwrap_or(drawing.tool_type != Tool::FibonacciWedge);
-        if ui
-            .checkbox(&mut levels, l10n::text(ui.ctx(), "Levels"))
-            .changed()
-        {
-            config.show_levels = Some(levels);
-        }
-        ui.checkbox(
-            &mut config.levels_as_percent,
-            l10n::text(ui.ctx(), "Percent"),
-        );
-        ui.checkbox(
-            &mut config.labels_on_left,
-            l10n::text(ui.ctx(), "Labels on left"),
-        );
-    });
-    if matches!(
-        drawing.tool_type,
-        Tool::FibonacciRetracement | Tool::FibonacciExtension | Tool::FibonacciChannel
-    ) {
-        ui.horizontal_wrapped(|ui| {
-            if drawing.tool_type == Tool::FibonacciRetracement {
-                ui.checkbox(&mut config.reverse, l10n::text(ui.ctx(), "Reverse"));
+            let mut levels = config
+                .show_levels
+                .unwrap_or(drawing.tool_type != Tool::FibonacciWedge);
+            push_cell(ui, &mut col, &mut |ui| {
+                if ui
+                    .checkbox(&mut levels, l10n::text(ui.ctx(), "Levels"))
+                    .changed()
+                {
+                    config.show_levels = Some(levels);
+                }
+            });
+            push_cell(ui, &mut col, &mut |ui| {
+                ui.checkbox(
+                    &mut config.levels_as_percent,
+                    l10n::text(ui.ctx(), "Percent"),
+                );
+            });
+            push_cell(ui, &mut col, &mut |ui| {
+                ui.checkbox(
+                    &mut config.labels_on_left,
+                    l10n::text(ui.ctx(), "Labels on left"),
+                );
+            });
+            if matches!(
+                drawing.tool_type,
+                Tool::FibonacciRetracement | Tool::FibonacciExtension | Tool::FibonacciChannel
+            ) {
+                if drawing.tool_type == Tool::FibonacciRetracement {
+                    push_cell(ui, &mut col, &mut |ui| {
+                        ui.checkbox(&mut config.reverse, l10n::text(ui.ctx(), "Reverse"));
+                    });
+                }
+                push_cell(ui, &mut col, &mut |ui| {
+                    ui.checkbox(&mut config.extend_left, l10n::text(ui.ctx(), "Extend left"));
+                });
+                push_cell(ui, &mut col, &mut |ui| {
+                    ui.checkbox(
+                        &mut config.extend_right,
+                        l10n::text(ui.ctx(), "Extend right"),
+                    );
+                });
             }
-            ui.checkbox(&mut config.extend_left, l10n::text(ui.ctx(), "Extend left"));
-            ui.checkbox(
-                &mut config.extend_right,
-                l10n::text(ui.ctx(), "Extend right"),
-            );
+            if matches!(
+                drawing.tool_type,
+                Tool::FibonacciRetracement | Tool::FibonacciExtension
+            ) {
+                push_cell(ui, &mut col, &mut |ui| {
+                    ui.checkbox(
+                        &mut config.logarithmic,
+                        l10n::text(ui.ctx(), "Logarithmic levels"),
+                    );
+                });
+            }
         });
-    }
-    if matches!(
-        drawing.tool_type,
-        Tool::FibonacciRetracement | Tool::FibonacciExtension
-    ) {
-        ui.checkbox(
-            &mut config.logarithmic,
-            l10n::text(ui.ctx(), "Logarithmic levels"),
-        );
-    }
     if config != original {
         drawing.fib_config = Some(config);
     }
@@ -626,15 +685,18 @@ fn fractions(
     range: std::ops::RangeInclusive<f32>,
     new: f32,
 ) {
+    let theme = ui.active_theme();
     ui.strong(l10n::text(ui.ctx(), title));
     let mut remove = None;
     let columns = ((ui.available_width() / 96.0) as usize).clamp(1, 3);
     egui::Grid::new(title)
         .num_columns(columns * 2)
+        .spacing([theme.spacing.xs, theme.spacing.xs])
         .show(ui, |ui| {
             for (i, value) in levels.iter_mut().enumerate() {
                 let speed = (range.end() - range.start()) / 1000.0;
-                ui.add(
+                ui.add_sized(
+                    [58.0, ui.spacing().interact_size.y],
                     egui::DragValue::new(value)
                         .range(range.clone())
                         .speed(speed),
@@ -649,6 +711,7 @@ fn fractions(
                 ));
                 if Button::icon(&crate::icons::icons::TRASH)
                     .ghost()
+                    .small()
                     .tooltip("Remove division")
                     .show(ui)
                     .clicked()
@@ -665,6 +728,7 @@ fn fractions(
     }
     if Button::new(format!("Add {}", title.to_lowercase()))
         .secondary()
+        .small()
         .show(ui)
         .clicked()
     {
@@ -676,6 +740,7 @@ fn fractions(
 fn level_color(ui: &mut Ui, color: &mut [u8; 4], state: &mut ColorPickerState) -> bool {
     state.sel_color = egui::Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
     if let Some(picked) = ColorPicker::new(state, ui.scope_id().with("level_color"))
+        .well_size(ui.spacing().interact_size.y.max(24.0))
         .show(ui)
         .inner
     {

@@ -3,6 +3,7 @@
 //! Shared utilities for price-to-pixel conversion and drawing primitives.
 
 use crate::model::Bar;
+use crate::painting::pixel_snap::PixelSnap;
 use crate::scales::PriceMap;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke};
@@ -37,15 +38,24 @@ impl OhlcYCoords {
 
 /// Draw candle wicks (upper and lower)
 pub fn draw_wicks(painter: &Painter, x: f32, y: &OhlcYCoords, wick_width: f32, color: Color32) {
+    let snap = PixelSnap::of(painter);
+    let stroke = Stroke::new(snap.line_width(wick_width), color);
+    let x = snap.line_center(x, stroke.width);
     // Upper wick
     painter.add(Shape::line_segment(
-        [Pos2::new(x, y.wick_top), Pos2::new(x, y.body_top)],
-        Stroke::new(wick_width, color),
+        [
+            Pos2::new(x, snap.edge(y.wick_top)),
+            Pos2::new(x, snap.edge(y.body_top)),
+        ],
+        stroke,
     ));
     // Lower wick
     painter.add(Shape::line_segment(
-        [Pos2::new(x, y.body_bottom), Pos2::new(x, y.wick_bottom)],
-        Stroke::new(wick_width, color),
+        [
+            Pos2::new(x, snap.edge(y.body_bottom)),
+            Pos2::new(x, snap.edge(y.wick_bottom)),
+        ],
+        stroke,
     ));
 }
 
@@ -57,14 +67,14 @@ pub fn draw_body_filled(
     y: &OhlcYCoords,
     color: Color32,
 ) {
-    let body_rect = Rect::from_min_max(
-        Pos2::new(x - bar_width / 2.0, y.body_top),
-        Pos2::new(
-            x + bar_width / 2.0,
-            y.body_bottom
-                .max(y.body_top + DESIGN_TOKENS.sizing.candle.min_body_height),
-        ),
+    let snap = PixelSnap::of(painter);
+    let (left, right) = snap.bar_span(x, bar_width);
+    let (top, bottom) = snap.vertical_span(
+        y.body_top,
+        y.body_bottom,
+        DESIGN_TOKENS.sizing.candle.min_body_height,
     );
+    let body_rect = Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom));
     painter.add(Shape::rect_filled(body_rect, 0.0, color));
 }
 
@@ -76,14 +86,16 @@ pub fn draw_body_hollow(
     y: &OhlcYCoords,
     color: Color32,
 ) {
+    let snap = PixelSnap::of(painter);
+    let (left, right) = snap.bar_span(x, bar_width);
     let body_rect = Rect::from_min_max(
-        Pos2::new(x - bar_width / 2.0, y.body_top),
-        Pos2::new(x + bar_width / 2.0, y.body_bottom),
+        Pos2::new(left, snap.edge(y.body_top)),
+        Pos2::new(right, snap.edge(y.body_bottom)),
     );
     painter.add(Shape::rect_stroke(
         body_rect,
         0.0,
-        Stroke::new(DESIGN_TOKENS.stroke.medium, color),
+        Stroke::new(snap.line_width(DESIGN_TOKENS.stroke.medium), color),
         egui::epaint::StrokeKind::Inside,
     ));
 }

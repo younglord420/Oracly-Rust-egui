@@ -990,7 +990,7 @@ impl DemoApp {
             self.chart
                 .set_legend_statuses(&[egui_charts::widget::LegendStatus {
                     text: "LIVE",
-                    color: egui::Color32::from_rgb(38, 166, 154),
+                    color: egui::Color32::from_rgb(34, 197, 94),
                     background: egui::Color32::TRANSPARENT,
                 }]);
             self.chart.set_quote(None);
@@ -1006,7 +1006,7 @@ impl DemoApp {
         self.chart
             .set_legend_statuses(&[egui_charts::widget::LegendStatus {
                 text: "SIM",
-                color: egui::Color32::from_rgb(38, 166, 154),
+                color: egui::Color32::from_rgb(34, 197, 94),
                 background: egui::Color32::TRANSPARENT,
             }]);
         self.chart.set_quote(None);
@@ -1099,11 +1099,12 @@ impl DemoApp {
                             d.visible,
                             !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
                                 .is_empty(),
+                            d.tool_type.supports_text_style(),
                             bounds,
                         )
                     })
             });
-        let Some((id, stroke, fill, width, style, locked, visible, alert, bounds)) = selected
+        let Some((id, stroke, fill, width, style, locked, visible, alert, text, bounds)) = selected
         else {
             self.selection_toolbar.hide();
             return;
@@ -1133,6 +1134,7 @@ impl DemoApp {
         toolbar.set_locked(locked);
         toolbar.set_object_visible(visible);
         toolbar.set_alert_available(alert);
+        toolbar.set_text_available(text);
         let Some(action) = toolbar.show(ui) else {
             return;
         };

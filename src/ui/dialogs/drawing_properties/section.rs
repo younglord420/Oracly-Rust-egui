@@ -8,14 +8,15 @@ use egui::{Align, Layout, RichText, Stroke, Ui, Vec2};
 /// Thin rule used between property sections.
 pub(super) fn section_divider(ui: &mut Ui) {
     let theme = ui.active_theme();
-    let y = ui.cursor().top() + theme.spacing.xs;
+    ui.add_space(2.0);
+    let y = ui.cursor().top() + 2.0;
     let rect = ui.available_rect_before_wrap();
     ui.painter().hline(
         rect.x_range(),
         y,
         Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.border),
     );
-    ui.add_space(theme.spacing.xs + DESIGN_TOKENS.stroke.hairline + theme.spacing.xs);
+    ui.add_space(theme.spacing.sm + DESIGN_TOKENS.stroke.hairline);
 }
 
 /// Always-open calm section: quiet title, then dense controls.
@@ -38,12 +39,13 @@ pub(super) fn properties_section(
     let title_text = l10n::text(ui.ctx(), title);
     ui.label(
         RichText::new(&title_text)
-            .size(theme.text.small)
-            .color(theme.ui.text_secondary)
-            .strong(),
+            .size(theme.text.body)
+            .color(theme.ui.text)
+            .strong()
+            .variation("wght", 600.0),
     );
 
-    ui.add_space(theme.spacing.xs);
+    ui.add_space(theme.spacing.sm);
     let body_width = ui.available_width();
     ui.allocate_ui_with_layout(
         Vec2::new(body_width, 0.0),
@@ -55,5 +57,5 @@ pub(super) fn properties_section(
             add_body(ui);
         },
     );
-    ui.add_space(theme.spacing.xs);
+    ui.add_space(2.0);
 }

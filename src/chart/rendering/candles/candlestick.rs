@@ -9,6 +9,7 @@ use super::helpers::{
 use super::volume::render_volume_bars;
 use crate::chart::renderers::{self, BarRenderParams, RenderContext, StyleColors};
 use crate::model::{Bar, BarsStyle, CandlesStyle};
+use crate::painting::pixel_snap::PixelSnap;
 use crate::scales::PriceMap;
 use egui::{Color32, Pos2, Rect};
 
@@ -148,6 +149,7 @@ pub(super) fn render_columns(
 ) {
     let bottom = price_ctx.rect.max.y;
     let base_y = base.map(|price| price_scale.price_to_y(price));
+    let snap = PixelSnap::of(price_ctx.painter);
     for (i, bar) in visible_data.iter().enumerate() {
         if bar.is_whitespace() {
             continue;
@@ -167,10 +169,9 @@ pub(super) fn render_columns(
             Some(base) if close <= base => (close.min(base - 1.0), base),
             Some(base) => (base, close.max(base + 1.0)),
         };
-        let rect = Rect::from_min_max(
-            Pos2::new(x - bar_width / 2.0, top),
-            Pos2::new(x + bar_width / 2.0, bottom),
-        );
+        let (left, right) = snap.bar_span(x, bar_width);
+        let (top, bottom) = snap.vertical_span(top, bottom, 1.0);
+        let rect = Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom));
         price_ctx.painter.rect_filled(rect, 0.0, color);
     }
 

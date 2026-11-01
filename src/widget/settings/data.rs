@@ -98,7 +98,7 @@ impl Default for StatusLineOptions {
         Self {
             show_logo: true,
             show_symbol: true,
-            title_as_description: true,
+            title_as_description: false,
             show_quote_boxes: true,
             show_indicator_titles: true,
             show_indicator_inputs: true,
@@ -257,6 +257,20 @@ impl Default for MarginsSettings {
             bottom_percent: 8.0,
             right_bars: 10,
         }
+    }
+}
+
+/// Canvas tab: chart motion settings. Saved settings without a field take its default.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct MotionSettings {
+    /// Wheel and pinch zoom ease time-constant in milliseconds, at most 1000; 0 zooms instantly.
+    pub zoom_ms: u32,
+}
+
+impl Default for MotionSettings {
+    fn default() -> Self {
+        Self { zoom_ms: 120 }
     }
 }
 
@@ -540,6 +554,9 @@ pub struct ChartSettingsState {
     pub btns: ButtonsSettings,
     /// Space around the visible prices.
     pub margins: MarginsSettings,
+    /// Zoom easing; absent in settings saved before this control existed.
+    #[serde(default)]
+    pub motion: MotionSettings,
 
     // Trading tab
     /// Host trading controls and overlays.
@@ -580,6 +597,7 @@ impl Default for ChartSettingsState {
             scales_appearance: ScalesAppearanceSettings::default(),
             btns: ButtonsSettings::default(),
             margins: MarginsSettings::default(),
+            motion: MotionSettings::default(),
 
             trading: TradingSettings::default(),
 
