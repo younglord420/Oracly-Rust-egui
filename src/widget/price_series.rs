@@ -785,6 +785,17 @@ impl Chart {
             }
         }
         let mut main = Vec::new();
+        // While a zoom or scroll is in flight the secondary scales glide to their fit.
+        let ease_alpha = self
+            .chart_options
+            .animations
+            .autoscale_tau_secs()
+            .filter(|_| {
+                self.zoom_animation.is_some()
+                    || self.scroll_animation.is_some()
+                    || self.kinetic_scroll.is_active
+            })
+            .map(|tau| (1.0 - (-self.frame_dt / tau).exp()).clamp(0.0, 1.0));
         for (key, (transform, min, max)) in values {
             if !min.is_finite() {
                 continue;
@@ -799,7 +810,10 @@ impl Chart {
                 if let Some(range) = manual {
                     scale.set_range(range.min, range.max);
                 }
-                scale.autoscale(min, max);
+                match ease_alpha {
+                    Some(alpha) => scale.autoscale_eased(min, max, alpha),
+                    None => scale.autoscale(min, max),
+                }
             }
         }
         main

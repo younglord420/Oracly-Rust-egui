@@ -1142,9 +1142,10 @@ impl Chart {
         self.start_idx = start_idx;
 
         // With several bars to a pixel, read and draw them in groups of a pixel (see `merge`).
-        let factor = super::merge::factor(
+        let factor = super::merge::factor_near(
             self.state.time_scale().bar_spacing(),
             ui.ctx().pixels_per_point(),
+            self.merge_groups.factor(),
         )
         .min(if time_based { usize::MAX } else { 1 });
         self.merge_groups.update(
@@ -1436,13 +1437,7 @@ impl Chart {
                     style,
                 });
             } else {
-                rendering::render_vertical_grid(
-                    &painter,
-                    chart_rect,
-                    &coords,
-                    color,
-                    style,
-                );
+                rendering::render_vertical_grid(&painter, chart_rect, &coords, color, style);
                 self.shared_time_grid = None;
             }
         } else {
@@ -2122,11 +2117,12 @@ impl Chart {
                 && !eraser_mode
                 && !drawing_tool_active;
             if can_retarget_cursor {
-                if let Some(hit) = primitive_hit.or(renderer_hit.filter(|hit| {
-                    element_at(pos).map(|(id, _)| super::PointerTarget::Element(id))
-                        == Some(hit.target)
-                }))
-                .filter(|_| drawing.is_none())
+                if let Some(hit) = primitive_hit
+                    .or(renderer_hit.filter(|hit| {
+                        element_at(pos).map(|(id, _)| super::PointerTarget::Element(id))
+                            == Some(hit.target)
+                    }))
+                    .filter(|_| drawing.is_none())
                 {
                     ui.ctx().set_cursor_icon(hit.cursor);
                 } else if drawing.is_some() {

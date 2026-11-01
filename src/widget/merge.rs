@@ -16,6 +16,21 @@ pub(super) fn factor(bar_spacing: f32, pixels_per_point: f32) -> usize {
     1 << (1.0 / pixels).log2().ceil().min(30.0) as u32
 }
 
+/// [`factor`], but `previous` stays while its groups are 0.85 to 2.3 physical pixels apart, so a
+/// zoom passing or resting near a threshold does not split and join every group frame by frame.
+pub(super) fn factor_near(bar_spacing: f32, pixels_per_point: f32, previous: usize) -> usize {
+    let fresh = factor(bar_spacing, pixels_per_point);
+    if fresh == previous || previous == 0 {
+        return fresh;
+    }
+    let pitch = f64::from(bar_spacing * pixels_per_point) * previous as f64;
+    if (0.85..2.3).contains(&pitch) {
+        previous
+    } else {
+        fresh
+    }
+}
+
 /// Whether `chart_type` merges as a line, `Some(true)`, or as bars, `Some(false)`; `None` for
 /// chart types that draw unmerged.
 pub(super) fn line_style(chart_type: ChartType) -> Option<bool> {
@@ -276,6 +291,21 @@ impl Merged {
 mod tests {
     use super::*;
     use crate::model::BarColors;
+
+    #[test]
+    fn factors_hold_near_their_thresholds() {
+        // Zooming out from one bar a pixel, the groups wait until the bars are 0.85 px apart.
+        assert_eq!(factor(0.95, 1.0), 2);
+        assert_eq!(factor_near(0.95, 1.0, 1), 1);
+        assert_eq!(factor_near(0.8, 1.0, 1), 2);
+        // Zooming back in, pairs stay until a single bar is 1.15 px wide.
+        assert_eq!(factor(1.1, 1.0), 1);
+        assert_eq!(factor_near(1.1, 1.0, 2), 2);
+        assert_eq!(factor_near(1.2, 1.0, 2), 1);
+        // A large jump takes the fresh factor at once.
+        assert_eq!(factor_near(0.1, 1.0, 1), 16);
+        assert_eq!(factor_near(0.1, 2.0, 0), 8);
+    }
 
     #[test]
     fn pixel_groups_keep_gaps_and_bar_colours() {

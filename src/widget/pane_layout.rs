@@ -93,6 +93,8 @@ pub(super) struct Pane {
     pub(super) scale: crate::scales::PriceScale,
     /// Panel rect in the last frame; [`Rect::NOTHING`] when the pane was not drawn.
     pub(super) rect: Rect,
+    /// Whether the scale's last eased fit moved it, so the next frame keeps gliding.
+    pub(super) autoscale_settling: bool,
 }
 
 impl Pane {
@@ -112,6 +114,7 @@ impl Pane {
                 ..Default::default()
             }),
             rect: Rect::NOTHING,
+            autoscale_settling: false,
         }
     }
 

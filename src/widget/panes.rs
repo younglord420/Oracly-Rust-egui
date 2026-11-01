@@ -197,13 +197,7 @@ impl Chart {
                     .max_rect(main_rect)
                     .layout(egui::Layout::top_down(egui::Align::LEFT)),
                 |ui| {
-                    self.show_internal(
-                        ui,
-                        Some(time_axis),
-                        shared_plot.as_ref(),
-                        footprint,
-                        false,
-                    )
+                    self.show_internal(ui, Some(time_axis), shared_plot.as_ref(), footprint, false)
                 },
             )
             .inner;
@@ -342,6 +336,16 @@ impl Chart {
                     .find(|bar| !bar.is_whitespace())
                     .map(|bar| bar.close)
             });
+            // While a zoom or scroll is in flight the pane glides to its fit.
+            let view_moving = self.zoom_animation.is_some()
+                || self.scroll_animation.is_some()
+                || self.kinetic_scroll.is_active;
+            let ease_alpha = self
+                .chart_options
+                .animations
+                .autoscale_tau_secs()
+                .map(|tau| (1.0 - (-self.frame_dt / tau).exp()).clamp(0.0, 1.0));
+            let pane_settling = self.pane_layout.panes[pane_idx].autoscale_settling;
             let pane_scale = &mut self.pane_layout.panes[pane_idx].scale;
             let mode = pane_scale.options().mode;
             let base = members
@@ -413,11 +417,25 @@ impl Chart {
                     shared_range.1 = shared_range.1.max(*value);
                 }
             }
-            pane_scale.autoscale(
+            let before = pane_scale.range();
+            let (min, max) = (
                 transform.to_scale(shared_range.0),
                 transform.to_scale(shared_range.1),
             );
+            let eased = ease_alpha.filter(|_| view_moving || pane_settling);
+            match eased {
+                Some(alpha) => pane_scale.autoscale_eased(min, max, alpha),
+                None => pane_scale.autoscale(min, max),
+            }
+            let after = pane_scale.range();
             let map = pane_scale.map(transform, panel_rect.top(), panel_rect.bottom());
+            let settling = eased.is_some()
+                && (before.min - after.min).abs() + (before.max - after.max).abs()
+                    > before.length().abs() * 1e-6 + 1e-12;
+            self.pane_layout.panes[pane_idx].autoscale_settling = settling;
+            if settling {
+                ui.ctx().request_repaint();
+            }
             let mut drawing_response = None;
             let mut axis_tags = Vec::new();
             let hovered = self.last_hover_bar_idx.and_then(|index| {
@@ -1371,6 +1389,8 @@ mod tests {
             assert!(painted.iter().any(|shape| matches!(shape, egui::Shape::LineSegment { points, stroke }
                 if stroke.color == egui::Color32::BLUE && points.iter().all(|p| (p.y - pos.y).abs() < 0.1))));
             frame(&ctx, &mut chart, time + 0.1, vec![Event::Zoom(1.1)]);
+            // A second later the eased zoom has settled.
+            frame(&ctx, &mut chart, time + 1.1, Vec::new());
             drag(&ctx, &mut chart, pos, pos + egui::vec2(40.0, 0.0));
             let offset = chart.state.time_scale().right_offset_precise();
             let spacing = chart.state.time_scale().bar_spacing();
@@ -1425,9 +1445,7 @@ mod tests {
                 .any(|pane| chart.study_ids.get(pane.indicator_idx) == Some(&study)),
             "RSI pane should be rendered"
         );
-        let pos = chart.get_rendered_indicator_panes()[0]
-            .chart_rect
-            .center();
+        let pos = chart.get_rendered_indicator_panes()[0].chart_rect.center();
         for event in [
             Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
