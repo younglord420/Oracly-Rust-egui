@@ -22,6 +22,10 @@ struct FrozenTick {
 }
 
 /// Price-axis tick camera: slides labels with the range, fades on step change.
+///
+/// Ticks of an unchanged step are nice multiples of it, so the set is refreshed every frame:
+/// ticks keep their prices while the range moves and new ones appear as soon as their price
+/// comes into view. A change of step crossfades the two sets, and reverses when the step returns.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PriceTickCamera {
     frozen: Vec<FrozenTick>,
@@ -30,8 +34,15 @@ pub(crate) struct PriceTickCamera {
     fade: f32,
     /// Nice step of `frozen` (median adjacent gap), for step-change detection.
     step_key: Option<f64>,
-    last_range: Option<(f64, f64)>,
-    last_height: f32,
+}
+
+/// Whether two tick steps are the same nice step.
+fn same_step(a: Option<f64>, b: Option<f64>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) if a > 0.0 && b > 0.0 => (a / b).max(b / a) < 1.001,
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 impl PriceTickCamera {
@@ -52,26 +63,14 @@ impl PriceTickCamera {
         fade_tau: f32,
     ) -> Vec<(PriceMark, f32)> {
         let fresh = labeled_marks(map, formatter);
-        let range = map.range();
         let (top, bottom) = map.extent();
         let height = bottom - top;
-
-        let range_moved = match self.last_range {
-            Some((min, max)) => {
-                (min - range.min).abs() + (max - range.max).abs() > range.length() * 1e-6 + 1e-12
-            }
-            None => false,
-        };
-        let height_moved = self.last_height > 0.0 && (self.last_height - height).abs() > 0.5;
-        let in_motion = range_moved || height_moved || self.incoming.is_some();
 
         if fresh.is_empty() {
             self.frozen.clear();
             self.incoming = None;
             self.fade = 0.0;
             self.step_key = None;
-            self.last_range = Some((range.min, range.max));
-            self.last_height = height;
             return Vec::new();
         }
 
@@ -80,45 +79,39 @@ impl PriceTickCamera {
             self.step_key = step_key(&self.frozen);
             self.incoming = None;
             self.fade = 0.0;
-            self.last_range = Some((range.min, range.max));
-            self.last_height = height;
             return project(&self.frozen, map, 1.0);
         }
 
         let fresh_step = step_key_from_marks(&fresh);
-        let step_changed = match (self.step_key, fresh_step) {
-            (Some(old), Some(new)) if old > 0.0 && new > 0.0 => {
-                let ratio = (new / old).max(old / new);
-                ratio > 1.35
+        let target = if same_step(self.step_key, fresh_step) {
+            self.frozen = freeze(&fresh);
+            0.0
+        } else if self
+            .incoming
+            .as_ref()
+            .is_some_and(|ticks| same_step(step_key(ticks), fresh_step))
+        {
+            self.incoming = Some(freeze(&fresh));
+            1.0
+        } else {
+            // A third step: the set showing more stays as the one fading out.
+            if self.fade > 0.5
+                && let Some(incoming) = self.incoming.take()
+            {
+                self.frozen = incoming;
+                self.step_key = step_key(&self.frozen);
+                self.fade = 1.0 - self.fade;
             }
-            (None, Some(_)) => true,
-            _ => false,
+            self.incoming = Some(freeze(&fresh));
+            1.0
         };
 
-        if step_changed {
-            let next = freeze(&fresh);
-            let same_incoming = self
-                .incoming
-                .as_ref()
-                .and_then(|ticks| step_key(ticks))
-                .zip(fresh_step)
-                .is_some_and(|(a, b)| a > 0.0 && b > 0.0 && (a / b).max(b / a) < 1.05);
-            if !same_incoming {
-                self.incoming = Some(next);
-                self.fade = 0.0;
-            }
-        } else if !in_motion && self.incoming.is_none() {
-            // Quiet refresh: same nice family, update labels/weights from fresh.
-            self.frozen = freeze(&fresh);
-            self.step_key = step_key(&self.frozen);
-        }
-
-        if let Some(tau) = (fade_tau > 0.0).then_some(fade_tau) {
-            if self.incoming.is_some() {
-                self.fade = ease_toward(self.fade, 1.0, dt, tau);
-            }
-        } else if self.incoming.is_some() {
-            self.fade = 1.0;
+        if self.incoming.is_some() {
+            self.fade = if fade_tau > 0.0 {
+                ease_toward(self.fade, target, dt, fade_tau)
+            } else {
+                target
+            };
         }
 
         if self.fade >= 0.99 {
@@ -127,10 +120,10 @@ impl PriceTickCamera {
                 self.step_key = step_key(&self.frozen);
             }
             self.fade = 0.0;
+        } else if self.fade <= 0.01 && target == 0.0 {
+            self.incoming = None;
+            self.fade = 0.0;
         }
-
-        self.last_range = Some((range.min, range.max));
-        self.last_height = height;
 
         let mut out = project(&self.frozen, map, 1.0 - self.fade.max(0.0));
         if let Some(incoming) = &self.incoming {
@@ -238,24 +231,54 @@ mod tests {
     }
 
     #[test]
-    fn sliding_keeps_tick_prices_while_range_moves() {
+    fn sliding_keeps_tick_prices_and_fills_the_range_while_it_moves() {
         let mut cam = PriceTickCamera::default();
         let first = cam.resolve(&map(100.0, 200.0, 400.0), None, 1.0 / 60.0, 0.08);
         assert!(!first.is_empty());
-        let prices: Vec<f64> = first.iter().map(|(m, _)| m.price).collect();
 
-        let second = cam.resolve(&map(110.0, 210.0, 400.0), None, 1.0 / 60.0, 0.08);
-        let prices2: Vec<f64> = second.iter().map(|(m, _)| m.price).collect();
+        let mut range = (100.0, 200.0);
+        let mut last = first.clone();
+        for _ in 0..30 {
+            range = (range.0 + 5.0, range.1 + 5.0);
+            let next = cam.resolve(&map(range.0, range.1, 400.0), None, 1.0 / 60.0, 0.08);
+            // A step that does not change never fades: every tick is fully shown.
+            assert!(next.iter().all(|(_, alpha)| *alpha == 1.0), "{next:?}");
+            // Ticks still in view keep their price and slide with the range.
+            for (mark, _) in &next {
+                if let Some((before, _)) = last.iter().find(|(m, _)| m.price == mark.price) {
+                    assert!(
+                        mark.y_coord > before.y_coord,
+                        "{} must slide down",
+                        mark.price
+                    );
+                }
+            }
+            last = next;
+        }
+        // The prices scrolled into view carry ticks without waiting for the motion to stop.
+        assert!(last.iter().any(|(mark, _)| mark.price > 300.0), "{last:?}");
+        assert!(last.iter().all(|(mark, _)| mark.price >= range.0 - 50.0));
+    }
+
+    #[test]
+    fn a_step_change_that_returns_fades_back_out() {
+        let mut cam = PriceTickCamera::default();
+        let _ = cam.resolve(&map(100.0, 200.0, 400.0), None, 1.0 / 60.0, 0.05);
+        let _ = cam.resolve(&map(100.0, 200.0, 1200.0), None, 1.0 / 60.0, 0.05);
+        assert!(cam.incoming.is_some());
+        for _ in 0..40 {
+            let _ = cam.resolve(&map(100.0, 200.0, 400.0), None, 0.05, 0.05);
+        }
+        assert!(cam.incoming.is_none());
+        let settled = cam.resolve(&map(100.0, 200.0, 400.0), None, 1.0 / 60.0, 0.05);
         assert_eq!(
-            prices, prices2,
-            "same nice family must slide, not regenerate"
+            settled.iter().map(|(m, _)| m.price).collect::<Vec<_>>(),
+            map(100.0, 200.0, 400.0)
+                .marks()
+                .iter()
+                .map(|m| m.price)
+                .collect::<Vec<_>>()
         );
-        // At least one tick should have moved in Y.
-        let moved = first
-            .iter()
-            .zip(&second)
-            .any(|((a, _), (b, _))| a.price == b.price && (a.y_coord - b.y_coord).abs() > 0.5);
-        assert!(moved, "remapped Y should slide with the range");
     }
 
     #[test]
