@@ -1,0 +1,268 @@
+[
+  {
+    "path": "public/assets/branding/oracly-dark-horizontal-master.png",
+    "width": 1164,
+    "height": 270,
+    "operation": "master composition using the approved symbol and the single reference wordmark",
+    "sha256": "86b6c443e09c0e4d61041862a04025bd09c74687b75c67b5a2ad979e0a11786f"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-stacked-master.png",
+    "width": 618,
+    "height": 524,
+    "operation": "master composition using the approved symbol and the single reference wordmark",
+    "sha256": "21b5bc91d4d17187e5fa6e47151458453b203c8d5fc0aaf9e5b6bf405e362287"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-master.png",
+    "width": 1217,
+    "height": 1239,
+    "operation": "master composition using the approved symbol and the single reference wordmark",
+    "sha256": "dc4bfc91abc6e765684d0e626aad5ed9371a08185db9ff428d6606aa782d1282"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-horizontal-480w.png",
+    "width": 480,
+    "height": 111,
+    "operation": "proportional resize from approved composition",
+    "sha256": "0a99c5093193bee7eba5a48d052e313a21db64e43e44dd503d742dd1031d1c05"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-horizontal-960w.png",
+    "width": 960,
+    "height": 223,
+    "operation": "proportional resize from approved composition",
+    "sha256": "04a79c9c135dbd1fd84b4fcad4c17f9a4a6ab47c3463c60391712a5433a77936"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-horizontal-1440w.png",
+    "width": 1440,
+    "height": 334,
+    "operation": "proportional resize from approved composition",
+    "sha256": "f7765d1bdac3f90c9b29fdf8a799ef8844c1c8c27c18d26fb7dcb67a4c74323c"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-stacked-320w.png",
+    "width": 320,
+    "height": 271,
+    "operation": "proportional resize from approved composition",
+    "sha256": "e242019afd7e7111cce2f70dac7d7daadee4a77a0d47a4810fdf6f5f4b94aa10"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-stacked-640w.png",
+    "width": 640,
+    "height": 543,
+    "operation": "proportional resize from approved composition",
+    "sha256": "a516351d8e3dec7c649b56110838ee8b05b114fa13a1d48bdc729d0e6fba9f8b"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-stacked-1024w.png",
+    "width": 1024,
+    "height": 868,
+    "operation": "proportional resize from approved composition",
+    "sha256": "1ccac216e02c556b652aafe84efae6ff626a8dbe272249940bdf7af25881e3b0"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-compact-344w.png",
+    "width": 344,
+    "height": 80,
+    "operation": "proportional resize from approved composition",
+    "sha256": "1aa5c8fbd5e639ff1b866f156f18f5281a7fbeda85f8c3394bcb73cdcd761c6a"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-compact-688w.png",
+    "width": 688,
+    "height": 161,
+    "operation": "proportional resize from approved composition",
+    "sha256": "d3db41ab55167531f47edf49cb721345634aebe096b2523a06a028f85b5507b2"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-16w.png",
+    "width": 16,
+    "height": 16,
+    "operation": "proportional resize from approved composition",
+    "sha256": "f2be100e81f57cc8c595a608312b76f559b36a1d7a91ae1acaabc08d230b24f1"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-32w.png",
+    "width": 32,
+    "height": 32,
+    "operation": "proportional resize from approved composition",
+    "sha256": "f10cb528d47ba8f2688089646b3da8e6d6b78f01cd642905074bfb274934ced5"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-48w.png",
+    "width": 48,
+    "height": 48,
+    "operation": "proportional resize from approved composition",
+    "sha256": "655675329b3b983a7a682788bdc4bdf43fe6f4d5eb82509694c71f10bdca7de0"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-64w.png",
+    "width": 64,
+    "height": 64,
+    "operation": "proportional resize from approved composition",
+    "sha256": "ab936293a8af2d522a95e524325607caffe4cacaf030a787c23a6db96ce77c82"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-128w.png",
+    "width": 128,
+    "height": 128,
+    "operation": "proportional resize from approved composition",
+    "sha256": "bd36bf4c482d51d81c68e3d797c936d540bfa4e39b67371981ee20dd948ead7e"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-192w.png",
+    "width": 192,
+    "height": 192,
+    "operation": "proportional resize from approved composition",
+    "sha256": "35095cfcf2b5fcb9360ae244253ab78c22ed871a79e345dfd50f4728e653f3df"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-icon-512w.png",
+    "width": 512,
+    "height": 512,
+    "operation": "proportional resize from approved composition",
+    "sha256": "ef23ac17a9452b8f10882f3332a5b49965dc72c9f7c0f8fb03f8c8efdd0cc3ec"
+  },
+  {
+    "path": "public/assets/branding/oracly-dark-favicon-multi.ico",
+    "width": 256,
+    "height": 256,
+    "operation": "multi-resolution favicon",
+    "sha256": "d214fa4d51acf59048c82d64b8028e2bdecf56e022af0cdad6bb04c13a6038cd"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-horizontal-master.png",
+    "width": 1164,
+    "height": 270,
+    "operation": "master composition using the approved symbol and the single reference wordmark",
+    "sha256": "17d2710d44453b4faf70dfe48448b2df6f87917b2117962b0f6b6e4d95fad77e"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-stacked-master.png",
+    "width": 618,
+    "height": 524,
+    "operation": "master composition using the approved symbol and the single reference wordmark",
+    "sha256": "b2939b446aa89de191bba69d6ad60cc547be2429f010a6f5bfcaa49928c55682"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-master.png",
+    "width": 1217,
+    "height": 1239,
+    "operation": "master composition using the approved symbol and the single reference wordmark",
+    "sha256": "42d834b1e479d91d20972bb31e05f3b36faeb7eaf59f7978e7633550d657d907"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-horizontal-480w.png",
+    "width": 480,
+    "height": 111,
+    "operation": "proportional resize from approved composition",
+    "sha256": "8045731ee3a67b59a4284f4ba0e86cabcde2b9bad90797a699c0b712437f750f"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-horizontal-960w.png",
+    "width": 960,
+    "height": 223,
+    "operation": "proportional resize from approved composition",
+    "sha256": "100bc5784806c7a9dbe52ef3c02990e4c379f34e2ed04e348fd637eabb045f2e"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-horizontal-1440w.png",
+    "width": 1440,
+    "height": 334,
+    "operation": "proportional resize from approved composition",
+    "sha256": "e845813f7efbc93f6b2d4fb2c75b6d9c0e2b8d6120d8ee8b8b625d9a52842728"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-stacked-320w.png",
+    "width": 320,
+    "height": 271,
+    "operation": "proportional resize from approved composition",
+    "sha256": "282276f16093b27e060cfaf90485ea58070d084361f1db9294cf9a2ecea26664"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-stacked-640w.png",
+    "width": 640,
+    "height": 543,
+    "operation": "proportional resize from approved composition",
+    "sha256": "7fb40899fc0c5290fc44d0f4ca5848d43e1e51df88a321a63c6301456079280d"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-stacked-1024w.png",
+    "width": 1024,
+    "height": 868,
+    "operation": "proportional resize from approved composition",
+    "sha256": "4107cf15cd32385e73398e9641f3c8c081122f1f33305da54ab5349e52db71d2"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-compact-344w.png",
+    "width": 344,
+    "height": 80,
+    "operation": "proportional resize from approved composition",
+    "sha256": "f2087f9f5577cc862b702f3620e25fdc8d1a8c13f588fa6f2c082e296483c0bc"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-compact-688w.png",
+    "width": 688,
+    "height": 161,
+    "operation": "proportional resize from approved composition",
+    "sha256": "5703a3328b42f1c042be3b9f962eaed11c1dc5cbf56bfd91b822ebdd2ac9bcbd"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-16w.png",
+    "width": 16,
+    "height": 16,
+    "operation": "proportional resize from approved composition",
+    "sha256": "b2d1b96eea0c3547ea40417a091250970cf9b9b0c29f1b0c2c084c59cbbfabfa"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-32w.png",
+    "width": 32,
+    "height": 32,
+    "operation": "proportional resize from approved composition",
+    "sha256": "49f09168f80f54f94906109af22cfe1e014be2e849bfd40ae26f8e9e069f38b3"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-48w.png",
+    "width": 48,
+    "height": 48,
+    "operation": "proportional resize from approved composition",
+    "sha256": "32e5c0e1c89612835134ce88774420a9b1037d15baf24868bdbf79dfbe24fd02"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-64w.png",
+    "width": 64,
+    "height": 64,
+    "operation": "proportional resize from approved composition",
+    "sha256": "fee169168e27dfa5a7f1ce8d595ffd5787c43a777f409be18a873e57c5c4efe0"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-128w.png",
+    "width": 128,
+    "height": 128,
+    "operation": "proportional resize from approved composition",
+    "sha256": "c11129b5ae751db6467aa84e8a838d686ce5820b03428879117e22c0a61fae00"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-192w.png",
+    "width": 192,
+    "height": 192,
+    "operation": "proportional resize from approved composition",
+    "sha256": "57d11de4667718d42a86220984626596856d15fc02524ef01f2f120efff4f1d1"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-icon-512w.png",
+    "width": 512,
+    "height": 512,
+    "operation": "proportional resize from approved composition",
+    "sha256": "91a910559533011e8c2e07e4dcf188874880a632a947eabd0890cb1d15dfc4fe"
+  },
+  {
+    "path": "public/assets/branding/oracly-light-favicon-multi.ico",
+    "width": 256,
+    "height": 256,
+    "operation": "multi-resolution favicon",
+    "sha256": "38df1d3cb517bfaed546026aedf72b4f69beb8c69de6727a4040410ea9c8022a"
+  }
+]

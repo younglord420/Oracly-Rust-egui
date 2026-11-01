@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>egui-charts | Live Demo</title>
+    <title>Oracly | Live Chart</title>
     <script>
         // Only this key distinguishes a choice from palettes saved by earlier releases.
         try {
@@ -16,12 +16,12 @@
         }
     </script>
     <style>
-        :root { color-scheme: light; --bg: #fff; --text: #666; --border: #ebebeb; }
+        :root { color-scheme: light; --bg: #fff; --text: #464a4d; --border: #e4e6e9; }
         @media (prefers-color-scheme: dark) {
-            :root { color-scheme: dark; --bg: #000; --text: #a6a6a6; --border: #2a2a2a; }
+            :root { color-scheme: dark; --bg: #000; --text: #a1a4a5; --border: #292d30; }
         }
-        :root[data-theme="light"] { color-scheme: light; --bg: #fff; --text: #666; --border: #ebebeb; }
-        :root[data-theme="dark"] { color-scheme: dark; --bg: #000; --text: #a6a6a6; --border: #2a2a2a; }
+        :root[data-theme="light"] { color-scheme: light; --bg: #fff; --text: #464a4d; --border: #e4e6e9; }
+        :root[data-theme="dark"] { color-scheme: dark; --bg: #000; --text: #a1a4a5; --border: #292d30; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
         canvas { width: 100vw; height: 100vh; height: 100dvh; display: block; outline: none; }
@@ -29,36 +29,48 @@
             position: fixed;
             inset: 0;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 20px;
             background: var(--bg);
             color: var(--text);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 16px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
             z-index: 10;
         }
+        #loading .brand-dark { display: none; width: 136px; height: auto; }
+        #loading .brand-light { display: block; width: 136px; height: auto; }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) #loading .brand-dark { display: block; }
+            :root:not([data-theme="light"]) #loading .brand-light { display: none; }
+        }
+        :root[data-theme="dark"] #loading .brand-dark { display: block; }
+        :root[data-theme="dark"] #loading .brand-light { display: none; }
         #loading .spinner {
-            width: 28px;
-            height: 28px;
-            border: 3px solid var(--border);
-            border-top-color: #2962ff;
+            width: 22px;
+            height: 22px;
+            border: 2px solid var(--border);
+            border-top-color: #ffb500;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
-            margin-right: 12px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="loading">
+        <img class="brand-dark" src="oracly-dark-stacked-320w.png" alt="Oracly" />
+        <img class="brand-light" src="oracly-light-stacked-320w.png" alt="Oracly" />
         <div class="spinner"></div>
-        Loading egui-charts demo&hellip;
     </div>
     <canvas id="demo_canvas"></canvas>
-    <link data-trunk rel="icon" href="../../docs/site/public/favicon.svg" />
+    <link data-trunk rel="icon" href="../../assets/branding/oracly-dark-favicon-multi.ico" />
+    <link data-trunk rel="copy-file" href="../../assets/branding/oracly-dark-stacked-320w.png" />
+    <link data-trunk rel="copy-file" href="../../assets/branding/oracly-light-stacked-320w.png" />
     <!-- Same-origin static page: integrity on the module preload adds nothing and makes browsers warn. -->
     <link data-trunk rel="rust" data-cargo-profile-release="wasm-release" data-wasm-opt="z" data-integrity="none" />
-    <!-- The module embeds egui's default fonts and Lucide icons; their licences are published next to this page. -->
+    <!-- The module embeds egui's default fonts and Oracly icons; their licences are published next to this page. -->
     <link data-trunk rel="copy-file" href="LICENSE-fonts.txt" />
     <link data-trunk rel="copy-file" href="../../assets/icons/LICENSE-lucide.txt" />
     <script>

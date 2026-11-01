@@ -11,7 +11,7 @@ use egui_charts::services::{Marks, MarksPage, MarksRequest};
 use egui_charts::widget::{SeriesId, Watermark, WatermarkLine};
 use std::sync::Arc;
 
-const LEVEL: Color32 = Color32::from_rgb(255, 152, 0);
+const LEVEL: Color32 = Color32::from_rgb(255, 181, 0);
 
 impl DemoApp {
     /// Annotates the bars on show with the time-axis events and, when the API samples are on, a
@@ -49,7 +49,7 @@ impl DemoApp {
             markers.push(
                 Marker::new(bar.time)
                     .with_shape(MarkerShape::Diamond)
-                    .with_color(Color32::from_rgb(41, 98, 255))
+                    .with_color(Color32::from_rgb(255, 181, 0))
                     .with_text("Fill")
                     .at_price(bar.open, MarkerPos::AtPriceMiddle),
             );
@@ -58,7 +58,7 @@ impl DemoApp {
             markers.push(
                 Marker::new(bar.time)
                     .with_shape(MarkerShape::ArrowUp)
-                    .with_color(Color32::from_rgb(242, 54, 69))
+                    .with_color(Color32::from_rgb(255, 100, 101))
                     .with_text("Stop")
                     .at_price(low, MarkerPos::AtPriceBottom),
             );
@@ -70,13 +70,23 @@ impl DemoApp {
             return;
         }
         let spec = DemoSymbol::find(&self.state.symbol);
-        let gray = Color32::from_rgba_unmultiplied(120, 123, 134, 56);
+        let gray = Color32::from_rgba_unmultiplied(161, 164, 165, 42);
+        let brand_mark = if self.theme.dark {
+            egui::Image::from_bytes(
+                "bytes://oracly/brand/dark-icon-128.png",
+                include_bytes!("../../assets/branding/oracly-dark-icon-128w.png"),
+            )
+        } else {
+            egui::Image::from_bytes(
+                "bytes://oracly/brand/light-icon-128.png",
+                include_bytes!("../../assets/branding/oracly-light-icon-128w.png"),
+            )
+        }
+        .fit_to_exact_size(Vec2::splat(72.0))
+        .tint(Color32::from_white_alpha(48));
         self.chart.set_watermark(Some(
             Watermark::default()
-                .with_image(
-                    egui_charts::icons::icons::CHART_CANDLES
-                        .as_image_tinted(Vec2::splat(72.0), gray),
-                )
+                .with_image(brand_mark)
                 .with_line(
                     WatermarkLine::new(spec.symbol, 64.0, gray).with_weight(FontWeight::Bold),
                 )

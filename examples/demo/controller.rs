@@ -553,7 +553,6 @@ impl DemoApp {
         // Modern chart-first chrome: left Symbol·TF·Type·Indicators; right Alert·Replay·Search·Settings.
         top_toolbar.call_to_action = None;
         for control in [
-            egui_charts::ui::Control::Menu,
             egui_charts::ui::Control::Layouts,
             egui_charts::ui::Control::Trading,
             egui_charts::ui::Control::Theme,
@@ -1704,8 +1703,32 @@ impl DemoApp {
             .show_separator_line(false)
             .frame(panel_frame(bg))
             .show(ui, |ui| {
-                // Menu slot hidden; strip is symbol · interval · type · indicators · …
-                let action = self.top_toolbar.show_with_slots(ui, &self.state, |_| {}, |_| {});
+                // Oracly brand mark in the 48px left slot, matching the left drawing rail column.
+                let action = self.top_toolbar.show_with_slots(
+                    ui,
+                    &self.state,
+                    |ui| {
+                        let dark = egui_charts::theme::ThemeExt::active_theme(ui).dark;
+                        let image = if dark {
+                            egui::Image::from_bytes(
+                                "bytes://oracly/brand/dark-icon-64.png",
+                                include_bytes!("../../assets/branding/oracly-dark-icon-64w.png"),
+                            )
+                        } else {
+                            egui::Image::from_bytes(
+                                "bytes://oracly/brand/light-icon-64.png",
+                                include_bytes!("../../assets/branding/oracly-light-icon-64w.png"),
+                            )
+                        };
+                        let (rect, response) =
+                            ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+                        image
+                            .fit_to_exact_size(egui::vec2(24.0, 24.0))
+                            .paint_at(ui, egui::Rect::from_center_size(rect.center(), egui::vec2(24.0, 24.0)));
+                        response.on_hover_text("Oracly");
+                    },
+                    |_| {},
+                );
                 let rect = ui.max_rect();
                 let border = egui_charts::theme::ThemeExt::active_theme(ui).ui.border;
                 ui.painter().hline(

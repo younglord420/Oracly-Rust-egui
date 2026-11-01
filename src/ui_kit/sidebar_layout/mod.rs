@@ -141,6 +141,13 @@ impl<'a> SidebarTab<'a> {
                 },
             );
         }
+        if self.is_active {
+            let bar = Rect::from_min_size(
+                Pos2::new(rect.left() + 2.0, rect.top() + 8.0),
+                Vec2::new(2.0, (rect.height() - 16.0).max(4.0)),
+            );
+            ui.painter().rect_filled(bar, 1.0, theme.ui.accent);
+        }
 
         let text_color = ui.style().visuals.text_color();
 
