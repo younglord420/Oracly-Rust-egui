@@ -811,7 +811,9 @@ impl Chart {
                     scale.set_range(range.min, range.max);
                 }
                 match ease_alpha {
-                    Some(alpha) => scale.autoscale_eased(min, max, alpha),
+                    Some(alpha) => {
+                        scale.autoscale_eased(min, max, alpha, self.state.autoscale_snap)
+                    }
                     None => scale.autoscale(min, max),
                 }
             }

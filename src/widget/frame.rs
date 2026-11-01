@@ -1189,6 +1189,8 @@ impl Chart {
             let alpha = 1.0 - (-dt / tau).exp();
             self.state.autoscale_ease_alpha = Some(alpha.clamp(0.0, 1.0));
         }
+        self.state.autoscale_snap =
+            0.5 / f64::from((price_rect.height() * ui.ctx().pixels_per_point()).max(1.0));
         let range_before = self.state.price_scale().range();
         let transform = self.state.fit_price_scale_with_series(
             (if self.chart_type.is_time_independent() {

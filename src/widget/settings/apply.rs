@@ -649,13 +649,13 @@ mod tests {
         }
     }
 
-    /// Zoom smoothing defaults to 120 ms, applies any value up to a second, 0 included, and
+    /// Zoom smoothing defaults to 70 ms, applies any value up to a second, 0 included, and
     /// reads back from the chart.
     #[test]
     fn zoom_smoothing_applies_and_reads_back() {
         let mut chart = crate::widget::test_frames::chart(&[100.0], &[110.0]);
-        assert_eq!(ChartSettingsState::default().motion.zoom_ms, 120);
-        assert_eq!(ChartSettingsState::from_chart(&chart).motion.zoom_ms, 120);
+        assert_eq!(ChartSettingsState::default().motion.zoom_ms, 70);
+        assert_eq!(ChartSettingsState::from_chart(&chart).motion.zoom_ms, 70);
         let mut settings = ChartSettingsState::from_chart(&chart);
         for ms in [0, 70, 1_000] {
             settings.motion.zoom_ms = ms;

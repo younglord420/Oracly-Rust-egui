@@ -270,7 +270,7 @@ pub struct MotionSettings {
 
 impl Default for MotionSettings {
     fn default() -> Self {
-        Self { zoom_ms: 120 }
+        Self { zoom_ms: 70 }
     }
 }
 

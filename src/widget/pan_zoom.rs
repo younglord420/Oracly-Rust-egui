@@ -103,22 +103,31 @@ impl Chart {
             )
         });
         let (delta_y, delta_x, hover_pos, _is_modifier_held) = scroll_input;
+        // Zoom takes each notch in the frame it arrives and eases it once with `zoom_ms`;
+        // egui's smoothed delta would delay its start and ease it a second time.
+        let zoom_y = raw.y;
 
         let mut did_zoom = false;
-        if delta_y.abs() > 0.1 {
+        if delta_y.abs() > 0.1 || zoom_y.abs() > 0.1 {
             let shift_held = ui.input(|i| i.modifiers.shift);
 
             if shift_held && self.chart_options.handle_scroll.mouse_wheel {
-                let pan_amount = -delta_y * 2.0;
-                self.state.time_scale_mut().scroll_pixels(pan_amount);
+                if delta_y.abs() > 0.1 {
+                    let pan_amount = -delta_y * 2.0;
+                    self.state.time_scale_mut().scroll_pixels(pan_amount);
+                }
+            } else if zoom_y.abs() <= 0.1 {
+                // The smoothed remainder of a notch already taken as zoom.
+                did_zoom = true;
             } else if self.chart_options.handle_scale.mouse_wheel
                 && let Some(hp) = hover_pos.or_else(|| response.hover_pos())
             {
                 if price_axis_rect.contains(hp) {
-                    pending_price_zoom = Some(delta_y);
+                    pending_price_zoom = Some(zoom_y);
                 } else {
-                    // Responsive notches with a short ease (not as coarse as `/100`).
-                    let zoom_scale = (-delta_y / 120.0).clamp(-0.4, 0.4);
+                    // About 9% a 100-point notch, multiplicative so that a notch in and a notch
+                    // out cancel, and capped at about 65% for one frame of very fast scrolling.
+                    let zoom_scale = 10.0 * ((-zoom_y / 1200.0).clamp(-0.5, 0.5).exp() - 1.0);
                     // Zoom around the pointer, or the latest candle while the right bar stays
                     let zoom_point_x = self.zoom_anchor(hp.x - chart_rect_min_x, chart_width);
 
@@ -1181,6 +1190,49 @@ mod tests {
         assert!(
             (moved - offset).abs() < 1e-4,
             "right-edge lock keeps bar offset: {offset} -> {moved}"
+        );
+    }
+
+    /// A wheel notch starts zooming in its own frame and ends on its target once the farthest bar
+    /// has less than half a pixel left to move, rather than stepping bars across pixel edges one
+    /// after another for half a second.
+    #[test]
+    fn wheel_zoom_starts_at_once_and_ends_without_a_tail() {
+        let ctx = egui::Context::default();
+        let mut chart = chart(&[100.0, 105.0], &[110.0, 115.0]);
+        frame(&ctx, &mut chart, 0.0, Vec::new());
+        let (spacing, _) = chart.get_time_scale_state();
+        let pointer = chart.last_rendered_price_rect.center();
+        frame(&ctx, &mut chart, 0.016, vec![Event::PointerMoved(pointer)]);
+        let wheel = Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -1.0),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        };
+        frame(&ctx, &mut chart, 0.032, vec![wheel]);
+        assert!(
+            chart.get_time_scale_state().0 > spacing,
+            "zoom must start at once"
+        );
+        let mut settled = None;
+        for i in 3..40 {
+            let time = i as f64 * 0.016;
+            frame(&ctx, &mut chart, time, Vec::new());
+            if chart.zoom_animation.is_none() {
+                settled = Some(time);
+                break;
+            }
+        }
+        let settled = settled.expect("the zoom must settle");
+        assert!(settled < 0.3, "settled after {settled} s");
+        let end = chart.get_time_scale_state().0;
+        frame(&ctx, &mut chart, settled + 1.0, Vec::new());
+        assert_eq!(
+            chart.get_time_scale_state().0,
+            end,
+            "no tail after the zoom ends"
         );
     }
 

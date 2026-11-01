@@ -56,6 +56,8 @@ pub struct ChartState {
     /// One-shot ease factor for the next [`fit_price_scale`](Self::fit_price_scale) call.
     /// `None` snaps; `Some(a)` lerps with alpha `a` in `[0, 1]`.
     pub(crate) autoscale_ease_alpha: Option<f32>,
+    /// Share of the pane's height that half a pixel takes, where an eased fit ends on its target.
+    pub(crate) autoscale_snap: f64,
 }
 
 impl Clone for ChartState {
@@ -69,6 +71,7 @@ impl Clone for ChartState {
             zoom_history: self.zoom_history.clone(),
             revision: next_revision(),
             autoscale_ease_alpha: None,
+            autoscale_snap: self.autoscale_snap,
         }
     }
 }
@@ -87,6 +90,7 @@ impl ChartState {
             zoom_history: Vec::new(),
             revision: next_revision(),
             autoscale_ease_alpha: None,
+            autoscale_snap: 0.0,
         }
     }
 
@@ -393,7 +397,10 @@ impl ChartState {
             });
         self.price_scale.rebase(transform);
         match self.autoscale_ease_alpha.take() {
-            Some(alpha) if alpha < 0.999 => self.price_scale.autoscale_eased(min, max, alpha),
+            Some(alpha) if alpha < 0.999 => {
+                self.price_scale
+                    .autoscale_eased(min, max, alpha, self.autoscale_snap)
+            }
             _ => self.price_scale.autoscale(min, max),
         }
         transform

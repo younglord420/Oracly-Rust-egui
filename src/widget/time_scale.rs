@@ -333,7 +333,12 @@ impl Chart {
         );
         let after = f64::from(self.state.time_scale().bar_spacing());
         let tol = animation.target_spacing.abs().max(1.0) * 1e-4;
-        if (after - animation.target_spacing).abs() <= tol {
+        // The bar farthest from the anchor moves the most; once what is left of its move is under
+        // half a pixel the tail would only step bars across pixel edges one after another.
+        let reach = f64::from(animation.anchor_x.max(width - animation.anchor_x).max(1.0));
+        let left_px = (animation.target_spacing - after).abs() * reach / after.max(1e-6)
+            * f64::from(ui.ctx().pixels_per_point());
+        if (after - animation.target_spacing).abs() <= tol || left_px < 0.5 {
             self.state.time_scale_mut().set_bar_spacing_anchored(
                 animation.target_spacing as f32,
                 animation.anchor_x,

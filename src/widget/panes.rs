@@ -424,7 +424,12 @@ impl Chart {
             );
             let eased = ease_alpha.filter(|_| view_moving || pane_settling);
             match eased {
-                Some(alpha) => pane_scale.autoscale_eased(min, max, alpha),
+                Some(alpha) => pane_scale.autoscale_eased(
+                    min,
+                    max,
+                    alpha,
+                    0.5 / f64::from((panel_rect.height() * ui.ctx().pixels_per_point()).max(1.0)),
+                ),
                 None => pane_scale.autoscale(min, max),
             }
             let after = pane_scale.range();

@@ -383,12 +383,15 @@ impl PriceScale {
     ///
     /// Non-finite bounds (no drawable data) and a fit that overflows keep the current range.
     pub fn autoscale(&mut self, min: f64, max: f64) {
-        self.autoscale_eased(min, max, 1.0);
+        self.autoscale_eased(min, max, 1.0, 0.0);
     }
 
     /// Like [`autoscale`](Self::autoscale), but lerps the visible range toward the fit by `alpha`
     /// (0 = keep current, 1 = snap). Used for a short glide after zoom or live bar updates.
-    pub(crate) fn autoscale_eased(&mut self, min: f64, max: f64, alpha: f32) {
+    ///
+    /// The glide ends on the fit once both ends are within `snap` of its span, the share of the
+    /// pane half a pixel takes, so that its tail does not step prices across pixel edges.
+    pub(crate) fn autoscale_eased(&mut self, min: f64, max: f64, alpha: f32, snap: f64) {
         if !min.is_finite() || !max.is_finite() {
             return;
         }
@@ -421,10 +424,17 @@ impl PriceScale {
             self.range = target;
             return;
         }
-        self.range = PriceRange::new(
+        let next = PriceRange::new(
             self.range.min + (target.min - self.range.min) * a,
             self.range.max + (target.max - self.range.max) * a,
         );
+        let tol = target.length().abs() * snap.max(0.0);
+        self.range = if (target.min - next.min).abs() <= tol && (target.max - next.max).abs() <= tol
+        {
+            target
+        } else {
+            next
+        };
     }
 
     /// Shows `min..max` and switches to manual.
@@ -791,6 +801,30 @@ mod tests {
                 "{top} {bottom}: {min}..{max}"
             );
         }
+    }
+
+    /// An eased fit glides toward the target and ends exactly on it once both ends are within the
+    /// snap share of its span, so the glide has no sub-pixel tail.
+    #[test]
+    fn eased_autoscale_ends_on_the_fit_within_the_snap() {
+        let mut scale = PriceScale::new(PriceScaleOptions {
+            scale_margins: PriceScaleMargins {
+                top: 0.0,
+                bottom: 0.0,
+            },
+            ..Default::default()
+        });
+        scale.autoscale(100.0, 200.0);
+        scale.autoscale_eased(100.0, 300.0, 0.5, 0.0);
+        assert_eq!(scale.range(), PriceRange::new(100.0, 250.0));
+        // 0.5% of the 200 span is 1: the next half step leaves 25, then 12.5, ... under 1 at the 6th.
+        let mut steps = 0;
+        while scale.range() != PriceRange::new(100.0, 300.0) {
+            scale.autoscale_eased(100.0, 300.0, 0.5, 0.005);
+            steps += 1;
+            assert!(steps < 10, "{:?}", scale.range());
+        }
+        assert_eq!(steps, 6);
     }
 
     /// Manual zoom must narrow ordinary intraday ranges, stop at a span tied to the
