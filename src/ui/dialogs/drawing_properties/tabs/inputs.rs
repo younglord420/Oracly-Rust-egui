@@ -859,6 +859,9 @@ fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
                         }
 
                         let ctx = ui.ctx().clone();
+                        if !TextVerticalAlign::all().contains(&config.label_v_align) {
+                            config.label_v_align = TextVerticalAlign::Middle;
+                        }
                         super::style::text_combo_popup(
                             ui,
                             "fib_label_v_align",

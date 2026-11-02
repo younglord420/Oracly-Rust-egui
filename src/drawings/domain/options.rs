@@ -104,9 +104,9 @@ pub enum TextVerticalAlign {
 }
 
 impl TextVerticalAlign {
-    /// All vertical alignment choices in UI order.
+    /// Line/shape label choices in UI order. `Inside` is channel-only — see [`Self::channel`].
     pub fn all() -> &'static [Self] {
-        &[Self::Top, Self::Inside, Self::Middle, Self::Bottom]
+        &[Self::Top, Self::Middle, Self::Bottom]
     }
 
     /// Vertical choices for two-boundary channel tools (Flat Top/Bottom, Disjoint).
@@ -1148,6 +1148,27 @@ impl Default for PositionSize {
 mod tests {
     use super::*;
     use crate::data::VolumeProfileConfig;
+
+    #[test]
+    fn text_vertical_align_inside_is_channel_only() {
+        assert_eq!(
+            TextVerticalAlign::all(),
+            &[
+                TextVerticalAlign::Top,
+                TextVerticalAlign::Middle,
+                TextVerticalAlign::Bottom
+            ]
+        );
+        assert_eq!(
+            TextVerticalAlign::channel(),
+            &[
+                TextVerticalAlign::Top,
+                TextVerticalAlign::Inside,
+                TextVerticalAlign::Bottom
+            ]
+        );
+        assert!(!TextVerticalAlign::all().contains(&TextVerticalAlign::Inside));
+    }
 
     /// Reference: quantity = risked amount / |entry - stop| (reference.py);
     /// none when a size from the risk has its stop at the entry, or a setting
