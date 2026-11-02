@@ -1353,7 +1353,8 @@ impl Chart {
 
         // Create rendering contexts
         let bar_spacing = self.state.time_scale().bar_spacing();
-        let bar_width = bar_spacing * self.config.candle_width;
+        let bar_width = crate::painting::pixel_snap::PixelSnap::of(&painter)
+            .bar_width(bar_spacing, self.config.candle_width);
         let price_ctx = RenderContext::new(&painter, price_rect);
         let coords = ChartMapping::new(
             price_rect,

@@ -243,6 +243,9 @@ pub struct Chart {
     scroll_animation: Option<time_scale::ScrollAnimation>,
     /// Eased wheel/pinch zoom toward a target bar spacing (UI state only)
     zoom_animation: Option<time_scale::ZoomAnimation>,
+    /// The unrounded spacing the last wheel/pinch zoom asked for and the whole-pixel spacing it
+    /// was rounded to, so that zoom steps smaller than a pixel add up (UI state only)
+    zoom_raw_spacing: Option<(f64, f64)>,
     /// Eased price-axis wheel zoom toward a target range (UI state only)
     price_zoom_animation: Option<time_scale::PriceZoomAnimation>,
     /// Price-axis tick slide/fade while the visible range moves (UI state only)

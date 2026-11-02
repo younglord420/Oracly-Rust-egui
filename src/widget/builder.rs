@@ -102,6 +102,7 @@ impl Chart {
             pending_scroll_time: None,
             scroll_animation: None,
             zoom_animation: None,
+            zoom_raw_spacing: None,
             price_zoom_animation: None,
             price_tick_camera: crate::scales::PriceTickCamera::default(),
             frame_price_ticks: Vec::new(),

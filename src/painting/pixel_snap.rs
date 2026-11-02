@@ -68,14 +68,29 @@ impl PixelSnap {
 
     /// The left and right edges of a bar about `width` points wide centred on `x`.
     ///
-    /// The width is a whole number of pixels, at least one, and odd from three pixels on, so a
-    /// one-pixel wick at [`center`](Self::center)`(x)` splits it evenly.
+    /// The width is a whole number of pixels, at least one, so a bar grows and shrinks a pixel at
+    /// a time as the chart zooms. The pixel of a one-pixel wick at [`center`](Self::center)`(x)`
+    /// is its middle pixel, or the left one of its middle two for an even width, so the wick
+    /// moves with the bar and never sits on its edge.
     pub(crate) fn bar_span(self, x: f32, width: f32) -> (f32, f32) {
-        let mut pixels = self.pixels(width);
-        if pixels >= 3.0 && pixels % 2.0 == 0.0 {
-            pixels -= 1.0;
+        let pixels = self.pixels(width);
+        let wick = (x * self.pixels_per_point).floor();
+        let left = wick - ((pixels - 1.0) / 2.0).floor();
+        (
+            left / self.pixels_per_point,
+            (left + pixels) / self.pixels_per_point,
+        )
+    }
+
+    /// The width of a bar `ratio` of `spacing` points wide, narrowed so that neighbouring bars
+    /// placed by [`bar_span`](Self::bar_span) keep at least a pixel between them.
+    pub(crate) fn bar_width(self, spacing: f32, ratio: f32) -> f32 {
+        let width = spacing * ratio;
+        let pitch = (spacing * self.pixels_per_point).floor();
+        if !width.is_finite() || pitch < 2.0 {
+            return width;
         }
-        self.span_of(x, pixels)
+        width.min((pitch - 1.0) / self.pixels_per_point)
     }
 
     fn span_of(self, x: f32, pixels: f32) -> (f32, f32) {
@@ -115,16 +130,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bars_keep_one_odd_width_wherever_they_sit() {
+    fn bars_keep_their_rounded_width_about_the_wick_wherever_they_sit() {
         let snap = PixelSnap::new(1.0);
         for x in [10.0, 10.2, 10.5, 10.8, 11.49] {
-            for (width, pixels) in [(0.3, 1.0), (2.4, 2.0), (6.0, 5.0), (6.6, 7.0), (7.4, 7.0)] {
+            for (width, pixels) in [(0.3, 1.0), (2.4, 2.0), (4.4, 4.0), (6.0, 6.0), (6.6, 7.0)] {
                 let (left, right) = snap.bar_span(x, width);
                 assert_eq!(right - left, pixels, "x={x}, width={width}");
                 assert_eq!(left.fract(), 0.0, "x={x}, width={width}");
-                if pixels % 2.0 == 1.0 {
-                    assert_eq!((left + right) / 2.0, snap.center(x), "x={x}, width={width}");
-                }
+                let wick = snap.center(x);
+                let middle = left + ((pixels - 1.0) / 2.0).floor() + 0.5;
+                assert_eq!(wick, middle, "x={x}, width={width}");
+            }
+        }
+    }
+
+    #[test]
+    fn bars_leave_a_pixel_between_neighbours() {
+        let snap = PixelSnap::new(1.0);
+        assert_eq!(snap.bar_width(10.0, 0.6), 6.0);
+        assert_eq!(snap.bar_width(5.6, 0.95), 4.0);
+        assert_eq!(snap.bar_width(1.5, 0.95), 1.425);
+        for spacing in [2.0_f32, 3.3, 4.5, 5.6, 7.9, 12.2] {
+            let width = snap.bar_width(spacing, 1.0);
+            for i in 0..20 {
+                let x = 3.7 + i as f32 * spacing;
+                let (_, right) = snap.bar_span(x, width);
+                let (left, _) = snap.bar_span(x + spacing, width);
+                assert!(left - right >= 1.0, "spacing={spacing}, i={i}");
             }
         }
     }

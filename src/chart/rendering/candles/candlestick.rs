@@ -475,7 +475,7 @@ mod tests {
     }
 
     /// Volumes 0, 1 and 10 under a largest visible volume of 10 draw bodies 0, 2 and 20 points
-    /// wide out of 20, in whole pixels and odd from three on, so 19; a larger visible maximum
+    /// wide out of 20, in whole pixels; a larger visible maximum
     /// narrows them, a missing volume draws no body, and without any visible volume every body
     /// keeps the full width.
     #[test]
@@ -499,10 +499,10 @@ mod tests {
             candle_border_width: 0.0,
         };
         for (volumes, max_volume, widths) in [
-            ([0.0, 1.0, 10.0], 10.0, vec![2.0, 19.0]),
-            ([0.0, 1.0, 10.0], 20.0, vec![1.0, 9.0]),
-            ([f64::NAN, 5.0, 10.0], 10.0, vec![9.0, 19.0]),
-            ([0.0, 0.0, 0.0], 0.0, vec![19.0, 19.0, 19.0]),
+            ([0.0, 1.0, 10.0], 10.0, vec![2.0, 20.0]),
+            ([0.0, 1.0, 10.0], 20.0, vec![1.0, 10.0]),
+            ([f64::NAN, 5.0, 10.0], 10.0, vec![10.0, 20.0]),
+            ([0.0, 0.0, 0.0], 0.0, vec![20.0, 20.0, 20.0]),
         ] {
             let bars = volumes.map(|volume| {
                 Bar::new(chrono::DateTime::UNIX_EPOCH, 40.0, 60.0, 30.0, 50.0, volume)

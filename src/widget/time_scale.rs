@@ -353,19 +353,33 @@ impl Chart {
     }
 
     /// Starts or retargets an eased (or instant) time-axis zoom by `delta` around `anchor_x`.
-    pub(super) fn request_time_zoom(&mut self, delta: f32, anchor_x: f32, chart_width: f32) {
+    ///
+    /// From [`WHOLE_PIXEL_SPACING_FROM`] physical pixels on, the zoom ends on a whole number of
+    /// pixels per bar, so every bar keeps the same gap to the next once the chart stands still.
+    /// The unrounded spacing carries on into the next zoom step, so steps under a pixel add up.
+    pub(super) fn request_time_zoom(
+        &mut self,
+        delta: f32,
+        anchor_x: f32,
+        chart_width: f32,
+        pixels_per_point: f32,
+    ) {
         self.pending_scroll_time = None;
         self.tracking_mode_active = false;
         self.kinetic_scroll.is_active = false;
         self.scroll_animation = None;
 
         let scale = self.state.time_scale();
-        let base = self
-            .zoom_animation
-            .as_ref()
-            .map(|z| z.target_spacing)
-            .unwrap_or_else(|| f64::from(scale.bar_spacing()));
-        let target = scale.spacing_after_zoom_from(base, delta);
+        let current = f64::from(scale.bar_spacing());
+        let base = match (self.zoom_raw_spacing, self.zoom_animation) {
+            (Some((raw, _)), Some(_)) => raw,
+            (Some((raw, rounded)), None) if (rounded - current).abs() < 1e-4 => raw,
+            (_, animation) => animation.map_or(current, |z| z.target_spacing),
+        };
+        let raw = scale.spacing_after_zoom_from(base, delta);
+        let whole = whole_pixel_spacing(raw, pixels_per_point, delta > 0.0);
+        let target = scale.spacing_after_zoom_from(whole, 0.0);
+        self.zoom_raw_spacing = Some((raw, target));
 
         match self.chart_options.animations.zoom_tau_secs() {
             None => {
@@ -443,10 +457,33 @@ impl Chart {
         self.pending_start_idx = None;
         self.scroll_animation = None;
         self.zoom_animation = None;
+        self.zoom_raw_spacing = None;
         self.price_zoom_animation = None;
         self.crosshair_display = None;
         self.autoscale_settling = false;
         self.kinetic_scroll = super::state::KineticScrollState::new();
+    }
+}
+
+/// Bar spacing, in physical pixels, from which a zoom ends on whole pixels. Below it a pixel is
+/// too large a share of the spacing for the zoom to round to.
+const WHOLE_PIXEL_SPACING_FROM: f64 = 3.0;
+
+/// `spacing` points rounded to whole physical pixels from [`WHOLE_PIXEL_SPACING_FROM`] on, up
+/// when zooming in and down when zooming out, so that every step reaching past the current pixel
+/// moves the bars and a step in followed by the same step out returns to where it began.
+fn whole_pixel_spacing(spacing: f64, pixels_per_point: f32, zoom_in: bool) -> f64 {
+    let ppp = f64::from(pixels_per_point);
+    if !(ppp.is_finite() && ppp > 0.0) || !spacing.is_finite() {
+        return spacing;
+    }
+    let pixels = spacing * ppp;
+    if pixels < WHOLE_PIXEL_SPACING_FROM {
+        spacing
+    } else if zoom_in {
+        (pixels - 1e-6).ceil() / ppp
+    } else {
+        (pixels + 1e-6).floor() / ppp
     }
 }
 
@@ -575,14 +612,15 @@ mod tests {
         });
         chart.set_data(added, vec![Bar::new(time, 9.0, 11.0, 9.0, 11.0, 100.0)]);
         let painted = shapes(&ctx, &mut chart, 0.3, vec![]);
-        // The body is placed on whole pixels, within half a pixel of its fractional position and
-        // so clear of the whole bar one pixel to its left.
+        // The body is placed on whole pixels about the pixel holding its fractional position, a
+        // pixel to the right of the whole bar's.
         let x = chart.index_to_x(999_997.005).unwrap();
+        let wick = x.floor() + 0.5;
         assert!(
             painted.iter().any(|shape| matches!(shape,
                 egui::Shape::Rect(body)
                     if body.fill == egui::Color32::BLUE
-                        && (body.rect.center().x - x).abs() <= 0.5
+                        && (body.rect.center().x - wick).abs() <= 0.5
                         && body.rect.left().fract() == 0.0
             )),
             "an added series must retain its fractional time position"

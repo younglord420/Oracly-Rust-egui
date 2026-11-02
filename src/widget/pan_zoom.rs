@@ -139,7 +139,12 @@ impl Chart {
                         chart_width
                     );
 
-                    self.request_time_zoom(zoom_scale, zoom_point_x, chart_width);
+                    self.request_time_zoom(
+                        zoom_scale,
+                        zoom_point_x,
+                        chart_width,
+                        ui.ctx().pixels_per_point(),
+                    );
                     did_zoom = true;
 
                     // CRITICAL: Reset drag state after zoom to prevent jump
@@ -218,7 +223,12 @@ impl Chart {
                     "[PINCH ZOOM] zoom_delta={zoom_delta:.4}, zoom_scale={zoom_scale:.4}, anchor_x={zoom_point_x:.1}"
                 );
 
-                self.request_time_zoom(zoom_scale, zoom_point_x, chart_width);
+                self.request_time_zoom(
+                    zoom_scale,
+                    zoom_point_x,
+                    chart_width,
+                    ui.ctx().pixels_per_point(),
+                );
 
                 // Reset drag state to prevent jump after pinch
                 if self.scroll_start_offset.is_some() {
@@ -894,8 +904,13 @@ mod tests {
             frame(&ctx, &mut chart, 0.06, events);
             assert!(!chart.kinetic_scroll.is_active);
             let (zoomed, moved) = chart.get_time_scale_state();
-            // The existing pinch sensitivity maps a 1.5 gesture to a 10% spacing increase.
-            let expected_spacing = if enabled { spacing * 1.1 } else { spacing };
+            // The existing pinch sensitivity maps a 1.5 gesture to a 10% spacing increase, which
+            // ends on the next whole pixel.
+            let expected_spacing = if enabled {
+                (spacing * 1.1).ceil()
+            } else {
+                spacing
+            };
             assert!(
                 (zoomed - expected_spacing).abs() < 1e-5,
                 "contacts={contacts}, native={native}, enabled={enabled}: {zoomed}"
@@ -1201,6 +1216,8 @@ mod tests {
         let ctx = egui::Context::default();
         let mut chart = chart(&[100.0, 105.0], &[110.0, 115.0]);
         frame(&ctx, &mut chart, 0.0, Vec::new());
+        // Wide enough that rounding to a whole pixel leaves the notch at about its 9%.
+        chart.state.time_scale_mut().set_bar_spacing(20.0);
         let (spacing, _) = chart.get_time_scale_state();
         let pointer = chart.last_rendered_price_rect.center();
         frame(&ctx, &mut chart, 0.016, vec![Event::PointerMoved(pointer)]);
@@ -1234,6 +1251,41 @@ mod tests {
             end,
             "no tail after the zoom ends"
         );
+    }
+
+    /// Wheel notches end on a whole number of pixels per bar, so the bars stand at equal gaps;
+    /// notches under a pixel add up rather than each moving a pixel, and as many notches out as
+    /// in return to the spacing they began from.
+    #[test]
+    fn wheel_zoom_ends_on_whole_pixels_and_adds_up_small_notches() {
+        let ctx = egui::Context::default();
+        let mut chart = chart(&[100.0, 105.0], &[110.0, 115.0]);
+        frame(&ctx, &mut chart, 0.0, Vec::new());
+        chart.state.time_scale_mut().set_bar_spacing(10.0);
+        let pointer = chart.last_rendered_price_rect.center();
+        frame(&ctx, &mut chart, 0.016, vec![Event::PointerMoved(pointer)]);
+        let wheel = |points: f32| Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, points),
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+            modifiers: Modifiers::NONE,
+        };
+        let mut time = 0.032;
+        let mut spacings = Vec::new();
+        for points in [-20.0; 12].into_iter().chain([20.0; 12]) {
+            frame(&ctx, &mut chart, time, vec![wheel(points)]);
+            for _ in 0..40 {
+                time += 0.016;
+                frame(&ctx, &mut chart, time, Vec::new());
+            }
+            let spacing = chart.get_time_scale_state().0;
+            assert_eq!(spacing.fract(), 0.0, "spacing {spacing}");
+            spacings.push(spacing);
+        }
+        // Twelve notches of about 1.7% zoom in about 22%: to 12.2, shown as 13, not 22.
+        assert_eq!(spacings[11], 13.0, "{spacings:?}");
+        assert_eq!(spacings.last(), Some(&10.0), "{spacings:?}");
     }
 
     /// Zoom speed must not depend on how many frames a drag spans.

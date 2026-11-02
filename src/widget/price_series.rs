@@ -1132,7 +1132,10 @@ impl Chart {
             },
             &rendering::ChartTypeParams::new(
                 rendering::BarDimensions::new(
-                    self.state.time_scale().bar_spacing() * self.config.candle_width,
+                    crate::painting::pixel_snap::PixelSnap::of(plot).bar_width(
+                        self.state.time_scale().bar_spacing(),
+                        self.config.candle_width,
+                    ),
                     self.config.wick_width,
                 ),
                 rendering::VolumeSettings::new(
