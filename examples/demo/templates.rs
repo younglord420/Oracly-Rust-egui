@@ -11,8 +11,10 @@ impl DemoApp {
     }
 
     pub(super) fn load_study_template(&mut self, template: &[StudyTemplate]) {
-        match StudyTemplate::create_set_with(template, &egui_charts::studies::IndicatorFactory::new())
-        {
+        match StudyTemplate::create_set_with(
+            template,
+            &egui_charts::studies::IndicatorFactory::new(),
+        ) {
             Ok(studies) => self.user_action(|app| {
                 app.remove_all_indicators();
                 let mut ids = Vec::new();

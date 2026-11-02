@@ -587,7 +587,6 @@ pub mod icons {
     /// Ui arrow forward SVG icon.
     pub const UI_ARROW_FORWARD: Icon = crate::icon_from_path!("ui/step-forward.svg");
 
-
     // Complete Oracly 550 catalog additions
     /// Crosshair SVG icon.
     pub const ORACLY_CROSSHAIR: Icon = crate::icon_from_path!("lines/crosshair.svg");
@@ -680,17 +679,20 @@ pub mod icons {
     /// Raff channel SVG icon.
     pub const RAFF_CHANNEL: Icon = crate::icon_from_path!("lines/raff-channel.svg");
     /// Standard deviation channel SVG icon.
-    pub const STANDARD_DEVIATION_CHANNEL: Icon = crate::icon_from_path!("lines/standard-deviation-channel.svg");
+    pub const STANDARD_DEVIATION_CHANNEL: Icon =
+        crate::icon_from_path!("lines/standard-deviation-channel.svg");
     /// Fibonacci arcs SVG icon.
     pub const FIBONACCI_ARCS: Icon = crate::icon_from_path!("fibonacci/fibonacci-arcs.svg");
     /// Fibonacci fan SVG icon.
     pub const FIBONACCI_FAN: Icon = crate::icon_from_path!("fibonacci/fibonacci-fan.svg");
     /// Fibonacci projection SVG icon.
-    pub const FIBONACCI_PROJECTION: Icon = crate::icon_from_path!("fibonacci/fibonacci-projection.svg");
+    pub const FIBONACCI_PROJECTION: Icon =
+        crate::icon_from_path!("fibonacci/fibonacci-projection.svg");
     /// Fibonacci ratio SVG icon.
     pub const FIBONACCI_RATIO: Icon = crate::icon_from_path!("fibonacci/fibonacci-ratio.svg");
     /// Fibonacci time extension SVG icon.
-    pub const FIBONACCI_TIME_EXTENSION: Icon = crate::icon_from_path!("fibonacci/fibonacci-time-extension.svg");
+    pub const FIBONACCI_TIME_EXTENSION: Icon =
+        crate::icon_from_path!("fibonacci/fibonacci-time-extension.svg");
     /// Gann angle SVG icon.
     pub const GANN_ANGLE: Icon = crate::icon_from_path!("pitchforks-gann/gann-angle.svg");
     /// Gann arc SVG icon.
@@ -702,13 +704,15 @@ pub mod icons {
     /// Golden ratio SVG icon.
     pub const GOLDEN_RATIO: Icon = crate::icon_from_path!("fibonacci/golden-ratio.svg");
     /// Ascending triangle SVG icon.
-    pub const ASCENDING_TRIANGLE: Icon = crate::icon_from_path!("patterns-elliott/ascending-triangle.svg");
+    pub const ASCENDING_TRIANGLE: Icon =
+        crate::icon_from_path!("patterns-elliott/ascending-triangle.svg");
     /// Bear flag SVG icon.
     pub const BEAR_FLAG: Icon = crate::icon_from_path!("patterns-elliott/bear-flag.svg");
     /// Bull flag SVG icon.
     pub const BULL_FLAG: Icon = crate::icon_from_path!("patterns-elliott/bull-flag.svg");
     /// Descending triangle SVG icon.
-    pub const DESCENDING_TRIANGLE: Icon = crate::icon_from_path!("patterns-elliott/descending-triangle.svg");
+    pub const DESCENDING_TRIANGLE: Icon =
+        crate::icon_from_path!("patterns-elliott/descending-triangle.svg");
     /// Double bottom SVG icon.
     pub const DOUBLE_BOTTOM: Icon = crate::icon_from_path!("patterns-elliott/double-bottom.svg");
     /// Double top SVG icon.
@@ -716,15 +720,18 @@ pub mod icons {
     /// Harmonic bat SVG icon.
     pub const HARMONIC_BAT: Icon = crate::icon_from_path!("patterns-elliott/harmonic-bat.svg");
     /// Harmonic butterfly SVG icon.
-    pub const HARMONIC_BUTTERFLY: Icon = crate::icon_from_path!("patterns-elliott/harmonic-butterfly.svg");
+    pub const HARMONIC_BUTTERFLY: Icon =
+        crate::icon_from_path!("patterns-elliott/harmonic-butterfly.svg");
     /// Harmonic crab SVG icon.
     pub const HARMONIC_CRAB: Icon = crate::icon_from_path!("patterns-elliott/harmonic-crab.svg");
     /// Harmonic gartley SVG icon.
-    pub const HARMONIC_GARTLEY: Icon = crate::icon_from_path!("patterns-elliott/harmonic-gartley.svg");
+    pub const HARMONIC_GARTLEY: Icon =
+        crate::icon_from_path!("patterns-elliott/harmonic-gartley.svg");
     /// Harmonic shark SVG icon.
     pub const HARMONIC_SHARK: Icon = crate::icon_from_path!("patterns-elliott/harmonic-shark.svg");
     /// Inverse head and shoulders SVG icon.
-    pub const INVERSE_HEAD_AND_SHOULDERS: Icon = crate::icon_from_path!("patterns-elliott/inverse-head-and-shoulders.svg");
+    pub const INVERSE_HEAD_AND_SHOULDERS: Icon =
+        crate::icon_from_path!("patterns-elliott/inverse-head-and-shoulders.svg");
     /// Triple bottom SVG icon.
     pub const TRIPLE_BOTTOM: Icon = crate::icon_from_path!("patterns-elliott/triple-bottom.svg");
     /// Triple top SVG icon.
@@ -732,7 +739,8 @@ pub mod icons {
     /// Diamond SVG icon.
     pub const DIAMOND: Icon = crate::icon_from_path!("shapes-annotations/diamond.svg");
     /// Double arrow shape SVG icon.
-    pub const DOUBLE_ARROW_SHAPE: Icon = crate::icon_from_path!("shapes-annotations/double-arrow-shape.svg");
+    pub const DOUBLE_ARROW_SHAPE: Icon =
+        crate::icon_from_path!("shapes-annotations/double-arrow-shape.svg");
     /// Hexagon SVG icon.
     pub const HEXAGON: Icon = crate::icon_from_path!("shapes-annotations/hexagon.svg");
     /// Pentagon SVG icon.
@@ -740,59 +748,76 @@ pub mod icons {
     /// Polygon SVG icon.
     pub const POLYGON: Icon = crate::icon_from_path!("shapes-annotations/polygon.svg");
     /// Right triangle SVG icon.
-    pub const RIGHT_TRIANGLE: Icon = crate::icon_from_path!("shapes-annotations/right-triangle.svg");
+    pub const RIGHT_TRIANGLE: Icon =
+        crate::icon_from_path!("shapes-annotations/right-triangle.svg");
     /// Rounded rectangle SVG icon.
-    pub const ROUNDED_RECTANGLE: Icon = crate::icon_from_path!("shapes-annotations/rounded-rectangle.svg");
+    pub const ROUNDED_RECTANGLE: Icon =
+        crate::icon_from_path!("shapes-annotations/rounded-rectangle.svg");
     /// Speech bubble shape SVG icon.
-    pub const SPEECH_BUBBLE_SHAPE: Icon = crate::icon_from_path!("shapes-annotations/speech-bubble-shape.svg");
+    pub const SPEECH_BUBBLE_SHAPE: Icon =
+        crate::icon_from_path!("shapes-annotations/speech-bubble-shape.svg");
     /// Spiral tool SVG icon.
     pub const SPIRAL_TOOL: Icon = crate::icon_from_path!("shapes-annotations/spiral-tool.svg");
     /// Arrow down right SVG icon.
-    pub const ARROW_DOWN_RIGHT: Icon = crate::icon_from_path!("shapes-annotations/arrow-down-right.svg");
+    pub const ARROW_DOWN_RIGHT: Icon =
+        crate::icon_from_path!("shapes-annotations/arrow-down-right.svg");
     /// Arrow up right SVG icon.
-    pub const ARROW_UP_RIGHT: Icon = crate::icon_from_path!("shapes-annotations/arrow-up-right.svg");
+    pub const ARROW_UP_RIGHT: Icon =
+        crate::icon_from_path!("shapes-annotations/arrow-up-right.svg");
     /// Bookmark SVG icon.
     pub const BOOKMARK: Icon = crate::icon_from_path!("shapes-annotations/bookmark.svg");
     /// Comment add SVG icon.
     pub const COMMENT_ADD: Icon = crate::icon_from_path!("shapes-annotations/comment-add.svg");
     /// Comment resolved SVG icon.
-    pub const COMMENT_RESOLVED: Icon = crate::icon_from_path!("shapes-annotations/comment-resolved.svg");
+    pub const COMMENT_RESOLVED: Icon =
+        crate::icon_from_path!("shapes-annotations/comment-resolved.svg");
     /// Label tag SVG icon.
     pub const LABEL_TAG: Icon = crate::icon_from_path!("shapes-annotations/label-tag.svg");
     /// Text align center SVG icon.
-    pub const TEXT_ALIGN_CENTER: Icon = crate::icon_from_path!("shapes-annotations/text-align-center.svg");
+    pub const TEXT_ALIGN_CENTER: Icon =
+        crate::icon_from_path!("shapes-annotations/text-align-center.svg");
     /// Text align left SVG icon.
-    pub const TEXT_ALIGN_LEFT: Icon = crate::icon_from_path!("shapes-annotations/text-align-left.svg");
+    pub const TEXT_ALIGN_LEFT: Icon =
+        crate::icon_from_path!("shapes-annotations/text-align-left.svg");
     /// Text bold SVG icon.
     pub const TEXT_BOLD: Icon = crate::icon_from_path!("shapes-annotations/text-bold.svg");
     /// Text italic SVG icon.
     pub const TEXT_ITALIC: Icon = crate::icon_from_path!("shapes-annotations/text-italic.svg");
     /// Text underline SVG icon.
-    pub const TEXT_UNDERLINE: Icon = crate::icon_from_path!("shapes-annotations/text-underline.svg");
+    pub const TEXT_UNDERLINE: Icon =
+        crate::icon_from_path!("shapes-annotations/text-underline.svg");
     /// Angle measure SVG icon.
-    pub const ANGLE_MEASURE: Icon = crate::icon_from_path!("projection-volume-measure/angle-measure.svg");
+    pub const ANGLE_MEASURE: Icon =
+        crate::icon_from_path!("projection-volume-measure/angle-measure.svg");
     /// Break even SVG icon.
     pub const BREAK_EVEN: Icon = crate::icon_from_path!("projection-volume-measure/break-even.svg");
     /// Distance SVG icon.
     pub const DISTANCE: Icon = crate::icon_from_path!("projection-volume-measure/distance.svg");
     /// Entry marker SVG icon.
-    pub const ENTRY_MARKER: Icon = crate::icon_from_path!("projection-volume-measure/entry-marker.svg");
+    pub const ENTRY_MARKER: Icon =
+        crate::icon_from_path!("projection-volume-measure/entry-marker.svg");
     /// Exit marker SVG icon.
-    pub const EXIT_MARKER: Icon = crate::icon_from_path!("projection-volume-measure/exit-marker.svg");
+    pub const EXIT_MARKER: Icon =
+        crate::icon_from_path!("projection-volume-measure/exit-marker.svg");
     /// Prediction SVG icon.
-    pub const ORACLY_PREDICTION: Icon = crate::icon_from_path!("projection-volume-measure/prediction.svg");
+    pub const ORACLY_PREDICTION: Icon =
+        crate::icon_from_path!("projection-volume-measure/prediction.svg");
     /// Price box SVG icon.
     pub const PRICE_BOX: Icon = crate::icon_from_path!("projection-volume-measure/price-box.svg");
     /// Range contraction SVG icon.
-    pub const RANGE_CONTRACTION: Icon = crate::icon_from_path!("projection-volume-measure/range-contraction.svg");
+    pub const RANGE_CONTRACTION: Icon =
+        crate::icon_from_path!("projection-volume-measure/range-contraction.svg");
     /// Range expansion SVG icon.
-    pub const RANGE_EXPANSION: Icon = crate::icon_from_path!("projection-volume-measure/range-expansion.svg");
+    pub const RANGE_EXPANSION: Icon =
+        crate::icon_from_path!("projection-volume-measure/range-expansion.svg");
     /// Risk reward SVG icon.
-    pub const RISK_REWARD: Icon = crate::icon_from_path!("projection-volume-measure/risk-reward.svg");
+    pub const RISK_REWARD: Icon =
+        crate::icon_from_path!("projection-volume-measure/risk-reward.svg");
     /// Stop loss SVG icon.
     pub const STOP_LOSS: Icon = crate::icon_from_path!("projection-volume-measure/stop-loss.svg");
     /// Take profit SVG icon.
-    pub const TAKE_PROFIT: Icon = crate::icon_from_path!("projection-volume-measure/take-profit.svg");
+    pub const TAKE_PROFIT: Icon =
+        crate::icon_from_path!("projection-volume-measure/take-profit.svg");
     /// Target SVG icon.
     pub const TARGET: Icon = crate::icon_from_path!("projection-volume-measure/target.svg");
     /// Time span SVG icon.
@@ -816,13 +841,16 @@ pub mod icons {
     /// Cci SVG icon.
     pub const CCI: Icon = crate::icon_from_path!("indicators/cci.svg");
     /// Chaikin money flow SVG icon.
-    pub const CHAIKIN_MONEY_FLOW: Icon = crate::icon_from_path!("indicators/chaikin-money-flow.svg");
+    pub const CHAIKIN_MONEY_FLOW: Icon =
+        crate::icon_from_path!("indicators/chaikin-money-flow.svg");
     /// Correlation SVG icon.
     pub const CORRELATION: Icon = crate::icon_from_path!("indicators/correlation.svg");
     /// Exponential moving average SVG icon.
-    pub const EXPONENTIAL_MOVING_AVERAGE: Icon = crate::icon_from_path!("indicators/exponential-moving-average.svg");
+    pub const EXPONENTIAL_MOVING_AVERAGE: Icon =
+        crate::icon_from_path!("indicators/exponential-moving-average.svg");
     /// Historical volatility SVG icon.
-    pub const HISTORICAL_VOLATILITY: Icon = crate::icon_from_path!("indicators/historical-volatility.svg");
+    pub const HISTORICAL_VOLATILITY: Icon =
+        crate::icon_from_path!("indicators/historical-volatility.svg");
     /// Ichimoku cloud SVG icon.
     pub const ICHIMOKU_CLOUD: Icon = crate::icon_from_path!("indicators/ichimoku-cloud.svg");
     /// Macd SVG icon.
@@ -844,13 +872,15 @@ pub mod icons {
     /// Rsi SVG icon.
     pub const RSI: Icon = crate::icon_from_path!("indicators/rsi.svg");
     /// Standard deviation SVG icon.
-    pub const STANDARD_DEVIATION: Icon = crate::icon_from_path!("indicators/standard-deviation.svg");
+    pub const STANDARD_DEVIATION: Icon =
+        crate::icon_from_path!("indicators/standard-deviation.svg");
     /// Stochastic SVG icon.
     pub const STOCHASTIC: Icon = crate::icon_from_path!("indicators/stochastic.svg");
     /// Supertrend SVG icon.
     pub const SUPERTREND: Icon = crate::icon_from_path!("indicators/supertrend.svg");
     /// Weighted moving average SVG icon.
-    pub const WEIGHTED_MOVING_AVERAGE: Icon = crate::icon_from_path!("indicators/weighted-moving-average.svg");
+    pub const WEIGHTED_MOVING_AVERAGE: Icon =
+        crate::icon_from_path!("indicators/weighted-moving-average.svg");
     /// Williams r SVG icon.
     pub const WILLIAMS_R: Icon = crate::icon_from_path!("indicators/williams-r.svg");
     /// Absorption SVG icon.
@@ -858,13 +888,15 @@ pub mod icons {
     /// Buy volume SVG icon.
     pub const BUY_VOLUME: Icon = crate::icon_from_path!("volume-orderflow/buy-volume.svg");
     /// Cumulative delta SVG icon.
-    pub const CUMULATIVE_DELTA: Icon = crate::icon_from_path!("volume-orderflow/cumulative-delta.svg");
+    pub const CUMULATIVE_DELTA: Icon =
+        crate::icon_from_path!("volume-orderflow/cumulative-delta.svg");
     /// Funding rate SVG icon.
     pub const FUNDING_RATE: Icon = crate::icon_from_path!("volume-orderflow/funding-rate.svg");
     /// Imbalance SVG icon.
     pub const IMBALANCE: Icon = crate::icon_from_path!("volume-orderflow/imbalance.svg");
     /// Liquidity sweep SVG icon.
-    pub const LIQUIDITY_SWEEP: Icon = crate::icon_from_path!("volume-orderflow/liquidity-sweep.svg");
+    pub const LIQUIDITY_SWEEP: Icon =
+        crate::icon_from_path!("volume-orderflow/liquidity-sweep.svg");
     /// Liquidity SVG icon.
     pub const LIQUIDITY: Icon = crate::icon_from_path!("volume-orderflow/liquidity.svg");
     /// Market depth SVG icon.
@@ -874,9 +906,11 @@ pub mod icons {
     /// Order book SVG icon.
     pub const ORDER_BOOK: Icon = crate::icon_from_path!("volume-orderflow/order-book.svg");
     /// Point of control SVG icon.
-    pub const POINT_OF_CONTROL: Icon = crate::icon_from_path!("volume-orderflow/point-of-control.svg");
+    pub const POINT_OF_CONTROL: Icon =
+        crate::icon_from_path!("volume-orderflow/point-of-control.svg");
     /// Relative volume SVG icon.
-    pub const RELATIVE_VOLUME: Icon = crate::icon_from_path!("volume-orderflow/relative-volume.svg");
+    pub const RELATIVE_VOLUME: Icon =
+        crate::icon_from_path!("volume-orderflow/relative-volume.svg");
     /// Sell volume SVG icon.
     pub const SELL_VOLUME: Icon = crate::icon_from_path!("volume-orderflow/sell-volume.svg");
     /// Tape SVG icon.
@@ -892,9 +926,11 @@ pub mod icons {
     /// Volume heatmap SVG icon.
     pub const VOLUME_HEATMAP: Icon = crate::icon_from_path!("volume-orderflow/volume-heatmap.svg");
     /// Volume oscillator SVG icon.
-    pub const VOLUME_OSCILLATOR: Icon = crate::icon_from_path!("volume-orderflow/volume-oscillator.svg");
+    pub const VOLUME_OSCILLATOR: Icon =
+        crate::icon_from_path!("volume-orderflow/volume-oscillator.svg");
     /// Volume profile visible SVG icon.
-    pub const VOLUME_PROFILE_VISIBLE: Icon = crate::icon_from_path!("volume-orderflow/volume-profile-visible.svg");
+    pub const VOLUME_PROFILE_VISIBLE: Icon =
+        crate::icon_from_path!("volume-orderflow/volume-profile-visible.svg");
     /// Market gainers SVG icon.
     pub const MARKET_GAINERS: Icon = crate::icon_from_path!("ui/market-gainers.svg");
     /// Market losers SVG icon.

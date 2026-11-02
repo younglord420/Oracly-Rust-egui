@@ -141,7 +141,7 @@ mod tests {
             (Tool::ShortPos, "Size by"),
             (Tool::FixedRangeVolumeProfile, "Rows"),
             (Tool::AnchoredVolumeProfile, "Rows"),
-            (Tool::RegressionTrend, "Upper deviation"),
+            (Tool::RegressionTrend, "Source"),
             (Tool::ParallelChannel, "Show middle line"),
             (Tool::FlatTopBottom, "Price labels"),
             (Tool::DisjointChannel, "Price labels"),

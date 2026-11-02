@@ -752,10 +752,7 @@ mod tests {
                 }
                 _ => false,
             });
-            assert_eq!(
-                icon, expect_icon,
-                "{visibility:?}, maximized={maximized}"
-            );
+            assert_eq!(icon, expect_icon, "{visibility:?}, maximized={maximized}");
             // A layout saved with this size could not be restored.
             settings.scales_appearance.font_size = 0;
             assert!(settings.apply_to_chart(&mut chart).is_err());

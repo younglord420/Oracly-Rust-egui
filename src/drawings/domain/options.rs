@@ -7,6 +7,7 @@
 //! the volume profile, regression trend and position drawings
 //! ([`VolumeProfileConfig`](crate::data::VolumeProfileConfig), [`RegressionTrendConfig`], [`PositionSize`], [`PositionSizing`]).
 
+use crate::model::LineStyle;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -329,50 +330,132 @@ pub struct FibonacciConfig {
     #[serde(default)]
     pub show_levels: Option<bool>,
     /// Format level values as percentages rather than ratios.
+    /// Missing field keeps the older percentage default for saved drawings.
     #[serde(default = "percent_levels")]
     pub levels_as_percent: bool,
     /// Place labels at the left end of level lines instead of the right.
     #[serde(default)]
     pub labels_on_left: bool,
+    /// Horizontal placement of level labels (`Left`, `Center`, `Right`).
+    /// When `None`, falls back to `labels_on_left` (`true` -> `Left`, `false` -> `Right`).
+    #[serde(default)]
+    pub label_h_align: Option<TextHorizontalAlign>,
+    /// Vertical placement of level labels (`Top`, `Middle`, `Bottom`).
+    #[serde(default = "default_fib_label_v_align")]
+    pub label_v_align: TextVerticalAlign,
+    /// Font size of level labels in points.
+    #[serde(default = "default_fib_label_font_size")]
+    pub label_font_size: f32,
     /// Measure retracement and extension levels in logarithmic price when all anchors are positive.
     #[serde(default)]
     pub logarithmic: bool,
+    /// Draw the trend line between the two anchors (retracement / extension).
+    #[serde(default = "default_show_trend_line")]
+    pub show_trend_line: bool,
+    /// Trend line color as RGBA.
+    #[serde(default = "default_trend_line_color")]
+    pub trend_line_color: [u8; 4],
+    /// Trend line dash pattern.
+    #[serde(default = "default_trend_line_style")]
+    pub trend_line_style: LineStyle,
+    /// Trend line stroke width in pixels.
+    #[serde(default = "default_trend_line_width")]
+    pub trend_line_width: f32,
+    /// Uniform stroke width for horizontal (or channel) level lines.
+    #[serde(default = "default_levels_line_width")]
+    pub levels_line_width: f32,
 }
 
 fn percent_levels() -> bool {
     true
 }
 
+fn default_show_trend_line() -> bool {
+    true
+}
+
+fn default_trend_line_color() -> [u8; 4] {
+    [120, 123, 134, 255]
+}
+
+fn default_trend_line_style() -> LineStyle {
+    LineStyle::Dashed
+}
+
+fn default_trend_line_width() -> f32 {
+    1.0
+}
+
+fn default_levels_line_width() -> f32 {
+    1.0
+}
+
+fn default_fib_label_v_align() -> TextVerticalAlign {
+    TextVerticalAlign::Middle
+}
+
+fn default_fib_label_font_size() -> f32 {
+    12.0
+}
+
+/// Standard retracement level table used by major charting platforms.
+fn retracement_levels() -> Vec<FibonacciLevel> {
+    let grey = [120, 123, 134, 255];
+    let red = [242, 54, 69, 255];
+    let light_green = [129, 199, 132, 255];
+    let green = [76, 175, 80, 255];
+    let teal = [8, 153, 129, 255];
+    let cyan = [0, 188, 212, 255];
+    let blue = [41, 98, 255, 255];
+    let pink = [233, 30, 99, 255];
+    let purple = [156, 39, 176, 255];
+    // On: 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236.
+    // Off: 1.272, 1.414, 2, 2.272.
+    [
+        (0.0, true, grey),
+        (0.236, true, red),
+        (0.382, true, light_green),
+        (0.5, true, green),
+        (0.618, true, teal),
+        (0.786, true, cyan),
+        (1.0, true, grey),
+        (1.272, false, pink),
+        (1.414, false, red),
+        (1.618, true, blue),
+        (2.0, false, pink),
+        (2.272, false, purple),
+        (2.618, true, purple),
+        (3.618, true, pink),
+        (4.236, true, blue),
+    ]
+    .into_iter()
+    .map(|(value, visible, color)| FibonacciLevel::with_visibility(value, "", color, visible))
+    .collect()
+}
+
 impl Default for FibonacciConfig {
-    /// Default Fibonacci retracement: fewer lines on, percent labels only, soft fill.
+    /// Platform Fibonacci retracement: ratio+price labels, dashed trend line, soft fills.
     fn default() -> Self {
-        let grey = [120, 123, 134, 255];
-        let red = [242, 54, 69, 255];
-        let orange = [255, 152, 0, 255];
-        let green = [76, 175, 80, 255];
-        let blue = [33, 150, 243, 255];
-        let purple = [156, 39, 176, 255];
         Self {
-            // On by default: 0, 38.2, 50, 61.8, 100. 23.6 / 78.6 stay available but off.
-            levels: vec![
-                FibonacciLevel::with_visibility(0.0, "0%", grey, true),
-                FibonacciLevel::with_visibility(0.236, "23.6%", red, false),
-                FibonacciLevel::with_visibility(0.382, "38.2%", orange, true),
-                FibonacciLevel::with_visibility(0.5, "50%", green, true),
-                FibonacciLevel::with_visibility(0.618, "61.8%", blue, true),
-                FibonacciLevel::with_visibility(0.786, "78.6%", purple, false),
-                FibonacciLevel::with_visibility(1.0, "100%", grey, true),
-            ],
+            levels: retracement_levels(),
             show_background: true,
-            background_opacity: 51,
+            background_opacity: 40,
             extend_left: false,
             extend_right: false,
             reverse: false,
             logarithmic: false,
-            show_prices: Some(false),
+            show_prices: Some(true),
             show_levels: Some(true),
-            levels_as_percent: true,
+            levels_as_percent: false,
             labels_on_left: false,
+            label_h_align: Some(TextHorizontalAlign::Right),
+            label_v_align: default_fib_label_v_align(),
+            label_font_size: default_fib_label_font_size(),
+            show_trend_line: true,
+            trend_line_color: default_trend_line_color(),
+            trend_line_style: default_trend_line_style(),
+            trend_line_width: default_trend_line_width(),
+            levels_line_width: default_levels_line_width(),
         }
     }
 }
@@ -381,33 +464,63 @@ impl FibonacciConfig {
     /// Extension levels (beyond 100%)
     pub fn extension_default() -> Self {
         let grey = [120, 123, 134, 255];
-        let blue = [33, 150, 243, 255];
+        let blue = [41, 98, 255, 255];
         let red = [242, 54, 69, 255];
         let orange = [255, 152, 0, 255];
         let green = [76, 175, 80, 255];
         let purple = [156, 39, 176, 255];
+        let pink = [233, 30, 99, 255];
         Self {
-            // Core extension set on; 127.2% and 261.8% available but off to reduce clutter.
             levels: vec![
-                FibonacciLevel::with_visibility(0.0, "0%", grey, true),
-                FibonacciLevel::with_visibility(0.618, "61.8%", blue, true),
-                FibonacciLevel::with_visibility(1.0, "100%", grey, true),
-                FibonacciLevel::with_visibility(1.272, "127.2%", red, false),
-                FibonacciLevel::with_visibility(1.618, "161.8%", orange, true),
-                FibonacciLevel::with_visibility(2.0, "200%", green, true),
-                FibonacciLevel::with_visibility(2.618, "261.8%", purple, false),
+                FibonacciLevel::with_visibility(0.0, "", grey, true),
+                FibonacciLevel::with_visibility(0.236, "", red, false),
+                FibonacciLevel::with_visibility(0.382, "", orange, false),
+                FibonacciLevel::with_visibility(0.5, "", green, false),
+                FibonacciLevel::with_visibility(0.618, "", blue, true),
+                FibonacciLevel::with_visibility(0.786, "", purple, false),
+                FibonacciLevel::with_visibility(1.0, "", grey, true),
+                FibonacciLevel::with_visibility(1.272, "", pink, false),
+                FibonacciLevel::with_visibility(1.414, "", red, false),
+                FibonacciLevel::with_visibility(1.618, "", orange, true),
+                FibonacciLevel::with_visibility(2.0, "", green, true),
+                FibonacciLevel::with_visibility(2.272, "", pink, false),
+                FibonacciLevel::with_visibility(2.618, "", purple, true),
+                FibonacciLevel::with_visibility(3.618, "", pink, false),
+                FibonacciLevel::with_visibility(4.236, "", blue, false),
             ],
             show_background: true,
-            background_opacity: 51,
+            background_opacity: 40,
             extend_left: false,
             extend_right: true,
             reverse: false,
             logarithmic: false,
-            show_prices: Some(false),
+            show_prices: Some(true),
             show_levels: Some(true),
-            levels_as_percent: true,
+            levels_as_percent: false,
             labels_on_left: false,
+            label_h_align: Some(TextHorizontalAlign::Right),
+            label_v_align: default_fib_label_v_align(),
+            label_font_size: default_fib_label_font_size(),
+            show_trend_line: true,
+            trend_line_color: default_trend_line_color(),
+            trend_line_style: default_trend_line_style(),
+            trend_line_width: default_trend_line_width(),
+            levels_line_width: default_levels_line_width(),
         }
+    }
+
+    /// Effective horizontal alignment of level labels, honouring legacy `labels_on_left`.
+    pub fn effective_h_align(&self) -> TextHorizontalAlign {
+        if self.labels_on_left {
+            return TextHorizontalAlign::Left;
+        }
+        self.label_h_align.unwrap_or(TextHorizontalAlign::Right)
+    }
+
+    /// Update horizontal alignment and keep `labels_on_left` in sync.
+    pub fn set_h_align(&mut self, align: TextHorizontalAlign) {
+        self.label_h_align = Some(align);
+        self.labels_on_left = align == TextHorizontalAlign::Left;
     }
 
     /// Initial levels for a tool. Existing drawings without a stored config keep their
@@ -626,12 +739,35 @@ fn default_regression_deviation() -> f64 {
     2.0
 }
 
-fn default_regression_up_color() -> [u8; 4] {
-    [41, 98, 255, 255]
+/// Midline default `#9C9C9CEA`.
+fn default_regression_midline_color() -> [u8; 4] {
+    [156, 156, 156, 234]
 }
 
+/// Upper line / fill base `#089981EA`.
+fn default_regression_up_color() -> [u8; 4] {
+    [8, 153, 129, 234]
+}
+
+/// Lower line / fill base `#F23645EA`.
 fn default_regression_down_color() -> [u8; 4] {
-    [41, 98, 255, 255]
+    [242, 54, 69, 234]
+}
+
+fn default_regression_upper_fill() -> [u8; 4] {
+    [8, 153, 129, 51] // 20%
+}
+
+fn default_regression_lower_fill() -> [u8; 4] {
+    [242, 54, 69, 51] // 20%
+}
+
+fn default_regression_midline_style() -> LineStyle {
+    LineStyle::Dashed
+}
+
+fn default_regression_band_style() -> LineStyle {
+    LineStyle::Solid
 }
 
 /// Settings of the regression trend drawing.
@@ -649,10 +785,26 @@ pub struct RegressionTrendConfig {
     pub source: RegressionSource,
     /// Whether Pearson's R is labelled on the chart.
     pub show_pearson: bool,
+    /// Midline stroke colour (RGBA).
+    pub midline_color: [u8; 4],
+    /// Midline dash pattern.
+    pub midline_style: LineStyle,
     /// Upper band stroke colour (RGBA).
     pub up_color: [u8; 4],
+    /// Upper band dash pattern.
+    pub upper_style: LineStyle,
     /// Lower band stroke colour (RGBA).
     pub down_color: [u8; 4],
+    /// Lower band dash pattern.
+    pub lower_style: LineStyle,
+    /// Fill between midline and upper band (RGBA).
+    pub upper_fill: [u8; 4],
+    /// Fill between midline and lower band (RGBA).
+    pub lower_fill: [u8; 4],
+    /// Whether the upper fill is painted.
+    pub show_upper_fill: bool,
+    /// Whether the lower fill is painted.
+    pub show_lower_fill: bool,
 }
 
 /// Stored settings of a regression trend, checked on load. Accepts the legacy
@@ -673,10 +825,26 @@ struct RegressionTrendFields {
     source: RegressionSource,
     #[serde(default = "enabled_true")]
     show_pearson: bool,
+    #[serde(default = "default_regression_midline_color")]
+    midline_color: [u8; 4],
+    #[serde(default = "default_regression_midline_style")]
+    midline_style: LineStyle,
     #[serde(default = "default_regression_up_color")]
     up_color: [u8; 4],
+    #[serde(default = "default_regression_band_style")]
+    upper_style: LineStyle,
     #[serde(default = "default_regression_down_color")]
     down_color: [u8; 4],
+    #[serde(default = "default_regression_band_style")]
+    lower_style: LineStyle,
+    #[serde(default = "default_regression_upper_fill")]
+    upper_fill: [u8; 4],
+    #[serde(default = "default_regression_lower_fill")]
+    lower_fill: [u8; 4],
+    #[serde(default = "enabled_true")]
+    show_upper_fill: bool,
+    #[serde(default = "enabled_true")]
+    show_lower_fill: bool,
 }
 
 fn enabled_true() -> bool {
@@ -698,8 +866,16 @@ impl TryFrom<RegressionTrendFields> for RegressionTrendConfig {
             fields.use_lower,
             fields.source,
             fields.show_pearson,
+            fields.midline_color,
+            fields.midline_style,
             fields.up_color,
+            fields.upper_style,
             fields.down_color,
+            fields.lower_style,
+            fields.upper_fill,
+            fields.lower_fill,
+            fields.show_upper_fill,
+            fields.show_lower_fill,
         )
         .ok_or("regression trend settings out of bounds")
     }
@@ -724,12 +900,21 @@ impl RegressionTrendConfig {
             true,
             RegressionSource::Close,
             true,
+            default_regression_midline_color(),
+            default_regression_midline_style(),
             default_regression_up_color(),
+            default_regression_band_style(),
             default_regression_down_color(),
+            default_regression_band_style(),
+            default_regression_upper_fill(),
+            default_regression_lower_fill(),
+            true,
+            true,
         )
     }
 
     /// Builds a config when both deviations are in (0, 10].
+    #[allow(clippy::too_many_arguments)]
     pub fn validated(
         upper_deviation: f64,
         lower_deviation: f64,
@@ -737,8 +922,16 @@ impl RegressionTrendConfig {
         use_lower: bool,
         source: RegressionSource,
         show_pearson: bool,
+        midline_color: [u8; 4],
+        midline_style: LineStyle,
         up_color: [u8; 4],
+        upper_style: LineStyle,
         down_color: [u8; 4],
+        lower_style: LineStyle,
+        upper_fill: [u8; 4],
+        lower_fill: [u8; 4],
+        show_upper_fill: bool,
+        show_lower_fill: bool,
     ) -> Option<Self> {
         let in_range = |v: f64| v > 0.0 && v <= 10.0;
         (in_range(upper_deviation) && in_range(lower_deviation)).then_some(Self {
@@ -748,9 +941,39 @@ impl RegressionTrendConfig {
             use_lower,
             source,
             show_pearson,
+            midline_color,
+            midline_style,
             up_color,
+            upper_style,
             down_color,
+            lower_style,
+            upper_fill,
+            lower_fill,
+            show_upper_fill,
+            show_lower_fill,
         })
+    }
+
+    /// Keep validated deviations; refresh appearance from `self`.
+    pub fn with_deviations(self, upper: f64, lower: f64) -> Option<Self> {
+        Self::validated(
+            upper,
+            lower,
+            self.use_upper,
+            self.use_lower,
+            self.source,
+            self.show_pearson,
+            self.midline_color,
+            self.midline_style,
+            self.up_color,
+            self.upper_style,
+            self.down_color,
+            self.lower_style,
+            self.upper_fill,
+            self.lower_fill,
+            self.show_upper_fill,
+            self.show_lower_fill,
+        )
     }
 
     /// Distance of the upper band from the fitted line, in standard deviations.
@@ -760,7 +983,7 @@ impl RegressionTrendConfig {
 }
 
 impl Default for RegressionTrendConfig {
-    /// Bands two standard deviations away, both sides on, close source.
+    /// Bands two standard deviations away, both sides on, close source, platform colours.
     fn default() -> Self {
         Self {
             upper_deviation: 2.0,
@@ -769,8 +992,16 @@ impl Default for RegressionTrendConfig {
             use_lower: true,
             source: RegressionSource::Close,
             show_pearson: true,
+            midline_color: default_regression_midline_color(),
+            midline_style: default_regression_midline_style(),
             up_color: default_regression_up_color(),
+            upper_style: default_regression_band_style(),
             down_color: default_regression_down_color(),
+            lower_style: default_regression_band_style(),
+            upper_fill: default_regression_upper_fill(),
+            lower_fill: default_regression_lower_fill(),
+            show_upper_fill: true,
+            show_lower_fill: true,
         }
     }
 }

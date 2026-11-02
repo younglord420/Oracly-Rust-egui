@@ -155,7 +155,12 @@ impl Drawing {
                 Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.45)),
             );
 
-            let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+            let bg = painter
+                .ctx()
+                .active_theme()
+                .chart
+                .bg_axis
+                .gamma_multiply(0.92);
             painter.rect_filled(note_rect, DESIGN_TOKENS.rounding.md, bg);
             painter.rect_stroke(
                 note_rect,
@@ -229,7 +234,12 @@ impl Drawing {
                 ),
             );
 
-            let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+            let bg = painter
+                .ctx()
+                .active_theme()
+                .chart
+                .bg_axis
+                .gamma_multiply(0.92);
             painter.rect_filled(note_rect, DESIGN_TOKENS.rounding.sm, bg);
             painter.rect_stroke(
                 note_rect,

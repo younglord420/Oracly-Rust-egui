@@ -49,25 +49,29 @@ impl Drawing {
             ),
         );
 
-        let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.94);
+        let bg = painter
+            .ctx()
+            .active_theme()
+            .chart
+            .bg_axis
+            .gamma_multiply(0.94);
 
         let box_center = box_rect.center();
         let dx = anchor.x - box_center.x;
         let dy = anchor.y - box_center.y;
 
-        let pointer_pos = if dx.abs() / box_rect.width().max(1.0)
-            > dy.abs() / box_rect.height().max(1.0)
-        {
-            if dx > 0.0 {
-                Pos2::new(box_rect.max.x, box_center.y)
+        let pointer_pos =
+            if dx.abs() / box_rect.width().max(1.0) > dy.abs() / box_rect.height().max(1.0) {
+                if dx > 0.0 {
+                    Pos2::new(box_rect.max.x, box_center.y)
+                } else {
+                    Pos2::new(box_rect.min.x, box_center.y)
+                }
+            } else if dy > 0.0 {
+                Pos2::new(box_center.x, box_rect.max.y)
             } else {
-                Pos2::new(box_rect.min.x, box_center.y)
-            }
-        } else if dy > 0.0 {
-            Pos2::new(box_center.x, box_rect.max.y)
-        } else {
-            Pos2::new(box_center.x, box_rect.min.y)
-        };
+                Pos2::new(box_center.x, box_rect.min.y)
+            };
 
         let pointer_size = DESIGN_TOKENS.sizing.annotation.pointer_size;
         let perpendicular = if (pointer_pos.x - box_rect.min.x).abs() < 1.0
@@ -180,7 +184,12 @@ impl Drawing {
                 Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.45)),
             );
 
-            let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.94);
+            let bg = painter
+                .ctx()
+                .active_theme()
+                .chart
+                .bg_axis
+                .gamma_multiply(0.94);
             painter.rect_filled(comment_rect, DESIGN_TOKENS.rounding.md, bg);
             painter.rect_stroke(
                 comment_rect,

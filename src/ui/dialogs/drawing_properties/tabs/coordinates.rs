@@ -358,8 +358,7 @@ fn styled_text_field(ui: &mut Ui, edit: TextEdit<'_>) -> egui::Response {
             egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
         visuals.widgets.open.bg_stroke =
             egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
-        visuals.selection.stroke =
-            egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
+        visuals.selection.stroke = egui::Stroke::new(DESIGN_TOKENS.stroke.hairline, theme.ui.text);
         ui.add(edit.margin(egui::Margin::symmetric(8, 5)))
     })
     .inner

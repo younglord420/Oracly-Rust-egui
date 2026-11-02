@@ -169,8 +169,7 @@ impl Drawing {
             } else {
                 self.color
             };
-            let fill =
-                Color32::from_rgba_unmultiplied(color[0], color[1], color[2], opacity);
+            let fill = Color32::from_rgba_unmultiplied(color[0], color[1], color[2], opacity);
             for band in bands
                 .by_ref()
                 .take(level_lines(&base, pair[1].value, rect).len())
@@ -501,10 +500,7 @@ mod tests {
             // Visible 0 → 1.0 → 1.5: two band pairs × two sides.
             assert_eq!(restored.outline(rect).unwrap().areas.len(), 4);
             // Custom: 0+1+1.5 = 5 level lines; default: 0+0.5+1 = 5 level lines → same count + links.
-            assert_eq!(
-                restored.pitchfork_lines(rect).unwrap().len(),
-                lines.len()
-            );
+            assert_eq!(restored.pitchfork_lines(rect).unwrap().len(), lines.len());
             // Missing widths inherit the drawing width; explicit widths survive saving and painting.
             saved["pitchfork"]["levels"][2]["width"] = 6.0.into();
             saved["pitchfork"]["levels"][3]["width"] = 3.0.into();

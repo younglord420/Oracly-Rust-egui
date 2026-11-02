@@ -1433,7 +1433,8 @@ mod tests {
         let live = Arc::new(LiveFeed::new("AAPL", now));
         live.set_paused(true);
         let quotes = Arc::new(DemoQuotes::new(live));
-        let mut panel = WatchlistPanel::new(vec![Watchlist::from_text("Watchlist", "MSFT,BTCUSDT")]);
+        let mut panel =
+            WatchlistPanel::new(vec![Watchlist::from_text("Watchlist", "MSFT,BTCUSDT")]);
         panel.set_service(quotes.clone());
         let mut time = 0.0;
         let mut delays = Vec::new();
@@ -1485,7 +1486,8 @@ mod tests {
         let live = Arc::new(LiveFeed::new("AAPL", now));
         live.set_paused(true);
         let quotes = Arc::new(DemoQuotes::new(live.clone()));
-        let mut panel = WatchlistPanel::new(vec![Watchlist::from_text("Watchlist", "MSFT,BTCUSDT")]);
+        let mut panel =
+            WatchlistPanel::new(vec![Watchlist::from_text("Watchlist", "MSFT,BTCUSDT")]);
         panel.set_service(quotes.clone());
         let mut time = 0.0;
         let mut frame = |panel: &mut WatchlistPanel, at: DateTime<Utc>| {

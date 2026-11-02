@@ -58,11 +58,11 @@ use egui_charts::ui::dialogs::{
     KeyboardShortcutsDialog, PropertiesTab, SeriesContextMenuAction, StudyContextMenuAction,
 };
 use egui_charts::ui::drawing_toolbar::{DrawingToolbar, DrawingToolbarAction};
+use egui_charts::ui::export::{ExportDialog, ExportFormat, ExportResponse};
+use egui_charts::ui::floating_replay_control::{FloatingReplayControl, ReplayControlAction};
 use egui_charts::ui::floating_toolbar::{
     ColorSlot, FloatingSelectionToolbar, FloatingToolbarAction,
 };
-use egui_charts::ui::export::{ExportDialog, ExportFormat, ExportResponse};
-use egui_charts::ui::floating_replay_control::{FloatingReplayControl, ReplayControlAction};
 use egui_charts::ui::replay::{ReplayAction, ReplayController, ReplaySession, ReplayStartPicker};
 use egui_charts::ui::timeframe_toolbar::{
     DatePicker, DatePickerAction, SessionType, TimeframeToolbar, TimeframeToolbarAction,
@@ -639,10 +639,9 @@ impl DemoApp {
                     "Liquidity Heatmap",
                     || {
                         Box::new(
-                            egui_charts::studies::CustomIndicator::new(
-                                "Liquidity Heatmap",
-                                |_| Vec::new(),
-                            )
+                            egui_charts::studies::CustomIndicator::new("Liquidity Heatmap", |_| {
+                                Vec::new()
+                            })
                             .with_overlay(true)
                             .with_description(
                                 "Order-book liquidity heatmap with execution volume bubbles",
@@ -1070,40 +1069,35 @@ impl DemoApp {
 
     /// Floating selection property bar for the primary selected drawing.
     fn show_selection_toolbar(&mut self, ui: &mut egui::Ui, chart_rect: egui::Rect) {
-        let selected = self
-            .chart
-            .drawings()
-            .selected_ids()
-            .next()
-            .and_then(|id| {
-                self.chart
-                    .drawings()
-                    .drawings
-                    .iter()
-                    .find(|d| d.id == id)
-                    .map(|d| {
-                        let bounds = if d.points.len() >= 2 {
-                            egui::Rect::from_points(&d.points)
-                        } else if let Some(p) = d.points.first() {
-                            egui::Rect::from_center_size(*p, egui::vec2(40.0, 40.0))
-                        } else {
-                            chart_rect
-                        };
-                        (
-                            d.id,
-                            d.color32(),
-                            d.fill_color32(),
-                            d.stroke_width,
-                            d.line_style,
-                            d.locked,
-                            d.visible,
-                            !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
-                                .is_empty(),
-                            d.tool_type.supports_text_style(),
-                            bounds,
-                        )
-                    })
-            });
+        let selected = self.chart.drawings().selected_ids().next().and_then(|id| {
+            self.chart
+                .drawings()
+                .drawings
+                .iter()
+                .find(|d| d.id == id)
+                .map(|d| {
+                    let bounds = if d.points.len() >= 2 {
+                        egui::Rect::from_points(&d.points)
+                    } else if let Some(p) = d.points.first() {
+                        egui::Rect::from_center_size(*p, egui::vec2(40.0, 40.0))
+                    } else {
+                        chart_rect
+                    };
+                    (
+                        d.id,
+                        d.color32(),
+                        d.fill_color32(),
+                        d.stroke_width,
+                        d.line_style,
+                        d.locked,
+                        d.visible,
+                        !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
+                            .is_empty(),
+                        d.tool_type.supports_text_style(),
+                        bounds,
+                    )
+                })
+        });
         let Some((id, stroke, fill, width, style, locked, visible, alert, text, bounds)) = selected
         else {
             self.selection_toolbar.hide();
@@ -1150,8 +1144,11 @@ impl DemoApp {
                 self.selection_toolbar.hide();
             }
             FloatingToolbarAction::ToggleLock => {
-                self.chart
-                    .user_action(|chart| chart.drawings_mut().edit_drawing(id, |d| d.locked = !d.locked));
+                self.chart.user_action(|chart| {
+                    chart
+                        .drawings_mut()
+                        .edit_drawing(id, |d| d.locked = !d.locked)
+                });
             }
             FloatingToolbarAction::ToggleVisibility => {
                 self.chart.user_action(|chart| {
@@ -1809,8 +1806,7 @@ impl DemoApp {
     fn enable_liquidity_heatmap(&mut self) {
         self.liquidity_heatmap = true;
         self.chart.set_liquidity_heatmap(true);
-        self.chart
-            .set_volume_bubbles(Some(Default::default()));
+        self.chart.set_volume_bubbles(Some(Default::default()));
     }
 
     pub(crate) fn handle_top_toolbar(&mut self, ctx: &egui::Context, action: TopToolbarAction) {
@@ -2218,7 +2214,12 @@ impl DemoApp {
         };
         egui::Panel::right("detail_panel")
             .resizable(true)
-            .default_size(egui_charts::tokens::DESIGN_TOKENS.sizing.toolbar.right_panel_width)
+            .default_size(
+                egui_charts::tokens::DESIGN_TOKENS
+                    .sizing
+                    .toolbar
+                    .right_panel_width,
+            )
             .min_size(240.0)
             .show_separator_line(false)
             .frame(detail_panel_frame(ui.visuals().panel_fill))
@@ -2229,82 +2230,81 @@ impl DemoApp {
                 ui.painter().vline(
                     rule.left() - 8.0,
                     rule.y_range(),
-                    egui::Stroke::new(
-                        egui_charts::tokens::DESIGN_TOKENS.stroke.hairline,
-                        border,
-                    ),
+                    egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
                 );
                 match which {
-                SidePanel::ObjectTree => self.show_object_tree(ui),
-                SidePanel::Alerts => self.show_alerts_panel(ui),
-                SidePanel::Watchlist => {
-                    if ui.available_height() >= 400.0 {
-                        egui::Panel::bottom("symbol_details")
-                            .resizable(true)
-                            .default_size(ui.available_height() / 2.0)
-                            .min_size(120.0)
-                            .frame(egui::Frame::NONE)
-                            .show(ui, |ui| self.symbol_details.show(ui));
+                    SidePanel::ObjectTree => self.show_object_tree(ui),
+                    SidePanel::Alerts => self.show_alerts_panel(ui),
+                    SidePanel::Watchlist => {
+                        if ui.available_height() >= 400.0 {
+                            egui::Panel::bottom("symbol_details")
+                                .resizable(true)
+                                .default_size(ui.available_height() / 2.0)
+                                .min_size(120.0)
+                                .frame(egui::Frame::NONE)
+                                .show(ui, |ui| self.symbol_details.show(ui));
+                        }
+                        self.show_watchlist(ui);
                     }
-                    self.show_watchlist(ui);
-                }
-                SidePanel::TimeAndSales => self.time_and_sales.show(ui),
-                SidePanel::Highlights => {
-                    let action = self.highlights.show(ui);
-                    self.handle_news(ui.ctx(), action);
-                }
-                SidePanel::Screener => match self.screener.show(ui) {
-                    ScreenerAction::SelectSymbol(symbol) => self.open_catalog_symbol(&symbol),
-                    ScreenerAction::ExportCsv(text) => self.save_text("screener.csv", &text),
-                    ScreenerAction::SendToWatchlist(symbols) => {
-                        self.watchlist.import("Screener", &symbols.join(","));
-                        self.open_panel = Some(SidePanel::Watchlist);
+                    SidePanel::TimeAndSales => self.time_and_sales.show(ui),
+                    SidePanel::Highlights => {
+                        let action = self.highlights.show(ui);
+                        self.handle_news(ui.ctx(), action);
                     }
-                    _ => {}
-                },
-                SidePanel::MarketHeatmap => {
-                    if let Some(symbol) = self.market_heatmap.show(ui) {
-                        self.open_catalog_symbol(&symbol);
-                    }
-                }
-                SidePanel::Hotlists => {
-                    if let HotlistsAction::SelectSymbol(symbol) = self.hotlists.show(ui) {
-                        self.open_catalog_symbol(&symbol);
-                    }
-                }
-                SidePanel::Notifications => {
-                    if let NotificationsAction::SelectSymbol(symbol) = self.notifications.show(ui) {
-                        self.open_catalog_symbol(&symbol);
-                    }
-                }
-                SidePanel::Chats => self.chats.show(ui),
-                SidePanel::Products => {
-                    if let ProductsAction::Open(id) = self.products.show(ui) {
-                        match id.as_str() {
-                            "screener" => self.open_panel = Some(SidePanel::Screener),
-                            "calendar" => self.open_panel = Some(SidePanel::Calendar),
-                            "news" => self.open_panel = Some(SidePanel::News),
-                            _ => self.keyboard_shortcuts.toggle(),
+                    SidePanel::Screener => match self.screener.show(ui) {
+                        ScreenerAction::SelectSymbol(symbol) => self.open_catalog_symbol(&symbol),
+                        ScreenerAction::ExportCsv(text) => self.save_text("screener.csv", &text),
+                        ScreenerAction::SendToWatchlist(symbols) => {
+                            self.watchlist.import("Screener", &symbols.join(","));
+                            self.open_panel = Some(SidePanel::Watchlist);
+                        }
+                        _ => {}
+                    },
+                    SidePanel::MarketHeatmap => {
+                        if let Some(symbol) = self.market_heatmap.show(ui) {
+                            self.open_catalog_symbol(&symbol);
                         }
                     }
-                }
-                SidePanel::Calendar => {
-                    if let CalendarAction::SelectSymbol(symbol) = self.calendar.show(ui) {
-                        self.open_catalog_symbol(&symbol);
+                    SidePanel::Hotlists => {
+                        if let HotlistsAction::SelectSymbol(symbol) = self.hotlists.show(ui) {
+                            self.open_catalog_symbol(&symbol);
+                        }
                     }
-                }
-                SidePanel::News => {
-                    let action = self.news.show(ui);
-                    self.handle_news(ui.ctx(), action);
-                }
-                SidePanel::DataWindow => {
-                    self.data_window_expanded =
-                        egui_charts::ui::widget_bar::panels::object_tree::show_data_window(
-                            ui,
-                            &self.build_data_window(),
-                            self.data_window_expanded,
-                        );
-                }
+                    SidePanel::Notifications => {
+                        if let NotificationsAction::SelectSymbol(symbol) =
+                            self.notifications.show(ui)
+                        {
+                            self.open_catalog_symbol(&symbol);
+                        }
+                    }
+                    SidePanel::Chats => self.chats.show(ui),
+                    SidePanel::Products => {
+                        if let ProductsAction::Open(id) = self.products.show(ui) {
+                            match id.as_str() {
+                                "screener" => self.open_panel = Some(SidePanel::Screener),
+                                "calendar" => self.open_panel = Some(SidePanel::Calendar),
+                                "news" => self.open_panel = Some(SidePanel::News),
+                                _ => self.keyboard_shortcuts.toggle(),
+                            }
+                        }
+                    }
+                    SidePanel::Calendar => {
+                        if let CalendarAction::SelectSymbol(symbol) = self.calendar.show(ui) {
+                            self.open_catalog_symbol(&symbol);
+                        }
+                    }
+                    SidePanel::News => {
+                        let action = self.news.show(ui);
+                        self.handle_news(ui.ctx(), action);
+                    }
+                    SidePanel::DataWindow => {
+                        self.data_window_expanded =
+                            egui_charts::ui::widget_bar::panels::object_tree::show_data_window(
+                                ui,
+                                &self.build_data_window(),
+                                self.data_window_expanded,
+                            );
+                    }
                 }
             });
     }

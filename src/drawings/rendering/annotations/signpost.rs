@@ -14,7 +14,10 @@ impl Drawing {
             return;
         }
         let snap = PixelSnap::of(painter);
-        let pos = Pos2::new(snap.line_center(self.points[0].x, 1.5), snap.edge(self.points[0].y));
+        let pos = Pos2::new(
+            snap.line_center(self.points[0].x, 1.5),
+            snap.edge(self.points[0].y),
+        );
         let color = Color32::from_rgba_unmultiplied(
             self.color[0],
             self.color[1],

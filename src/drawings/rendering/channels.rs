@@ -4,8 +4,10 @@
 
 use crate::drawings::domain::{Drawing, DrawingToolType, RegressionSource};
 use crate::drawings::rendering::{ChartView, MAX_CACHED_SPANS, bars_between};
+use crate::model::LineStyle;
 use crate::model::math::{LinearFit, Moments};
 use crate::model::{Bar, SpanCache};
+use crate::painting::dashed_line::draw_dashed_line;
 use crate::scales::price_decimals;
 use crate::styles::typography;
 use egui::{Color32, FontId, Pos2, Rect, Stroke};
@@ -15,6 +17,25 @@ use std::rc::Rc;
 thread_local! {
     static MOMENTS: RefCell<SpanCache<Moments, RegressionSource>> =
         const { RefCell::new(SpanCache::new(MAX_CACHED_SPANS)) };
+}
+
+fn paint_styled_segment(
+    painter: &egui::Painter,
+    a: Pos2,
+    b: Pos2,
+    stroke: Stroke,
+    style: LineStyle,
+) {
+    match style.dash_pattern() {
+        Some((dash, gap)) => draw_dashed_line(painter, a, b, stroke, dash, gap),
+        None => {
+            painter.line_segment([a, b], stroke);
+        }
+    }
+}
+
+fn rgba(color: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3])
 }
 
 impl Drawing {
@@ -72,7 +93,12 @@ impl Drawing {
         let color = self.text_color32();
         let font = self.annotation_font();
         let prices = self.channel_endpoint_prices();
-        for (point, price) in lines.iter().take(2).flat_map(|line| line.iter()).zip(prices) {
+        for (point, price) in lines
+            .iter()
+            .take(2)
+            .flat_map(|line| line.iter())
+            .zip(prices)
+        {
             let Some(price) = price else { continue };
             let decimals = price_decimals(price);
             let text = format!("{price:.decimals$}");
@@ -85,7 +111,9 @@ impl Drawing {
             return [None; 4];
         };
         match self.tool_type {
-            DrawingToolType::FlatTopBottom => [Some(a.price), Some(b.price), Some(c.price), Some(c.price)],
+            DrawingToolType::FlatTopBottom => {
+                [Some(a.price), Some(b.price), Some(c.price), Some(c.price)]
+            }
             DrawingToolType::DisjointChannel => {
                 // Mirrored slope through c: price at bar of a and b.
                 let da = b.bar_idx - a.bar_idx;
@@ -100,7 +128,12 @@ impl Drawing {
                 } else {
                     let slope = (b.price - a.price) / f64::from(da);
                     let at = |bar: f32| c.price - f64::from(bar - c.bar_idx) * slope;
-                    [Some(a.price), Some(b.price), Some(at(a.bar_idx)), Some(at(b.bar_idx))]
+                    [
+                        Some(a.price),
+                        Some(b.price),
+                        Some(at(a.bar_idx)),
+                        Some(at(b.bar_idx)),
+                    ]
                 }
             }
             _ => [None; 4],
@@ -196,11 +229,21 @@ impl Drawing {
         Some([p1 + offset, p2 + offset])
     }
 
-    /// Render Regression Trend - least-squares line through the configured source of the
-    /// bars between the anchors, with optional upper/lower deviation bands.
+    /// Render Regression Trend. While the range is still being dragged, only the rubber-band
+    /// line is shown. Once the drawing is completed, the least-squares fit of the bars between
+    /// the anchors replaces that line.
     pub(crate) fn render_regression_trend(&self, painter: &egui::Painter, view: &ChartView) {
+        if !self.completed {
+            if let [start, end, ..] = self.points.as_slice() {
+                painter.line_segment(
+                    [*start, *end],
+                    Stroke::new(self.stroke_width, self.color32()),
+                );
+            }
+            return;
+        }
         if let Some((first, len, fit)) = self.regression_fit(view) {
-            self.draw_regression_channel(painter, view, first, len, &fit, self.color32());
+            self.draw_regression_channel(painter, view, first, len, &fit);
         }
     }
 
@@ -242,7 +285,6 @@ impl Drawing {
         first: usize,
         len: usize,
         fit: &LinearFit,
-        color: Color32,
     ) {
         let last = len - 1;
         let config = self.regression_trend.unwrap_or_default();
@@ -260,10 +302,7 @@ impl Drawing {
         let upper = config.use_upper.then(|| line(config.upper_deviation));
         let lower = config.use_lower.then(|| line(-config.lower_deviation));
 
-        let label_anchor = lower
-            .or(upper)
-            .unwrap_or(center)[0]
-            + egui::vec2(4.0, 4.0);
+        let label_anchor = lower.or(upper).unwrap_or(center)[0] + egui::vec2(4.0, 4.0);
         let extend = |[a, b]: [Pos2; 2]| {
             let at = |x: f32| {
                 let dx = b.x - a.x;
@@ -292,45 +331,49 @@ impl Drawing {
         let center = extend(center);
         let upper = upper.map(extend);
         let lower = lower.map(extend);
-        let up_color = Color32::from_rgba_unmultiplied(
-            config.up_color[0],
-            config.up_color[1],
-            config.up_color[2],
-            config.up_color[3],
-        );
-        let down_color = Color32::from_rgba_unmultiplied(
-            config.down_color[0],
-            config.down_color[1],
-            config.down_color[2],
-            config.down_color[3],
-        );
-        if let Some(fill) = self.fill_color {
-            let halves = [
-                (upper, center, [fill[0], fill[1], fill[2]]),
-                (lower, center, [self.color[0], self.color[1], self.color[2]]),
-            ];
-            for (band, mid, rgb) in halves {
-                let Some(band) = band else { continue };
-                painter.add(egui::Shape::convex_polygon(
-                    vec![band[0], band[1], mid[1], mid[0]],
-                    Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], fill[3]),
-                    Stroke::NONE,
-                ));
+        let up_color = rgba(config.up_color);
+        let down_color = rgba(config.down_color);
+        let mid_color = rgba(config.midline_color);
+
+        let halves = [
+            (upper, center, config.show_upper_fill, config.upper_fill),
+            (lower, center, config.show_lower_fill, config.lower_fill),
+        ];
+        for (band, mid, show, fill) in halves {
+            if !show {
+                continue;
             }
+            let Some(band) = band else { continue };
+            painter.add(egui::Shape::convex_polygon(
+                vec![band[0], band[1], mid[1], mid[0]],
+                rgba(fill),
+                Stroke::NONE,
+            ));
         }
         if let Some(upper) = upper {
-            painter.line_segment(upper, Stroke::new(self.stroke_width, up_color));
+            paint_styled_segment(
+                painter,
+                upper[0],
+                upper[1],
+                Stroke::new(self.stroke_width, up_color),
+                config.upper_style,
+            );
         }
         if let Some(lower) = lower {
-            painter.line_segment(lower, Stroke::new(self.stroke_width, down_color));
+            paint_styled_segment(
+                painter,
+                lower[0],
+                lower[1],
+                Stroke::new(self.stroke_width, down_color),
+                config.lower_style,
+            );
         }
-        super::utils::draw_dashed_line(
+        paint_styled_segment(
             painter,
             center[0],
             center[1],
-            Stroke::new(self.stroke_width, color),
-            8.0,
-            4.0,
+            Stroke::new(self.stroke_width, mid_color),
+            config.midline_style,
         );
         if config.show_pearson {
             painter.text(
@@ -643,10 +686,19 @@ mod tests {
                     }
                     drawing
                         .update_screen_coords(|b| 100.0 + b * 100.0, |p| 500.0 - p as f32 * 10.0);
-                    drawing.regression_trend = RegressionTrendConfig::new(1.0);
+                    let mut config = RegressionTrendConfig::new(1.0).unwrap();
+                    config.show_upper_fill = filled;
+                    config.show_lower_fill = filled;
+                    config.upper_fill = [8, 153, 129, 51];
+                    config.lower_fill = [242, 54, 69, 51];
+                    config.up_color = [8, 153, 129, 234];
+                    config.down_color = [242, 54, 69, 234];
+                    config.midline_color = [156, 156, 156, 234];
+                    config.midline_style = crate::model::LineStyle::Dashed;
+                    drawing.regression_trend = Some(config);
+                    drawing.completed = true;
                     drawing.stroke_width = 3.0;
                     drawing.line_style = crate::model::LineStyle::Dotted;
-                    drawing.fill_color = filled.then_some([41, 98, 255, 51]);
                     drawing.extend_left = left;
                     drawing.extend_right = right;
                     let ctx = Context::default();
@@ -695,16 +747,11 @@ mod tests {
                     if filled {
                         for (color, offset) in [
                             (
-                                Color32::from_rgba_unmultiplied(41, 98, 255, 51),
+                                Color32::from_rgba_unmultiplied(8, 153, 129, 51),
                                 -10.0 * 3f32.sqrt(),
                             ),
                             (
-                                Color32::from_rgba_unmultiplied(
-                                    drawing.color[0],
-                                    drawing.color[1],
-                                    drawing.color[2],
-                                    51,
-                                ),
+                                Color32::from_rgba_unmultiplied(242, 54, 69, 51),
                                 10.0 * 3f32.sqrt(),
                             ),
                         ] {
@@ -732,17 +779,18 @@ mod tests {
                             _ => None,
                         })
                         .collect();
-                    let band = Color32::from_rgba_unmultiplied(41, 98, 255, 255);
-                    for offset in [-10.0 * 3f32.sqrt(), 10.0 * 3f32.sqrt()] {
+                    let upper = Color32::from_rgba_unmultiplied(8, 153, 129, 234);
+                    let lower = Color32::from_rgba_unmultiplied(242, 54, 69, 234);
+                    for (color, offset) in
+                        [(upper, -10.0 * 3f32.sqrt()), (lower, 10.0 * 3f32.sqrt())]
+                    {
                         assert!(lines.iter().any(|(p, s)| s.width == 3.0
-                            && s.color == band
+                            && s.color == color
                             && p[0].distance(Pos2::new(xs[0], center_y(xs[0]) + offset)) < 1e-3
                             && p[1].distance(Pos2::new(xs[1], center_y(xs[1]) + offset)) < 1e-3));
                     }
-                    let center: Vec<_> = lines
-                        .iter()
-                        .filter(|(_, s)| s.color == drawing.color32())
-                        .collect();
+                    let mid = Color32::from_rgba_unmultiplied(156, 156, 156, 234);
+                    let center: Vec<_> = lines.iter().filter(|(_, s)| s.color == mid).collect();
                     assert!(center.len() > 1, "the centre line is dashed");
                     let mut points = Vec::new();
                     for (p, s) in center {

@@ -753,6 +753,7 @@ mod tests {
             if tool == DrawingToolType::RegressionTrend {
                 drawing.chart_points[0].bar_idx = 0.0;
                 drawing.chart_points[1].bar_idx = 6.0;
+                drawing.completed = true;
             }
             let mut filled = drawing.clone();
             filled.fill_color = Some([12, 34, 56, 80]);

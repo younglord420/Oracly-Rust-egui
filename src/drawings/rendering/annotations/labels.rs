@@ -117,7 +117,12 @@ impl Drawing {
             ),
         );
 
-        let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+        let bg = painter
+            .ctx()
+            .active_theme()
+            .chart
+            .bg_axis
+            .gamma_multiply(0.92);
         painter.rect_filled(box_rect, DESIGN_TOKENS.rounding.sm, bg);
         painter.rect_stroke(
             box_rect,
@@ -126,7 +131,10 @@ impl Drawing {
             StrokeKind::Inside,
         );
         painter.galley(
-            Pos2::new(snap.edge(label.x + padding.x), snap.edge(label.y + padding.y)),
+            Pos2::new(
+                snap.edge(label.x + padding.x),
+                snap.edge(label.y + padding.y),
+            ),
             galley,
             color,
         );

@@ -51,11 +51,7 @@ impl PitchforkConfig {
     /// Inserts any missing standard ratios so older drawings get the full Inputs list.
     pub fn ensure_standard_levels(&mut self) {
         for &value in &Self::STANDARD_VALUES {
-            if !self
-                .levels
-                .iter()
-                .any(|l| (l.value - value).abs() < 1e-4)
-            {
+            if !self.levels.iter().any(|l| (l.value - value).abs() < 1e-4) {
                 let visible = (value - 0.0).abs() < 1e-4
                     || (value - 0.5).abs() < 1e-4
                     || (value - 1.0).abs() < 1e-4;

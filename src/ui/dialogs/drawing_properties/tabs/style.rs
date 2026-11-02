@@ -21,8 +21,8 @@ const LINE_WIDTHS: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
 const LINE_STYLES: [LineStyle; 3] = [LineStyle::Solid, LineStyle::Dashed, LineStyle::Dotted];
 
 /// Standard control height for Drawing Properties rows (28px).
-pub(super) fn control_row_height(ui: &Ui) -> f32 {
-    28.0_f32.max(ui.spacing().interact_size.y.min(28.0))
+pub(super) fn control_row_height(_ui: &Ui) -> f32 {
+    28.0
 }
 
 /// Shared width of the right-aligned control column across property rows.
@@ -40,9 +40,12 @@ pub struct StyleTab;
 
 impl StyleTab {
     /// Dense Appearance rows: color, width, style; optional extend and ends on aligned rows.
-    pub fn show(ui: &mut Ui, props: &mut DrawingProps, pickers: &mut [ColorPickerState; 2]) {
+    pub fn show(ui: &mut Ui, props: &mut DrawingProps, pickers: &mut Vec<ColorPickerState>) {
         let tool = props.tool_settings.as_ref().map(|t| t.settings.tool_type);
-        let [color_picker, _] = pickers;
+        let regression = tool == Some(DrawingToolType::RegressionTrend);
+        if pickers.len() < if regression { 7 } else { 2 } {
+            pickers.resize_with(if regression { 7 } else { 2 }, ColorPickerState::default);
+        }
         let theme = ui.active_theme();
         let gap = 6.0;
         let control_h = control_row_height(ui);
@@ -71,9 +74,13 @@ impl StyleTab {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         ui.spacing_mut().item_spacing.x = gap;
-                        if let Some(color) =
-                            color_swatch(ui, color_picker, props.color, "drawing_props_color", true)
-                        {
+                        if let Some(color) = color_swatch(
+                            ui,
+                            &mut pickers[0],
+                            props.color,
+                            "drawing_props_color",
+                            true,
+                        ) {
                             props.color = color;
                         }
                         line_width_combo(ui, &mut props.line_width, width_chip_w, control_h);
@@ -104,6 +111,14 @@ impl StyleTab {
                     | DrawingToolType::Polyline
             )
         });
+        let fib_tool = tool.is_some_and(|tool| {
+            matches!(
+                tool,
+                DrawingToolType::FibonacciRetracement
+                    | DrawingToolType::FibonacciExtension
+                    | DrawingToolType::FibonacciChannel
+            )
+        });
         if show_extend {
             extend_control(ui, &mut props.extend_left, &mut props.extend_right, col_w);
         }
@@ -111,20 +126,71 @@ impl StyleTab {
             ends_combo(ui, &mut template.settings.arrow_end_style, ends_combo_w);
         }
 
-        if let Some(template) = &mut props.tool_settings
-            && template.settings.tool_type == DrawingToolType::Rect
+        if let Some(template) = &mut props.tool_settings {
+            if matches!(
+                template.settings.tool_type,
+                DrawingToolType::Rect | DrawingToolType::ParallelChannel
+            ) {
+                ui.checkbox(
+                    &mut template.settings.channel_midline,
+                    egui::RichText::new(l10n::text(ui.ctx(), "Show middle line"))
+                        .size(theme.text.body),
+                );
+            } else if matches!(
+                template.settings.tool_type,
+                DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
+            ) {
+                ui.checkbox(
+                    &mut template.settings.show_price_labels,
+                    egui::RichText::new(l10n::text(ui.ctx(), "Price labels")).size(theme.text.body),
+                );
+            }
+        }
+
+        if fib_tool && let Some(template) = &mut props.tool_settings {
+            let tool_type = template.settings.tool_type;
+            let config = template
+                .settings
+                .fib_config
+                .get_or_insert_with(|| crate::drawings::FibonacciConfig::for_tool(tool_type));
+            fib_style_controls(
+                ui,
+                config,
+                &mut pickers[0],
+                tool_type,
+                col_w,
+                width_chip_w,
+                style_chip_w,
+                control_h,
+                gap,
+            );
+        }
+
+        if tool == Some(DrawingToolType::RegressionTrend)
+            && let Some(template) = &mut props.tool_settings
         {
-            ui.checkbox(
-                &mut template.settings.channel_midline,
-                egui::RichText::new(l10n::text(ui.ctx(), "Show middle line"))
-                    .size(theme.text.body),
+            let config = template
+                .settings
+                .regression_trend
+                .get_or_insert_with(crate::drawings::RegressionTrendConfig::default);
+            regression_style_controls(
+                ui,
+                config,
+                &mut pickers[2..7],
+                col_w,
+                style_chip_w,
+                control_h,
+                gap,
             );
         }
     }
 
     /// Fill section body when the tool paints a fill.
-    pub fn show_fill(ui: &mut Ui, props: &mut DrawingProps, pickers: &mut [ColorPickerState; 2]) {
-        let [_, fill_picker] = pickers;
+    pub fn show_fill(ui: &mut Ui, props: &mut DrawingProps, pickers: &mut Vec<ColorPickerState>) {
+        if pickers.len() < 2 {
+            pickers.resize_with(2, ColorPickerState::default);
+        }
+        let fill_picker = &mut pickers[1];
         let theme = ui.active_theme();
         let control_h = control_row_height(ui);
         ui.spacing_mut().interact_size.y = control_h;
@@ -136,17 +202,24 @@ impl StyleTab {
                 egui::RichText::new(l10n::text(ui.ctx(), "Enable fill")).size(theme.text.body),
             );
             if props.fill_enabled {
-                let fill = props
+                let mut fill = props
                     .fill_color
                     .unwrap_or(theme.ui.accent.gamma_multiply(0.2));
-                props.fill_color = Some(fill);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing.sm;
+                    let mut pct = f32::from(fill.a()) * 100.0 / 255.0;
+                    if opacity_slider(ui, &mut pct, true).changed() {
+                        let a = (pct * 255.0 / 100.0).round() as u8;
+                        let [r, g, b, _] = fill.to_srgba_unmultiplied();
+                        fill = Color32::from_rgba_unmultiplied(r, g, b, a);
+                    }
                     if let Some(picked) =
                         color_swatch(ui, fill_picker, fill, "drawing_props_fill", true)
                     {
-                        props.fill_color = Some(picked);
+                        fill = picked;
                     }
                 });
+                props.fill_color = Some(fill);
             }
         });
     }
@@ -169,23 +242,39 @@ pub(super) fn color_swatch(
 
 /// Visual stroke-width selector showing the actual line thickness alongside the pixel value.
 pub(super) fn line_width_combo(ui: &mut Ui, width: &mut f32, chip_w: f32, chip_h: f32) {
+    line_width_combo_with_id(
+        ui,
+        "drawing_props_line_width",
+        "Line width",
+        width,
+        chip_w,
+        chip_h,
+    );
+}
+
+pub(super) fn line_width_combo_with_id(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    a11y_name: &str,
+    width: &mut f32,
+    chip_w: f32,
+    chip_h: f32,
+) {
     let theme = ui.active_theme();
     let label = format!("{}px", (*width).round() as i32);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(chip_w, chip_h), Sense::click());
-    let a11y_label = l10n::text(ui.ctx(), "Line width");
+    let a11y_label = l10n::text(ui.ctx(), a11y_name);
     response.widget_info(|| WidgetInfo::labeled(Role::ComboBox, ui.is_enabled(), &a11y_label));
 
-    let id = ui.make_persistent_id("drawing_props_line_width");
+    let id = ui.make_persistent_id(id_salt);
     let is_open = egui::Popup::is_id_open(ui.ctx(), id);
     paint_control_box(ui, rect, &response, is_open);
 
     let chevron = DESIGN_TOKENS.sizing.icon_sm;
     let pad_x = theme.spacing.md;
-    let galley = ui.painter().layout_no_wrap(
-        label,
-        FontId::proportional(theme.text.body),
-        theme.ui.text,
-    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label, FontId::proportional(theme.text.body), theme.ui.text);
     let chevron_x = rect.max.x - pad_x - chevron * 0.5;
     let text_x = chevron_x - chevron * 0.5 - theme.spacing.xs - galley.size().x;
     let line_x0 = rect.min.x + pad_x;
@@ -232,8 +321,7 @@ pub(super) fn line_width_combo(ui: &mut Ui, width: &mut f32, chip_w: f32, chip_h
             for preset in presets {
                 let selected = (*width - preset).abs() < f32::EPSILON;
                 let row_h = 30.0;
-                let (row, resp) =
-                    ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
+                let (row, resp) = ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
                 paint_menu_item_bg(ui, row, selected, resp.hovered());
                 let y = row.center().y.round();
                 ui.painter().line_segment(
@@ -323,8 +411,7 @@ pub(super) fn line_style_combo(
             for choice in choices {
                 let selected = *style == choice;
                 let row_h = 30.0;
-                let (row, resp) =
-                    ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
+                let (row, resp) = ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
                 paint_menu_item_bg(ui, row, selected, resp.hovered());
                 let sample = Rect::from_min_max(
                     Pos2::new(row.min.x + 12.0, row.center().y - 1.0),
@@ -384,9 +471,7 @@ pub(super) fn paint_menu_item_bg(ui: &Ui, row: Rect, selected: bool, hovered: bo
 pub(super) fn paint_control_box(ui: &Ui, rect: Rect, response: &egui::Response, is_open: bool) {
     let theme = ui.active_theme();
     let radius = theme.radius.sm;
-    let fill = if is_open {
-        theme.ui.btn_bg_hover
-    } else if response.hovered() {
+    let fill = if is_open || response.hovered() {
         theme.ui.btn_bg_hover
     } else {
         theme.ui.panel_bg
@@ -438,10 +523,7 @@ pub(super) fn text_combo_popup<T: Copy + PartialEq>(
         theme.ui.text,
     );
     ui.painter().galley(
-        Pos2::new(
-            rect.min.x + pad_x,
-            rect.center().y - galley.size().y * 0.5,
-        ),
+        Pos2::new(rect.min.x + pad_x, rect.center().y - galley.size().y * 0.5),
         galley,
         theme.ui.text,
     );
@@ -468,8 +550,7 @@ pub(super) fn text_combo_popup<T: Copy + PartialEq>(
             for &choice in choices {
                 let selected = *current == choice;
                 let row_h = 30.0;
-                let (row, resp) =
-                    ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
+                let (row, resp) = ui.allocate_exact_size(Vec2::new(menu_w, row_h), Sense::click());
                 paint_menu_item_bg(ui, row, selected, resp.hovered());
                 let label = label_of(choice);
                 ui.painter().text(
@@ -495,6 +576,374 @@ pub(super) fn text_combo_popup<T: Copy + PartialEq>(
 }
 
 /// Compact extend icons with soft selection — aligned to the same right-hand control column.
+fn regression_style_controls(
+    ui: &mut Ui,
+    config: &mut crate::drawings::RegressionTrendConfig,
+    pickers: &mut [ColorPickerState],
+    col_w: f32,
+    style_chip_w: f32,
+    control_h: f32,
+    gap: f32,
+) {
+    let theme = ui.active_theme();
+
+    regression_line_row(
+        ui,
+        pickers,
+        0,
+        "Midline",
+        &mut config.midline_color,
+        &mut config.midline_style,
+        "drawing_props_reg_midline_color",
+        "drawing_props_reg_midline_style",
+        col_w,
+        style_chip_w,
+        control_h,
+        gap,
+        &theme,
+    );
+    regression_line_row(
+        ui,
+        pickers,
+        1,
+        "Upper line",
+        &mut config.up_color,
+        &mut config.upper_style,
+        "drawing_props_reg_upper_color",
+        "drawing_props_reg_upper_style",
+        col_w,
+        style_chip_w,
+        control_h,
+        gap,
+        &theme,
+    );
+    regression_line_row(
+        ui,
+        pickers,
+        2,
+        "Lower line",
+        &mut config.down_color,
+        &mut config.lower_style,
+        "drawing_props_reg_lower_color",
+        "drawing_props_reg_lower_style",
+        col_w,
+        style_chip_w,
+        control_h,
+        gap,
+        &theme,
+    );
+    regression_fill_row(
+        ui,
+        pickers,
+        3,
+        "Upper fill",
+        &mut config.show_upper_fill,
+        &mut config.upper_fill,
+        "drawing_props_reg_upper_fill",
+        control_h,
+        gap,
+        &theme,
+    );
+    regression_fill_row(
+        ui,
+        pickers,
+        4,
+        "Lower fill",
+        &mut config.show_lower_fill,
+        &mut config.lower_fill,
+        "drawing_props_reg_lower_fill",
+        control_h,
+        gap,
+        &theme,
+    );
+}
+
+fn regression_line_row(
+    ui: &mut Ui,
+    pickers: &mut [ColorPickerState],
+    picker_index: usize,
+    label: &str,
+    color: &mut [u8; 4],
+    style: &mut LineStyle,
+    color_id: &str,
+    style_id: &str,
+    col_w: f32,
+    style_chip_w: f32,
+    control_h: f32,
+    gap: f32,
+    theme: &crate::theme::Theme,
+) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(control_h);
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.label(
+            egui::RichText::new(l10n::text(ui.ctx(), label))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.allocate_ui_with_layout(
+                Vec2::new(col_w.min(ui.available_width()), control_h),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    let mut c =
+                        Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
+                    if let Some(picked) =
+                        color_swatch(ui, &mut pickers[picker_index], c, color_id, true)
+                    {
+                        c = picked;
+                        *color = c.to_srgba_unmultiplied();
+                    }
+                    line_style_combo(
+                        ui,
+                        style_id,
+                        &format!("{label} style"),
+                        style,
+                        style_chip_w,
+                        control_h,
+                    );
+                },
+            );
+        });
+    });
+}
+
+fn regression_fill_row(
+    ui: &mut Ui,
+    pickers: &mut [ColorPickerState],
+    picker_index: usize,
+    label: &str,
+    show: &mut bool,
+    fill: &mut [u8; 4],
+    color_id: &str,
+    control_h: f32,
+    gap: f32,
+    theme: &crate::theme::Theme,
+) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(control_h);
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.checkbox(
+            show,
+            egui::RichText::new(l10n::text(ui.ctx(), label))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        if *show {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                let mut c = Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
+                let mut pct = f32::from(c.a()) * 100.0 / 255.0;
+                if opacity_slider(ui, &mut pct, true).changed() {
+                    fill[3] = (pct * 255.0 / 100.0).round() as u8;
+                    c = Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
+                }
+                if let Some(picked) =
+                    color_swatch(ui, &mut pickers[picker_index], c, color_id, true)
+                {
+                    let a = fill[3];
+                    let mut rgba = picked.to_srgba_unmultiplied();
+                    rgba[3] = a;
+                    *fill = rgba;
+                }
+            });
+        }
+    });
+}
+
+/// Opacity control: a thin track that fades from clear to white, a white knob, and a
+/// percent that stays visible beside the track.
+pub(super) fn opacity_slider(ui: &mut Ui, percent: &mut f32, enabled: bool) -> egui::Response {
+    let theme = ui.active_theme();
+    let value = percent.clamp(0.0, 100.0);
+    let label = format!("{}%", value.round() as i32);
+    let font = FontId::proportional(theme.text.body);
+    let label_w = ui
+        .painter()
+        .layout_no_wrap(label.clone(), font.clone(), theme.ui.text)
+        .size()
+        .x
+        + 8.0;
+    let track_w = (ui.available_width() - label_w).clamp(56.0, 96.0);
+    let sense = if enabled && ui.is_enabled() {
+        Sense::click_and_drag()
+    } else {
+        Sense::hover()
+    };
+    let (rect, mut response) = ui.allocate_exact_size(Vec2::new(track_w + label_w, 22.0), sense);
+    let track = Rect::from_center_size(
+        Pos2::new(rect.min.x + track_w * 0.5, rect.center().y),
+        Vec2::new(track_w, 8.0),
+    );
+    if enabled
+        && ui.is_enabled()
+        && (response.clicked() || response.dragged())
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        let t = ((pos.x - track.min.x) / track.width()).clamp(0.0, 1.0);
+        let next = (t * 100.0).round().clamp(0.0, 100.0);
+        if (next - *percent).abs() > f32::EPSILON {
+            *percent = next;
+            response.mark_changed();
+        }
+    }
+    let shown = percent.clamp(0.0, 100.0);
+    let active = enabled && ui.is_enabled();
+    paint_opacity_track(ui.painter(), track, active);
+    let knob = Pos2::new(
+        track.min.x + track.width() * (shown / 100.0),
+        track.center().y,
+    );
+    ui.painter().circle_filled(
+        knob,
+        7.0,
+        if active {
+            Color32::WHITE
+        } else {
+            Color32::from_rgb(168, 168, 168)
+        },
+    );
+    ui.painter()
+        .circle_stroke(knob, 7.0, Stroke::new(1.0, Color32::from_black_alpha(48)));
+    ui.painter().text(
+        Pos2::new(rect.right(), rect.center().y),
+        egui::Align2::RIGHT_CENTER,
+        format!("{}%", shown.round() as i32),
+        font,
+        if active {
+            theme.ui.text
+        } else {
+            theme.ui.text_disabled
+        },
+    );
+    response.widget_info(|| WidgetInfo::slider(active, f64::from(shown), &label));
+    response
+}
+
+fn paint_opacity_track(painter: &egui::Painter, track: Rect, active: bool) {
+    let radius = (track.height() * 0.5).round().clamp(1.0, 8.0) as u8;
+    let base = if active {
+        Color32::from_rgb(32, 34, 38)
+    } else {
+        Color32::from_rgb(48, 48, 48)
+    };
+    painter.rect_filled(track, radius, base);
+    let steps = 14;
+    for i in 0..steps {
+        let t0 = i as f32 / steps as f32;
+        let t1 = (i + 1) as f32 / steps as f32;
+        let slice = Rect::from_min_max(
+            Pos2::new(track.min.x + track.width() * t0, track.min.y),
+            Pos2::new(track.min.x + track.width() * t1, track.max.y),
+        );
+        let alpha = ((t0 + t1) * 0.5 * if active { 255.0 } else { 90.0 }).round() as u8;
+        let rounding = egui::CornerRadius {
+            nw: if i == 0 { radius } else { 0 },
+            sw: if i == 0 { radius } else { 0 },
+            ne: if i + 1 == steps { radius } else { 0 },
+            se: if i + 1 == steps { radius } else { 0 },
+        };
+        painter.rect_filled(slice, rounding, Color32::from_white_alpha(alpha));
+    }
+}
+
+fn fib_style_controls(
+    ui: &mut Ui,
+    config: &mut crate::drawings::FibonacciConfig,
+    color_picker: &mut ColorPickerState,
+    tool_type: DrawingToolType,
+    col_w: f32,
+    width_chip_w: f32,
+    style_chip_w: f32,
+    control_h: f32,
+    gap: f32,
+) {
+    let theme = ui.active_theme();
+    let show_trend = matches!(
+        tool_type,
+        DrawingToolType::FibonacciRetracement | DrawingToolType::FibonacciExtension
+    );
+
+    if show_trend {
+        ui.horizontal(|ui| {
+            ui.set_min_height(control_h);
+            ui.spacing_mut().item_spacing.x = gap;
+            ui.checkbox(
+                &mut config.show_trend_line,
+                egui::RichText::new(l10n::text(ui.ctx(), "Trend line"))
+                    .size(theme.text.body)
+                    .color(theme.ui.text_secondary),
+            );
+            if config.show_trend_line {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(col_w.min(ui.available_width()), control_h),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            let mut color = Color32::from_rgba_unmultiplied(
+                                config.trend_line_color[0],
+                                config.trend_line_color[1],
+                                config.trend_line_color[2],
+                                config.trend_line_color[3],
+                            );
+                            if let Some(picked) = color_swatch(
+                                ui,
+                                color_picker,
+                                color,
+                                "drawing_props_fib_trend_color",
+                                true,
+                            ) {
+                                color = picked;
+                                config.trend_line_color = color.to_srgba_unmultiplied();
+                            }
+                            line_width_combo_with_id(
+                                ui,
+                                "drawing_props_fib_trend_width",
+                                "Trend line width",
+                                &mut config.trend_line_width,
+                                width_chip_w,
+                                control_h,
+                            );
+                            line_style_combo(
+                                ui,
+                                "drawing_props_fib_trend_style",
+                                "Trend line style",
+                                &mut config.trend_line_style,
+                                style_chip_w,
+                                control_h,
+                            );
+                        },
+                    );
+                });
+            }
+        });
+    }
+
+    ui.horizontal(|ui| {
+        ui.set_min_height(control_h);
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.label(
+            egui::RichText::new(l10n::text(ui.ctx(), "Levels"))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            line_width_combo_with_id(
+                ui,
+                "drawing_props_fib_levels_width",
+                "Levels line width",
+                &mut config.levels_line_width,
+                width_chip_w.max(72.0),
+                control_h,
+            );
+        });
+    });
+
+    extend_control(ui, &mut config.extend_left, &mut config.extend_right, col_w);
+}
+
 fn extend_control(ui: &mut Ui, left: &mut bool, right: &mut bool, col_w: f32) {
     let theme = ui.active_theme();
     let options = [
@@ -600,12 +1049,10 @@ fn ends_combo(ui: &mut Ui, end: &mut ArrowStyle, combo_w: f32) {
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let w = combo_w.min(ui.available_width());
-            let (rect, response) =
-                ui.allocate_exact_size(Vec2::new(w, control_h), Sense::click());
+            let (rect, response) = ui.allocate_exact_size(Vec2::new(w, control_h), Sense::click());
             let a11y_label = l10n::text(ui.ctx(), "Line end");
-            response.widget_info(|| {
-                WidgetInfo::labeled(Role::ComboBox, ui.is_enabled(), &a11y_label)
-            });
+            response
+                .widget_info(|| WidgetInfo::labeled(Role::ComboBox, ui.is_enabled(), &a11y_label));
 
             let id = ui.make_persistent_id("drawing_props_line_ends");
             let is_open = egui::Popup::is_id_open(ui.ctx(), id);

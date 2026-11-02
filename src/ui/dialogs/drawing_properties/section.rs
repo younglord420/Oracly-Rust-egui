@@ -44,9 +44,8 @@ pub(super) fn properties_section(
     let full_w = ui.available_width();
     let (header_rect, response) =
         ui.allocate_exact_size(Vec2::new(full_w, header_h), Sense::click());
-    response.widget_info(|| {
-        WidgetInfo::selected(Role::Button, ui.is_enabled(), *is_open, &title_text)
-    });
+    response
+        .widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), *is_open, &title_text));
     if response.clicked() {
         *is_open = !*is_open;
     }

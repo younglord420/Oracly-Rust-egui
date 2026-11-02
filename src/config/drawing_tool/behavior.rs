@@ -53,6 +53,7 @@ impl DrawingToolType {
                 | Self::SchiffPitchfork
                 | Self::ModifiedSchiffPitchfork
                 | Self::InsidePitchfork
+                | Self::RegressionTrend
                 | Self::GhostFeed
                 | Self::LongPos
                 | Self::ShortPos

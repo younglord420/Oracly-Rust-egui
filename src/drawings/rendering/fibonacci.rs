@@ -5,7 +5,12 @@
 
 use super::ChartView;
 use super::style::circle_sides;
-use crate::drawings::domain::{Drawing, DrawingToolType as Tool, FibonacciConfig, FibonacciLevel};
+use crate::drawings::domain::{
+    Drawing, DrawingToolType as Tool, FibonacciConfig, FibonacciLevel, TextHorizontalAlign,
+    TextVerticalAlign,
+};
+use crate::model::LineStyle;
+use crate::painting::dashed_line::draw_dashed_line;
 use crate::styles::{stroke, typography};
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rangef, Rect, Stroke};
@@ -43,15 +48,87 @@ impl egui::cache::ComputerMut<LevelLabelKey<'_>, String> for LevelLabelFormatter
     }
 }
 
-/// Stroke weight: emphasise the anchors (0 / 1) and the midpoint (0.5).
-fn fib_level_stroke_width(value: f32) -> f32 {
-    if (value - 0.0).abs() < 1e-6 || (value - 1.0).abs() < 1e-6 {
-        stroke::MEDIUM
-    } else if (value - 0.5).abs() < 1e-6 {
-        stroke::THIN
-    } else {
-        stroke::HAIRLINE
+fn paint_fib_trend_line(
+    painter: &egui::Painter,
+    start: Pos2,
+    end: Pos2,
+    color: &[u8; 4],
+    style: LineStyle,
+    width: f32,
+) {
+    let stroke = Stroke::new(
+        width.max(stroke::HAIRLINE),
+        Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]),
+    );
+    match style.dash_pattern() {
+        Some((dash, gap)) => draw_dashed_line(painter, start, end, stroke, dash, gap),
+        None => {
+            painter.line_segment([start, end], stroke);
+        }
     }
+}
+
+/// Paint a horizontal level line and its label according to `config`'s horizontal/vertical
+/// alignment and font size. When `v_align == Middle`, the line is split around the label so
+/// the text is not crossed by the line.
+fn paint_fib_level_and_label(
+    painter: &egui::Painter,
+    config: &FibonacciConfig,
+    x_start: f32,
+    x_end: f32,
+    y: f32,
+    level_width: f32,
+    lvl_color: Color32,
+    label_text: String,
+    label_ys: &mut Vec<f32>,
+) {
+    let font_size = config.label_font_size.clamp(8.0, 48.0);
+    let show_label = !label_text.is_empty()
+        && !label_ys
+            .iter()
+            .any(|previous| (y - previous).abs() < font_size + 2.0);
+    let h_align = config.effective_h_align();
+    let v_align = config.label_v_align;
+    let stroke = Stroke::new(level_width, lvl_color);
+
+    if !show_label {
+        painter.hline(x_start..=x_end, y, stroke);
+        return;
+    }
+    label_ys.push(y);
+
+    let pad_x = 4.0_f32;
+    let pad_y = 2.0_f32;
+    let galley =
+        painter.layout_no_wrap(label_text, egui::FontId::proportional(font_size), lvl_color);
+    let text_w = galley.size().x;
+    let text_h = galley.size().y;
+
+    let x_min = match h_align {
+        TextHorizontalAlign::Left => x_start + pad_x,
+        TextHorizontalAlign::Center => (x_start + x_end - text_w) * 0.5,
+        TextHorizontalAlign::Right => x_end - pad_x - text_w,
+    };
+    let y_min = match v_align {
+        TextVerticalAlign::Top => y - pad_y - text_h,
+        TextVerticalAlign::Middle => y - text_h * 0.5,
+        TextVerticalAlign::Bottom => y + pad_y,
+    };
+
+    if v_align == TextVerticalAlign::Middle {
+        let gap_left = (x_min - pad_x).clamp(x_start, x_end);
+        let gap_right = (x_min + text_w + pad_x).clamp(x_start, x_end);
+        if gap_left > x_start {
+            painter.hline(x_start..=gap_left, y, stroke);
+        }
+        if x_end > gap_right {
+            painter.hline(gap_right..=x_end, y, stroke);
+        }
+    } else {
+        painter.hline(x_start..=x_end, y, stroke);
+    }
+
+    painter.galley(Pos2::new(x_min, y_min), galley, lvl_color);
 }
 
 fn level_label(
@@ -190,6 +267,7 @@ impl Drawing {
         }
 
         let (x_start, x_end) = (x_range.min, x_range.max);
+        let level_width = config.levels_line_width.max(stroke::HAIRLINE);
 
         // Draw lines and labels for visible levels
         let mut label_ys: Vec<f32> = Vec::new();
@@ -200,40 +278,28 @@ impl Drawing {
                 level.color[2],
                 level.color[3],
             );
-
-            painter.hline(
-                x_start..=x_end,
-                y,
-                Stroke::new(fib_level_stroke_width(level.value), lvl_color),
-            );
-
             let label_text = level_label(painter, &config, level, Some(price_at_lvl));
-            if label_text.is_empty()
-                || label_ys
-                    .iter()
-                    .any(|previous| (y - previous).abs() < typography::XS + 2.0)
-            {
-                continue;
-            }
-            label_ys.push(y);
-
-            painter.text(
-                Pos2::new(
-                    if config.labels_on_left {
-                        x_start + DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
-                    } else {
-                        x_end - DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
-                    },
-                    y - DESIGN_TOKENS.rounding.sm,
-                ),
-                if config.labels_on_left {
-                    egui::Align2::LEFT_CENTER
-                } else {
-                    egui::Align2::RIGHT_CENTER
-                },
-                label_text,
-                egui::FontId::proportional(typography::XS),
+            paint_fib_level_and_label(
+                painter,
+                &config,
+                x_start,
+                x_end,
+                y,
+                level_width,
                 lvl_color,
+                label_text,
+                &mut label_ys,
+            );
+        }
+
+        if config.show_trend_line {
+            paint_fib_trend_line(
+                painter,
+                self.points[0],
+                self.points[1],
+                &config.trend_line_color,
+                config.trend_line_style,
+                config.trend_line_width,
             );
         }
     }
@@ -282,6 +348,7 @@ impl Drawing {
         }
 
         let (x_start, x_end) = (x_range.min, x_range.max);
+        let level_width = config.levels_line_width.max(stroke::HAIRLINE);
 
         let mut label_ys: Vec<f32> = Vec::new();
         for ((level, &y), &price_at_lvl) in visible_levels.iter().zip(ys).zip(&prices) {
@@ -294,41 +361,31 @@ impl Drawing {
 
             // Only draw if within chart rect
             if y >= chart_rect.min.y && y <= chart_rect.max.y {
-                painter.hline(
-                    x_start..=x_end,
-                    y,
-                    Stroke::new(fib_level_stroke_width(level.value), lvl_color),
-                );
-
                 let label_text = level_label(painter, &config, level, Some(price_at_lvl));
-                if label_text.is_empty()
-                    || label_ys
-                        .iter()
-                        .any(|previous| (y - previous).abs() < typography::XS + 2.0)
-                {
-                    continue;
-                }
-                label_ys.push(y);
-
-                painter.text(
-                    Pos2::new(
-                        if config.labels_on_left {
-                            x_start + DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
-                        } else {
-                            x_end - DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
-                        },
-                        y - DESIGN_TOKENS.rounding.sm,
-                    ),
-                    if config.labels_on_left {
-                        egui::Align2::LEFT_CENTER
-                    } else {
-                        egui::Align2::RIGHT_CENTER
-                    },
-                    label_text,
-                    egui::FontId::proportional(typography::XS),
+                paint_fib_level_and_label(
+                    painter,
+                    &config,
+                    x_start,
+                    x_end,
+                    y,
+                    level_width,
                     lvl_color,
+                    label_text,
+                    &mut label_ys,
                 );
             }
+        }
+
+        if config.show_trend_line && self.points.len() >= 2 {
+            // Extension trend is the A→B leg that defines the projection length.
+            paint_fib_trend_line(
+                painter,
+                self.points[0],
+                self.points[1],
+                &config.trend_line_color,
+                config.trend_line_style,
+                config.trend_line_width,
+            );
         }
     }
 
@@ -590,10 +647,11 @@ impl Drawing {
             };
             painter.line_segment([draw_start, draw_end], Stroke::new(stroke_width, lvl_color));
 
-            let point = if config.labels_on_left {
-                draw_start
-            } else {
-                draw_end
+            let h_align = config.effective_h_align();
+            let point = match h_align {
+                TextHorizontalAlign::Left => draw_start,
+                TextHorizontalAlign::Center => draw_start.lerp(draw_end, 0.5),
+                TextHorizontalAlign::Right => draw_end,
             };
             let price = if config.show_prices == Some(true) {
                 let price = (view.y_to_price)(point.y);
@@ -603,20 +661,52 @@ impl Drawing {
             };
             let label_text = level_label(painter, &config, level, price);
             if !label_text.is_empty() {
+                let font_size = config.label_font_size.clamp(8.0, 48.0);
                 let galley = painter.layout_no_wrap(
                     label_text,
-                    egui::FontId::proportional(typography::XS),
+                    egui::FontId::proportional(font_size),
                     lvl_color,
                 );
-                let alignment = if config.labels_on_left {
-                    egui::Align2::LEFT_BOTTOM
-                } else {
-                    egui::Align2::RIGHT_BOTTOM
+                let alignment = match (h_align, config.label_v_align) {
+                    (TextHorizontalAlign::Left, TextVerticalAlign::Top) => {
+                        egui::Align2::LEFT_BOTTOM
+                    }
+                    (TextHorizontalAlign::Left, TextVerticalAlign::Middle) => {
+                        egui::Align2::LEFT_CENTER
+                    }
+                    (TextHorizontalAlign::Left, TextVerticalAlign::Bottom) => {
+                        egui::Align2::LEFT_TOP
+                    }
+                    (TextHorizontalAlign::Center, TextVerticalAlign::Top) => {
+                        egui::Align2::CENTER_BOTTOM
+                    }
+                    (TextHorizontalAlign::Center, TextVerticalAlign::Middle) => {
+                        egui::Align2::CENTER_CENTER
+                    }
+                    (TextHorizontalAlign::Center, TextVerticalAlign::Bottom) => {
+                        egui::Align2::CENTER_TOP
+                    }
+                    (TextHorizontalAlign::Right, TextVerticalAlign::Top) => {
+                        egui::Align2::RIGHT_BOTTOM
+                    }
+                    (TextHorizontalAlign::Right, TextVerticalAlign::Middle) => {
+                        egui::Align2::RIGHT_CENTER
+                    }
+                    (TextHorizontalAlign::Right, TextVerticalAlign::Bottom) => {
+                        egui::Align2::RIGHT_TOP
+                    }
                 };
-                let bounds = alignment.anchor_size(
-                    point + egui::vec2(if config.labels_on_left { 4.0 } else { -4.0 }, -4.0),
-                    galley.size(),
-                );
+                let dx = match h_align {
+                    TextHorizontalAlign::Left => 4.0,
+                    TextHorizontalAlign::Center => 0.0,
+                    TextHorizontalAlign::Right => -4.0,
+                };
+                let dy = match config.label_v_align {
+                    TextVerticalAlign::Top => -4.0,
+                    TextVerticalAlign::Middle => 0.0,
+                    TextVerticalAlign::Bottom => 4.0,
+                };
+                let bounds = alignment.anchor_size(point + egui::vec2(dx, dy), galley.size());
                 painter.rect_filled(
                     bounds.expand(2.0),
                     DESIGN_TOKENS.rounding.sm,

@@ -41,7 +41,12 @@ impl Drawing {
             ),
         );
 
-        let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+        let bg = painter
+            .ctx()
+            .active_theme()
+            .chart
+            .bg_axis
+            .gamma_multiply(0.92);
         painter.rect_filled(box_rect, DESIGN_TOKENS.rounding.md, bg);
         painter.rect_stroke(
             box_rect,
@@ -85,7 +90,12 @@ impl Drawing {
             ),
         );
 
-        let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+        let bg = painter
+            .ctx()
+            .active_theme()
+            .chart
+            .bg_axis
+            .gamma_multiply(0.92);
         painter.rect_filled(box_rect, DESIGN_TOKENS.rounding.sm, bg);
         painter.rect_stroke(
             box_rect,

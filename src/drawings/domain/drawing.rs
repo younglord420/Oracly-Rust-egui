@@ -272,7 +272,11 @@ impl Drawing {
             position_sizing: PositionSizing::default(),
             fib_config: matches!(
                 tool_type,
-                DrawingToolType::FibonacciTimeZones
+                DrawingToolType::FibonacciRetracement
+                    | DrawingToolType::FibonacciExtension
+                    | DrawingToolType::FibonacciChannel
+                    | DrawingToolType::FibonacciWedge
+                    | DrawingToolType::FibonacciTimeZones
                     | DrawingToolType::FibonacciSpeedFan
                     | DrawingToolType::TrendBasedFibTime
                     | DrawingToolType::FibonacciCircles
@@ -280,7 +284,8 @@ impl Drawing {
             )
             .then(|| FibonacciConfig::for_tool(tool_type)),
             volume_profile: None,
-            regression_trend: None,
+            regression_trend: (tool_type == DrawingToolType::RegressionTrend)
+                .then(RegressionTrendConfig::default),
             pitchfork: None,
             channel_midline: matches!(tool_type, DrawingToolType::ParallelChannel),
             show_price_labels: false,
@@ -747,8 +752,7 @@ mod tests {
         };
         let mut fib = drawing(T::FibonacciRetracement, &[(0.0, 100.0), (10.0, 200.0)]);
         let mut config = FibonacciConfig::default();
-        // 23.6% is already off; force-enable 78.6% and tweak labels for this case.
-        config.levels[5].visible = true;
+        // Numeric-looking custom labels are ignored; empty labels derive from the ratio.
         config.levels[2].label = "100%".into();
         config.levels[3].label.clear();
         fib.fib_config = Some(config);
@@ -791,18 +795,23 @@ mod tests {
                 Linear,
                 vec![(0, "Entry", 100.0), (1, "Target", 90.0), (2, "Stop", 104.0)],
             ),
-            // Level 0 is on the second anchor; 23.6% stays hidden so later indices keep their place.
+            // Level 0 is on the second anchor; off levels keep their indices in settings.
             (
                 fib,
                 9.0,
                 Linear,
                 vec![
-                    (0, "0%", 200.0),
-                    (2, "38.2%", 161.8),
-                    (3, "50%", 150.0),
-                    (4, "61.8%", 138.2),
-                    (5, "78.6%", 121.4),
-                    (6, "100%", 100.0),
+                    (0, "0", 200.0),
+                    (1, "0.236", 176.4),
+                    (2, "0.382", 161.8),
+                    (3, "0.5", 150.0),
+                    (4, "0.618", 138.2),
+                    (5, "0.786", 121.4),
+                    (6, "1", 100.0),
+                    (9, "1.618", 38.2),
+                    (12, "2.618", -61.8),
+                    (13, "3.618", -161.8),
+                    (14, "4.236", -223.6),
                 ],
             ),
             // Straight on the scale: the geometric mean of 100 and 400 halfway on a log scale.

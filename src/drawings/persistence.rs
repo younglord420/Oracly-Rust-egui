@@ -1094,6 +1094,8 @@ mod tests {
             // The fixture's Arrow is the one drawing saved locked and hidden.
             want.locked = tool == DrawingToolType::Arrow;
             want.visible = tool != DrawingToolType::Arrow;
+            // v1 fixtures omit fib_config; Drawing::with_color now seeds defaults for new fibs.
+            want.fib_config = None;
             assert_eq!(format!("{:?}", restore(stored, 1)), format!("{want:?}"));
         }
 
@@ -1110,7 +1112,13 @@ mod tests {
             let mut want = non_default_drawing(tool);
             want.label = None; // Earlier files have no object name.
             want.position_sizing = PositionSizing::default(); // Earlier files use unit sizing.
-            want.fib_config.as_mut().unwrap().logarithmic = false;
+            let fib = want.fib_config.as_mut().unwrap();
+            fib.logarithmic = false;
+            // Older fixtures omit fields whose `Default` now differs from serde defaults.
+            fib.show_prices = None;
+            fib.show_levels = None;
+            fib.levels_as_percent = true;
+            fib.label_h_align = None;
             assert_eq!(
                 format!("{:?}", restore(stored, want.id)),
                 format!("{want:?}")

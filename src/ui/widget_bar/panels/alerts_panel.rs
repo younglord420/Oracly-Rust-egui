@@ -551,8 +551,10 @@ impl AlertsPanel {
                             }
                             let color = self.status_color(ui, alert.status);
                             ui.horizontal(|ui| {
-                                let (dot_rect, _) =
-                                    ui.allocate_exact_size(egui::vec2(6.0, 14.0), egui::Sense::hover());
+                                let (dot_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(6.0, 14.0),
+                                    egui::Sense::hover(),
+                                );
                                 ui.painter().circle_filled(dot_rect.center(), 2.5, color);
                                 ui.colored_label(
                                     color,

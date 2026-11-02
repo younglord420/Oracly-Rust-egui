@@ -1,15 +1,14 @@
 //! [`Datafeed`] that serves Binance Spot for BTCUSDT and delegates everything else.
 
+use super::super::live::LiveFeed;
 use super::rest::fetch_klines;
 use super::types::{DEFAULT_SYMBOL, interval_for_timeframe, is_binance_symbol};
 use super::websocket::WsHandle;
-use super::super::live::LiveFeed;
 use egui_charts::data::{
-    CalendarEvent, CalendarQuery, Datafeed, FeedCapabilities, FeedError, FeedService,
-    HistoryPage, HistoryRequest, HotlistEntry, HotlistQuery, MetricPage, MetricRequest,
-    MetricSeries, MetricSubscription, NewsQuery, NewsStory, OptionsVolumeQuery, OptionsVolumeSink,
-    Reply, ScreenerQuery, ScreenerRow, ScreenerTextAnswer, Subscription, SubscriptionId,
-    SymbolDetails,
+    CalendarEvent, CalendarQuery, Datafeed, FeedCapabilities, FeedError, FeedService, HistoryPage,
+    HistoryRequest, HotlistEntry, HotlistQuery, MetricPage, MetricRequest, MetricSeries,
+    MetricSubscription, NewsQuery, NewsStory, OptionsVolumeQuery, OptionsVolumeSink, Reply,
+    ScreenerQuery, ScreenerRow, ScreenerTextAnswer, Subscription, SubscriptionId, SymbolDetails,
 };
 use egui_charts::model::{Instrument, SymbolType, Timeframe};
 use std::sync::Arc;
@@ -27,7 +26,6 @@ impl DemoDatafeed {
             ws: WsHandle::new(),
         }
     }
-
 }
 
 impl Datafeed for DemoDatafeed {

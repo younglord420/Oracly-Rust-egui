@@ -10,6 +10,9 @@ use egui::{
     layers::ShapeIdx,
 };
 
+/// Placed label text plus optional line-cut geometry (anchor, unit direction, t0, t1).
+type LineLabelLayout = (TextShape, Option<(Pos2, egui::Vec2, f32, f32)>);
+
 impl Drawing {
     /// Size annotations before laying out both the text and its surrounding box.
     pub(super) fn annotation_font(&self) -> egui::FontId {
@@ -77,7 +80,7 @@ impl Drawing {
         galley: std::sync::Arc<egui::Galley>,
         color: Color32,
         rect: Rect,
-    ) -> Option<(TextShape, Option<(Pos2, egui::Vec2, f32, f32)>)> {
+    ) -> Option<LineLabelLayout> {
         let size = galley.size();
         let gap = (self.stroke_width * 0.5 + 5.0).max(6.0);
 

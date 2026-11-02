@@ -146,11 +146,14 @@ fn draw_group(
             group.abs_transform().post_concat(to_pixels),
             &mut mask_pix.as_mut(),
         );
-        for (dst, (src, m)) in pixmap
-            .data_mut()
-            .chunks_exact_mut(4)
-            .zip(layer.data().chunks_exact(4).zip(mask_pix.data().chunks_exact(4)))
-        {
+        for (dst, (src, m)) in pixmap.data_mut().as_chunks_mut::<4>().0.iter_mut().zip(
+            layer
+                .data()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(mask_pix.data().as_chunks::<4>().0.iter()),
+        ) {
             let sa = src[3] as u32;
             if sa == 0 {
                 continue;

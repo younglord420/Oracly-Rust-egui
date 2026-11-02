@@ -63,13 +63,7 @@ impl WsHandle {
     }
 
     /// Begin (or replace) the live kline stream for this subscription.
-    pub fn subscribe(
-        &self,
-        id: SubscriptionId,
-        sink: Sink,
-        symbol: String,
-        interval: String,
-    ) {
+    pub fn subscribe(&self, id: SubscriptionId, sink: Sink, symbol: String, interval: String) {
         {
             let mut state = self.lock();
             state.generation = state.generation.wrapping_add(1);

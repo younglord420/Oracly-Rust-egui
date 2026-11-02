@@ -712,13 +712,7 @@ impl IndicatorPane {
 
             // Draw vertical grid lines (same marks as the price pane when available)
             if self.config.show_grid {
-                self.paint_vertical_grid(
-                    plot_painter,
-                    chart_rect,
-                    &coords,
-                    grid_color,
-                    time_grid,
-                );
+                self.paint_vertical_grid(plot_painter, chart_rect, &coords, grid_color, time_grid);
             }
 
             use crate::chart::primitives::PrimitivePass;

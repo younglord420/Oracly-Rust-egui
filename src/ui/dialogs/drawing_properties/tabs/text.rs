@@ -52,8 +52,10 @@ impl TextTab {
             ui.scope(|ui| {
                 let visuals = ui.visuals_mut();
                 visuals.extreme_bg_color = theme.ui.panel_bg;
-                visuals.widgets.inactive.bg_stroke =
-                    egui::Stroke::new(crate::tokens::DESIGN_TOKENS.stroke.hairline, theme.ui.border);
+                visuals.widgets.inactive.bg_stroke = egui::Stroke::new(
+                    crate::tokens::DESIGN_TOKENS.stroke.hairline,
+                    theme.ui.border,
+                );
                 visuals.widgets.hovered.bg_stroke = egui::Stroke::new(
                     crate::tokens::DESIGN_TOKENS.stroke.hairline,
                     theme.ui.border_control,

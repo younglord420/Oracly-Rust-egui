@@ -391,11 +391,8 @@ impl DrawingPropertiesDialog {
                     self.props.save_as_default = true;
                     ui.close();
                 }
-                if Self::template_menu_row(
-                    ui,
-                    &l10n::text(ui.ctx(), "Reset to defaults"),
-                    inner_w,
-                ) {
+                if Self::template_menu_row(ui, &l10n::text(ui.ctx(), "Reset to defaults"), inner_w)
+                {
                     load = self.default_template.clone();
                     ui.close();
                 }
@@ -478,7 +475,8 @@ impl DrawingPropertiesDialog {
 
     fn template_menu_row(ui: &mut Ui, label: &str, width: f32) -> bool {
         let theme = ui.active_theme();
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
         if response.hovered() {
             ui.painter()
                 .rect_filled(rect, egui::CornerRadius::same(4), theme.ui.btn_bg_hover);
@@ -498,7 +496,8 @@ impl DrawingPropertiesDialog {
 
     fn template_delete_chip(ui: &mut Ui, a11y_label: &str, width: f32) -> bool {
         let theme = ui.active_theme();
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, 30.0), egui::Sense::click());
         if response.hovered() {
             ui.painter()
                 .rect_filled(rect, egui::CornerRadius::same(4), theme.ui.btn_bg_hover);
@@ -578,10 +577,9 @@ impl DrawingPropertiesDialog {
             }
         }
 
-        let avail_body_h = (ui.available_height()
-            - FOOTER_HEIGHT
-            - if self.error.is_some() { 40.0 } else { 0.0 })
-        .max(0.0);
+        let avail_body_h =
+            (ui.available_height() - FOOTER_HEIGHT - if self.error.is_some() { 40.0 } else { 0.0 })
+                .max(0.0);
         let max_scroll_h = if self.config.height > 0.0 {
             avail_body_h
         } else {
@@ -755,8 +753,9 @@ const FOOTER_HEIGHT: f32 = 60.0;
 /// Keyboard and colour picker state kept in egui memory between frames.
 #[derive(Clone, Default)]
 struct UiState {
-    /// Colour and fill colour pickers of the Style section.
-    pickers: [ColorPickerState; 2],
+    /// Colour pickers of the Style section. Index 0 is the line, 1 the fill;
+    /// a regression trend uses 2..=6 for its own swatches.
+    pickers: Vec<ColorPickerState>,
     /// Text colour picker of the Label section.
     text_picker: ColorPickerState,
     /// Pickers for the current tool's editable levels.

@@ -425,7 +425,7 @@ mod tests {
             chart.drawings_mut().select_drawings([7, 8]);
             let mut props = DrawingProps::from_drawing(&chart.drawings().drawings[0], &chart);
             let output = egui::Context::default().run_ui(Default::default(), |ui| {
-                let mut pickers = [
+                let mut pickers = vec![
                     crate::ui_kit::ColorPickerState::new(props.color),
                     crate::ui_kit::ColorPickerState::new(props.color),
                 ];
@@ -461,7 +461,10 @@ mod tests {
             );
             assert_eq!(
                 labels.iter().any(|label| label == "Show middle line"),
-                tool == DrawingToolType::Rect,
+                matches!(
+                    tool,
+                    DrawingToolType::Rect | DrawingToolType::ParallelChannel
+                ),
                 "{tool:?}"
             );
             let settings = &mut props.tool_settings.as_mut().unwrap().settings;
@@ -513,7 +516,22 @@ mod tests {
             assert!(chart.drawings().drawings[1].fib_config.is_none());
             assert_eq!(chart.drawings().drawings[1].chart_points[0].price, 75.0);
             assert!(chart.undo());
-            assert!(chart.drawings().drawings[0].fib_config.is_none());
+            assert_eq!(
+                chart.drawings().drawings[0].fib_config.is_some(),
+                matches!(
+                    tool,
+                    DrawingToolType::FibonacciRetracement
+                        | DrawingToolType::FibonacciExtension
+                        | DrawingToolType::FibonacciChannel
+                        | DrawingToolType::FibonacciWedge
+                        | DrawingToolType::FibonacciTimeZones
+                        | DrawingToolType::FibonacciSpeedFan
+                        | DrawingToolType::TrendBasedFibTime
+                        | DrawingToolType::FibonacciCircles
+                        | DrawingToolType::FibonacciSpeedResistanceArcs
+                ),
+                "{tool:?}"
+            );
             assert!(chart.redo());
             chart.drawings_mut().edit_drawing(7, |d| d.locked = true);
             props.font_size = 18.0;

@@ -54,12 +54,7 @@ pub fn kline_stream_url(symbol: &str, interval: &str) -> String {
 }
 
 /// REST klines URL. `end_time_ms` is exclusive upper bound on open time when set.
-pub fn klines_url(
-    symbol: &str,
-    interval: &str,
-    limit: usize,
-    end_time_ms: Option<i64>,
-) -> String {
+pub fn klines_url(symbol: &str, interval: &str, limit: usize, end_time_ms: Option<i64>) -> String {
     let mut url = format!(
         "{REST_BASE}/api/v3/klines?symbol={}&interval={interval}&limit={limit}",
         symbol.to_ascii_uppercase()
