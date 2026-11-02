@@ -2,18 +2,18 @@
 //!
 //! Includes: parallel channel, disjoint channel, regression trend, and flat top/bottom.
 
-use crate::drawings::domain::{Drawing, DrawingToolType};
+use crate::drawings::domain::{Drawing, DrawingToolType, RegressionSource};
 use crate::drawings::rendering::{ChartView, MAX_CACHED_SPANS, bars_between};
 use crate::model::math::{LinearFit, Moments};
 use crate::model::{Bar, SpanCache};
+use crate::scales::price_decimals;
 use crate::styles::typography;
-use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Stroke};
+use egui::{Color32, FontId, Pos2, Rect, Stroke};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 thread_local! {
-    static MOMENTS: RefCell<SpanCache<Moments>> =
+    static MOMENTS: RefCell<SpanCache<Moments, RegressionSource>> =
         const { RefCell::new(SpanCache::new(MAX_CACHED_SPANS)) };
 }
 
@@ -37,6 +37,7 @@ impl Drawing {
                 ));
             }
         }
+        let lines = outline.lines.clone();
         for (i, [a, b]) in outline.lines.into_iter().enumerate() {
             if i == 2 && self.channel_midline {
                 super::utils::draw_dashed_line(
@@ -55,6 +56,94 @@ impl Drawing {
                     Stroke::new(self.stroke_width, self.color32()),
                 );
             }
+        }
+        if self.show_price_labels
+            && matches!(
+                self.tool_type,
+                DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
+            )
+        {
+            self.paint_channel_price_labels(painter, &lines);
+        }
+    }
+
+    /// Price at each endpoint of the two channel boundary lines.
+    fn paint_channel_price_labels(&self, painter: &egui::Painter, lines: &[[Pos2; 2]]) {
+        let color = self.text_color32();
+        let font = self.annotation_font();
+        let prices = self.channel_endpoint_prices();
+        for (point, price) in lines.iter().take(2).flat_map(|line| line.iter()).zip(prices) {
+            let Some(price) = price else { continue };
+            let decimals = price_decimals(price);
+            let text = format!("{price:.decimals$}");
+            self.paint_endpoint_price(painter, *point, &text, color, font.clone());
+        }
+    }
+
+    fn channel_endpoint_prices(&self) -> [Option<f64>; 4] {
+        let &[a, b, c, ..] = self.chart_points.as_slice() else {
+            return [None; 4];
+        };
+        match self.tool_type {
+            DrawingToolType::FlatTopBottom => [Some(a.price), Some(b.price), Some(c.price), Some(c.price)],
+            DrawingToolType::DisjointChannel => {
+                // Mirrored slope through c: price at bar of a and b.
+                let da = b.bar_idx - a.bar_idx;
+                if da.abs() < 1e-6 {
+                    let axis = (a.price + b.price) / 2.0;
+                    [
+                        Some(a.price),
+                        Some(b.price),
+                        Some(c.price + axis - a.price),
+                        Some(c.price + axis - b.price),
+                    ]
+                } else {
+                    let slope = (b.price - a.price) / f64::from(da);
+                    let at = |bar: f32| c.price - f64::from(bar - c.bar_idx) * slope;
+                    [Some(a.price), Some(b.price), Some(at(a.bar_idx)), Some(at(b.bar_idx))]
+                }
+            }
+            _ => [None; 4],
+        }
+    }
+
+    fn paint_endpoint_price(
+        &self,
+        painter: &egui::Painter,
+        point: Pos2,
+        text: &str,
+        color: Color32,
+        font: FontId,
+    ) {
+        let galley = if self.font_italic {
+            let mut job = egui::text::LayoutJob::single_section(
+                text.to_owned(),
+                egui::TextFormat {
+                    font_id: font,
+                    color,
+                    italics: true,
+                    ..Default::default()
+                },
+            );
+            job.wrap.max_width = f32::INFINITY;
+            painter.layout_job(job)
+        } else {
+            painter.layout_no_wrap(text.to_owned(), font, color)
+        };
+        let pos = point + egui::vec2(4.0, -galley.size().y - 2.0);
+        if self.font_weight == crate::drawings::FontWeight::Bold {
+            let mut weighted = egui::epaint::TextShape::new(pos, galley.clone(), color);
+            weighted.opacity_factor = 0.55;
+            painter.add(egui::Shape::Text(egui::epaint::TextShape::new(
+                pos + egui::vec2(0.5, 0.0),
+                galley,
+                color,
+            )));
+            painter.add(egui::Shape::Text(weighted));
+        } else {
+            painter.add(egui::Shape::Text(egui::epaint::TextShape::new(
+                pos, galley, color,
+            )));
         }
     }
 
@@ -107,9 +196,8 @@ impl Drawing {
         Some([p1 + offset, p2 + offset])
     }
 
-    /// Render Regression Trend - least-squares line through the closes of the
-    /// bars between the anchors, with bands the configured number of standard
-    /// deviations away
+    /// Render Regression Trend - least-squares line through the configured source of the
+    /// bars between the anchors, with optional upper/lower deviation bands.
     pub(crate) fn render_regression_trend(&self, painter: &egui::Painter, view: &ChartView) {
         if let Some((first, len, fit)) = self.regression_fit(view) {
             self.draw_regression_channel(painter, view, first, len, &fit, self.color32());
@@ -123,7 +211,8 @@ impl Drawing {
             return None;
         };
         let (first, bars) = bars_between(view.bars, a.bar_idx, b.bar_idx)?;
-        let fit = span_moments(view, first, bars).fit()?;
+        let source = self.regression_trend.unwrap_or_default().source;
+        let fit = span_moments(view, source, first, bars).fit()?;
         (fit.intercept.is_finite()
             && fit.slope.is_finite()
             && fit.sigma.is_finite()
@@ -156,7 +245,7 @@ impl Drawing {
         color: Color32,
     ) {
         let last = len - 1;
-        let deviations = self.regression_trend.unwrap_or_default().deviations();
+        let config = self.regression_trend.unwrap_or_default();
         // The fitted line shifted by `k` standard deviations, from the first bar to the last
         let line = |k: f64| {
             [0, last].map(|i| {
@@ -167,9 +256,14 @@ impl Drawing {
                 )
             })
         };
-        let [upper, center, lower] = [deviations, 0.0, -deviations].map(line);
+        let center = line(0.0);
+        let upper = config.use_upper.then(|| line(config.upper_deviation));
+        let lower = config.use_lower.then(|| line(-config.lower_deviation));
 
-        let label_pos = lower[0] + egui::vec2(4.0, 4.0);
+        let label_anchor = lower
+            .or(upper)
+            .unwrap_or(center)[0]
+            + egui::vec2(4.0, 4.0);
         let extend = |[a, b]: [Pos2; 2]| {
             let at = |x: f32| {
                 let dx = b.x - a.x;
@@ -195,22 +289,40 @@ impl Drawing {
                 },
             ]
         };
-        let [upper, center, lower] = [upper, center, lower].map(extend);
-        let band_color = DESIGN_TOKENS.semantic.brand.accent;
+        let center = extend(center);
+        let upper = upper.map(extend);
+        let lower = lower.map(extend);
+        let up_color = Color32::from_rgba_unmultiplied(
+            config.up_color[0],
+            config.up_color[1],
+            config.up_color[2],
+            config.up_color[3],
+        );
+        let down_color = Color32::from_rgba_unmultiplied(
+            config.down_color[0],
+            config.down_color[1],
+            config.down_color[2],
+            config.down_color[3],
+        );
         if let Some(fill) = self.fill_color {
-            for (a, b, rgb) in [
+            let halves = [
                 (upper, center, [fill[0], fill[1], fill[2]]),
-                (center, lower, [self.color[0], self.color[1], self.color[2]]),
-            ] {
+                (lower, center, [self.color[0], self.color[1], self.color[2]]),
+            ];
+            for (band, mid, rgb) in halves {
+                let Some(band) = band else { continue };
                 painter.add(egui::Shape::convex_polygon(
-                    vec![a[0], a[1], b[1], b[0]],
+                    vec![band[0], band[1], mid[1], mid[0]],
                     Color32::from_rgba_unmultiplied(rgb[0], rgb[1], rgb[2], fill[3]),
                     Stroke::NONE,
                 ));
             }
         }
-        for band in [upper, lower] {
-            painter.line_segment(band, Stroke::new(self.stroke_width, band_color));
+        if let Some(upper) = upper {
+            painter.line_segment(upper, Stroke::new(self.stroke_width, up_color));
+        }
+        if let Some(lower) = lower {
+            painter.line_segment(lower, Stroke::new(self.stroke_width, down_color));
         }
         super::utils::draw_dashed_line(
             painter,
@@ -220,14 +332,16 @@ impl Drawing {
             8.0,
             4.0,
         );
-        painter.text(
-            label_pos,
-            egui::Align2::LEFT_TOP,
-            fit.correlation
-                .map_or_else(|| "n/a".to_owned(), |r| format!("{r:.2}")),
-            egui::FontId::proportional(typography::XS),
-            band_color,
-        );
+        if config.show_pearson {
+            painter.text(
+                label_anchor,
+                egui::Align2::LEFT_TOP,
+                fit.correlation
+                    .map_or_else(|| "n/a".to_owned(), |r| format!("{r:.2}")),
+                FontId::proportional(typography::XS),
+                up_color,
+            );
+        }
     }
 
     /// Unextended endpoints in anchor order, shared with selection handles.
@@ -290,12 +404,22 @@ impl Drawing {
 
 /// Moments of `bars`, the span that starts at bar `first`. A tick on the
 /// forming bar, or a new bar, adds one bar to the moments of the bars before
-/// it instead of refitting the span.
-fn span_moments(view: &ChartView, first: usize, bars: &[Bar]) -> Rc<Moments> {
+/// it instead of refitting the span. Cached per [`RegressionSource`].
+fn span_moments(
+    view: &ChartView,
+    source: RegressionSource,
+    first: usize,
+    bars: &[Bar],
+) -> Rc<Moments> {
     MOMENTS.with_borrow_mut(|cache| {
-        view.cached(cache, (), first, bars, Moments::of, |moments, bar| {
-            Some(moments.with(bar.close))
-        })
+        view.cached(
+            cache,
+            source,
+            first,
+            bars,
+            |bars| Moments::of_values(bars.iter().map(|bar| source.value(bar))),
+            |moments, bar| Some(moments.with(source.value(bar))),
+        )
     })
 }
 
@@ -608,9 +732,10 @@ mod tests {
                             _ => None,
                         })
                         .collect();
+                    let band = Color32::from_rgba_unmultiplied(41, 98, 255, 255);
                     for offset in [-10.0 * 3f32.sqrt(), 10.0 * 3f32.sqrt()] {
                         assert!(lines.iter().any(|(p, s)| s.width == 3.0
-                            && s.color == DESIGN_TOKENS.semantic.brand.accent
+                            && s.color == band
                             && p[0].distance(Pos2::new(xs[0], center_y(xs[0]) + offset)) < 1e-3
                             && p[1].distance(Pos2::new(xs[1], center_y(xs[1]) + offset)) < 1e-3));
                     }

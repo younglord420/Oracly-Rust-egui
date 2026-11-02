@@ -170,6 +170,9 @@ pub struct Drawing {
     /// Whether a rectangle or parallel channel draws its dashed halfway line.
     #[serde(default)]
     pub channel_midline: bool,
+    /// Whether Flat Top/Bottom and Disjoint Channel show a price label at each line end.
+    #[serde(default)]
+    pub show_price_labels: bool,
     /// Level lines and band fill of the pitchfork tools.
     #[serde(default)]
     pub pitchfork: Option<PitchforkConfig>,
@@ -230,6 +233,9 @@ impl Drawing {
                 ),
                 DrawingToolType::GannSquare => Some([242, 54, 69, 12]),
                 DrawingToolType::GannBox | DrawingToolType::GannFixed => Some([242, 54, 69, 15]),
+                DrawingToolType::ParallelChannel
+                | DrawingToolType::FlatTopBottom
+                | DrawingToolType::DisjointChannel => Some([255, 255, 255, 51]),
                 _ => None,
             },
             locked: false,
@@ -276,7 +282,8 @@ impl Drawing {
             volume_profile: None,
             regression_trend: None,
             pitchfork: None,
-            channel_midline: false,
+            channel_midline: matches!(tool_type, DrawingToolType::ParallelChannel),
+            show_price_labels: false,
             gann: None,
             ghost_feed: None,
             // Z-order (default: 0, higher values render on top)
@@ -740,7 +747,8 @@ mod tests {
         };
         let mut fib = drawing(T::FibonacciRetracement, &[(0.0, 100.0), (10.0, 200.0)]);
         let mut config = FibonacciConfig::default();
-        config.levels[1].visible = false;
+        // 23.6% is already off; force-enable 78.6% and tweak labels for this case.
+        config.levels[5].visible = true;
         config.levels[2].label = "100%".into();
         config.levels[3].label.clear();
         fib.fib_config = Some(config);
@@ -783,7 +791,7 @@ mod tests {
                 Linear,
                 vec![(0, "Entry", 100.0), (1, "Target", 90.0), (2, "Stop", 104.0)],
             ),
-            // Level 0 is on the second anchor; the hidden 23.6% level keeps the numbers after it.
+            // Level 0 is on the second anchor; 23.6% stays hidden so later indices keep their place.
             (
                 fib,
                 9.0,

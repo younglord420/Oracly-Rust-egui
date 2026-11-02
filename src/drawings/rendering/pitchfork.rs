@@ -132,7 +132,7 @@ impl Drawing {
         Some(lines)
     }
 
-    /// Bands stop on either side of a hidden level instead of bridging across it.
+    /// Bands fill between consecutive visible levels (sorted by value).
     pub(super) fn pitchfork_bands(&self, rect: Rect) -> Vec<Vec<Pos2>> {
         let Some(base) = self.pitchfork_base_lines(rect) else {
             return Vec::new();
@@ -141,16 +141,9 @@ impl Drawing {
         if !config.show_background {
             return Vec::new();
         }
-        config
-            .levels
-            .retain(|l| (0.0..=MAX_PITCHFORK_LEVEL).contains(&l.value));
-        config.levels.sort_by(|a, b| a.value.total_cmp(&b.value));
+        let visible = visible_pitchfork_levels(&mut config);
         let mut bands = Vec::new();
-        for pair in config
-            .levels
-            .windows(2)
-            .filter(|p| p[0].visible && p[1].visible)
-        {
+        for pair in visible.windows(2) {
             let inner = level_lines(&base, pair[0].value, rect);
             let outer = level_lines(&base, pair[1].value, rect);
             for (side, outside) in outer.iter().enumerate() {
@@ -167,27 +160,17 @@ impl Drawing {
             return;
         };
         let mut config = self.pitchfork.clone().unwrap_or_default();
-        config
-            .levels
-            .retain(|l| (0.0..=MAX_PITCHFORK_LEVEL).contains(&l.value));
-        config.levels.sort_by(|a, b| a.value.total_cmp(&b.value));
+        let opacity = config.background_opacity;
+        let visible = visible_pitchfork_levels(&mut config);
         let mut bands = self.pitchfork_bands(rect).into_iter();
-        for pair in config
-            .levels
-            .windows(2)
-            .filter(|p| p[0].visible && p[1].visible)
-        {
+        for pair in visible.windows(2) {
             let color = if self.pitchfork.is_some() {
                 pair[1].color
             } else {
                 self.color
             };
-            let fill = Color32::from_rgba_unmultiplied(
-                color[0],
-                color[1],
-                color[2],
-                config.background_opacity,
-            );
+            let fill =
+                Color32::from_rgba_unmultiplied(color[0], color[1], color[2], opacity);
             for band in bands
                 .by_ref()
                 .take(level_lines(&base, pair[1].value, rect).len())
@@ -195,11 +178,7 @@ impl Drawing {
                 painter.add(egui::Shape::convex_polygon(band, fill, Stroke::NONE));
             }
         }
-        for level in config
-            .levels
-            .iter()
-            .filter(|l| l.visible && (0.0..=MAX_PITCHFORK_LEVEL).contains(&l.value))
-        {
+        for level in &visible {
             let rgba = if self.pitchfork.is_none() {
                 self.color
             } else {
@@ -301,6 +280,22 @@ impl Drawing {
         painter.circle_filled(center, DESIGN_TOKENS.rounding.md, color);
         painter.circle_filled(end, DESIGN_TOKENS.rounding.sm, color);
     }
+}
+
+/// Visible levels in value order, dropping out-of-range entries.
+fn visible_pitchfork_levels(
+    config: &mut crate::drawings::PitchforkConfig,
+) -> Vec<crate::drawings::PitchforkLevel> {
+    config
+        .levels
+        .retain(|l| (0.0..=MAX_PITCHFORK_LEVEL).contains(&l.value));
+    config.levels.sort_by(|a, b| a.value.total_cmp(&b.value));
+    config
+        .levels
+        .iter()
+        .filter(|l| l.visible)
+        .cloned()
+        .collect()
 }
 
 /// Interpolate each tine's anchor from the median origin, then run parallel to the median.
@@ -428,32 +423,30 @@ mod tests {
     #[test]
     fn pitchfork_levels_are_mirrored_filled_saved_and_selectable() {
         let rect = Rect::from_min_max(Pos2::new(-100.0, -2000.0), Pos2::new(400.0, 2000.0));
-        // At x=40: median, half-distance lines, tines, one-and-a-half-distance lines.
+        // Default visible levels are 0, 0.5 and 1.0. At x=40: median, half, then tines.
         for (tool, ys) in [
             (
                 DrawingToolType::Pitchfork,
-                [66.6667, 108.3333, 25.0, 150.0, -16.6667, 191.6667, -58.3333],
+                [66.6667, 108.3333, 25.0, 150.0, -16.6667],
             ),
             (
                 DrawingToolType::SchiffPitchfork,
-                [-16.6667, 16.6667, -50.0, 50.0, -83.3333, 83.3333, -116.6667],
+                [-16.6667, 16.6667, -50.0, 50.0, -83.3333],
             ),
             (
                 DrawingToolType::ModifiedSchiffPitchfork,
-                [-37.5, -6.25, -68.75, 25.0, -100.0, 56.25, -131.25],
+                [-37.5, -6.25, -68.75, 25.0, -100.0],
             ),
             (
                 DrawingToolType::InsidePitchfork,
-                [
-                    -141.6667, -162.5, -120.8333, -183.3333, -100.0, -204.1667, -79.1667,
-                ],
+                [-141.6667, -162.5, -120.8333, -183.3333, -100.0],
             ),
         ] {
             let mut drawing = Drawing::new(12, tool);
             drawing.points = vec![Pos2::ZERO, Pos2::new(10.0, 100.0), Pos2::new(20.0, -50.0)];
             let lines = drawing.pitchfork_lines(rect).unwrap();
-            assert!(lines.len() >= 7, "{tool:?}: {lines:?}");
-            for ([a, b], want) in lines.iter().take(7).zip(ys) {
+            assert!(lines.len() >= 5, "{tool:?}: {lines:?}");
+            for ([a, b], want) in lines.iter().take(5).zip(ys) {
                 let y = a.y + (40.0 - a.x) * (b.y - a.y) / (b.x - a.x);
                 assert!((y - want).abs() < 1e-3, "{tool:?}: {y} != {want}");
             }
@@ -468,14 +461,16 @@ mod tests {
                 }
             });
             output.drop_without_applying_deltas();
+            // With no stored pitchfork config, level strokes inherit the drawing colour.
             assert_eq!(
                 first_color,
                 Some(drawing.color32()),
                 "default levels inherit the drawing colour"
             );
             let outline = drawing.outline(rect).unwrap();
-            assert_eq!(outline.areas.len(), 6);
-            let point = Pos2::new(40.0, ys[5]);
+            // Bands 0→0.5 and 0.5→1: two pairs × two sides.
+            assert_eq!(outline.areas.len(), 4);
+            let point = Pos2::new(40.0, ys[3]);
             assert_eq!(
                 crate::drawings::services::DrawingInteraction::new().hit_test(
                     point,
@@ -503,10 +498,12 @@ mod tests {
                 config
             );
             restored.points = drawing.points.clone();
-            assert_eq!(restored.outline(rect).unwrap().areas.len(), 2);
+            // Visible 0 → 1.0 → 1.5: two band pairs × two sides.
+            assert_eq!(restored.outline(rect).unwrap().areas.len(), 4);
+            // Custom: 0+1+1.5 = 5 level lines; default: 0+0.5+1 = 5 level lines → same count + links.
             assert_eq!(
                 restored.pitchfork_lines(rect).unwrap().len(),
-                lines.len() - 2
+                lines.len()
             );
             // Missing widths inherit the drawing width; explicit widths survive saving and painting.
             saved["pitchfork"]["levels"][2]["width"] = 6.0.into();

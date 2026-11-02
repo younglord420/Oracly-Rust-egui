@@ -253,6 +253,7 @@ impl DrawingPropertiesDialog {
                 drawing.volume_profile = old.volume_profile;
                 drawing.regression_trend = old.regression_trend;
                 drawing.channel_midline = old.channel_midline;
+                drawing.show_price_labels = old.show_price_labels;
                 drawing.font_weight = old.font_weight;
                 drawing.font_italic = old.font_italic;
                 drawing.text_color = old.text_color;

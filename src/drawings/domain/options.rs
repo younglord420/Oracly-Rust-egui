@@ -264,14 +264,22 @@ pub struct FibonacciLevel {
 impl FibonacciLevel {
     /// Creates a new Fibonacci level with the given ratio, display label, and color.
     ///
-    /// The level is visible by default with price display enabled.
+    /// The level is visible by default; price is omitted from the label until enabled.
     pub fn new(value: f32, label: &str, color: [u8; 4]) -> Self {
         Self {
             value,
             label: label.to_string(),
             color,
             visible: true,
-            show_price: true,
+            show_price: false,
+        }
+    }
+
+    /// Same as [`Self::new`], with explicit visibility.
+    pub fn with_visibility(value: f32, label: &str, color: [u8; 4], visible: bool) -> Self {
+        Self {
+            visible,
+            ..Self::new(value, label, color)
         }
     }
 
@@ -336,26 +344,33 @@ fn percent_levels() -> bool {
 }
 
 impl Default for FibonacciConfig {
-    /// Default Fibonacci retracement levels
+    /// Default Fibonacci retracement: fewer lines on, percent labels only, soft fill.
     fn default() -> Self {
+        let grey = [120, 123, 134, 255];
+        let red = [242, 54, 69, 255];
+        let orange = [255, 152, 0, 255];
+        let green = [76, 175, 80, 255];
+        let blue = [33, 150, 243, 255];
+        let purple = [156, 39, 176, 255];
         Self {
+            // On by default: 0, 38.2, 50, 61.8, 100. 23.6 / 78.6 stay available but off.
             levels: vec![
-                FibonacciLevel::new(0.0, "0%", [120, 123, 134, 255]),
-                FibonacciLevel::new(0.236, "23.6%", [242, 54, 69, 255]),
-                FibonacciLevel::new(0.382, "38.2%", [255, 152, 0, 255]),
-                FibonacciLevel::new(0.5, "50%", [76, 175, 80, 255]),
-                FibonacciLevel::new(0.618, "61.8%", [33, 150, 243, 255]),
-                FibonacciLevel::new(0.786, "78.6%", [156, 39, 176, 255]),
-                FibonacciLevel::new(1.0, "100%", [120, 123, 134, 255]),
+                FibonacciLevel::with_visibility(0.0, "0%", grey, true),
+                FibonacciLevel::with_visibility(0.236, "23.6%", red, false),
+                FibonacciLevel::with_visibility(0.382, "38.2%", orange, true),
+                FibonacciLevel::with_visibility(0.5, "50%", green, true),
+                FibonacciLevel::with_visibility(0.618, "61.8%", blue, true),
+                FibonacciLevel::with_visibility(0.786, "78.6%", purple, false),
+                FibonacciLevel::with_visibility(1.0, "100%", grey, true),
             ],
-            show_background: false,
-            background_opacity: 30,
+            show_background: true,
+            background_opacity: 51,
             extend_left: false,
             extend_right: false,
             reverse: false,
             logarithmic: false,
-            show_prices: None,
-            show_levels: None,
+            show_prices: Some(false),
+            show_levels: Some(true),
             levels_as_percent: true,
             labels_on_left: false,
         }
@@ -365,24 +380,31 @@ impl Default for FibonacciConfig {
 impl FibonacciConfig {
     /// Extension levels (beyond 100%)
     pub fn extension_default() -> Self {
+        let grey = [120, 123, 134, 255];
+        let blue = [33, 150, 243, 255];
+        let red = [242, 54, 69, 255];
+        let orange = [255, 152, 0, 255];
+        let green = [76, 175, 80, 255];
+        let purple = [156, 39, 176, 255];
         Self {
+            // Core extension set on; 127.2% and 261.8% available but off to reduce clutter.
             levels: vec![
-                FibonacciLevel::new(0.0, "0%", [120, 123, 134, 255]),
-                FibonacciLevel::new(0.618, "61.8%", [33, 150, 243, 255]),
-                FibonacciLevel::new(1.0, "100%", [120, 123, 134, 255]),
-                FibonacciLevel::new(1.272, "127.2%", [242, 54, 69, 255]),
-                FibonacciLevel::new(1.618, "161.8%", [255, 152, 0, 255]),
-                FibonacciLevel::new(2.0, "200%", [76, 175, 80, 255]),
-                FibonacciLevel::new(2.618, "261.8%", [156, 39, 176, 255]),
+                FibonacciLevel::with_visibility(0.0, "0%", grey, true),
+                FibonacciLevel::with_visibility(0.618, "61.8%", blue, true),
+                FibonacciLevel::with_visibility(1.0, "100%", grey, true),
+                FibonacciLevel::with_visibility(1.272, "127.2%", red, false),
+                FibonacciLevel::with_visibility(1.618, "161.8%", orange, true),
+                FibonacciLevel::with_visibility(2.0, "200%", green, true),
+                FibonacciLevel::with_visibility(2.618, "261.8%", purple, false),
             ],
-            show_background: false,
-            background_opacity: 30,
+            show_background: true,
+            background_opacity: 51,
             extend_left: false,
             extend_right: true,
             reverse: false,
             logarithmic: false,
-            show_prices: None,
-            show_levels: None,
+            show_prices: Some(false),
+            show_levels: Some(true),
             levels_as_percent: true,
             labels_on_left: false,
         }
@@ -529,44 +551,227 @@ impl FibonacciConfig {
     }
 }
 
-/// Settings of the regression trend drawing.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "RegressionTrendFields")]
-pub struct RegressionTrendConfig {
-    deviations: f64,
+/// Input series for the regression trend fit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum RegressionSource {
+    /// Opening price.
+    Open,
+    /// Highest price.
+    High,
+    /// Lowest price.
+    Low,
+    /// Closing price.
+    #[default]
+    Close,
+    /// Bar volume.
+    Volume,
+    /// (High + Low) / 2.
+    Hl2,
+    /// (High + Low + Close) / 3.
+    Hlc3,
+    /// (Open + High + Low + Close) / 4.
+    Ohlc4,
+    /// (High + Low + Close + Close) / 4.
+    Hlcc4,
 }
 
-/// Stored settings of a regression trend, checked by [`RegressionTrendConfig::new`] on load.
+impl RegressionSource {
+    /// Display label for menus.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Open => "Open",
+            Self::High => "High",
+            Self::Low => "Low",
+            Self::Close => "Close",
+            Self::Volume => "Volume",
+            Self::Hl2 => "(H + L)/2",
+            Self::Hlc3 => "(H + L + C)/3",
+            Self::Ohlc4 => "(O + H + L + C)/4",
+            Self::Hlcc4 => "(H + L + C + C)/4",
+        }
+    }
+
+    /// All sources in UI order.
+    pub fn all() -> [Self; 9] {
+        [
+            Self::Open,
+            Self::High,
+            Self::Low,
+            Self::Close,
+            Self::Volume,
+            Self::Hl2,
+            Self::Hlc3,
+            Self::Ohlc4,
+            Self::Hlcc4,
+        ]
+    }
+
+    /// Value of `bar` for this source.
+    pub fn value(self, bar: &crate::model::Bar) -> f64 {
+        match self {
+            Self::Open => bar.open,
+            Self::High => bar.high,
+            Self::Low => bar.low,
+            Self::Close => bar.close,
+            Self::Volume => bar.volume,
+            Self::Hl2 => (bar.high + bar.low) / 2.0,
+            Self::Hlc3 => (bar.high + bar.low + bar.close) / 3.0,
+            Self::Ohlc4 => (bar.open + bar.high + bar.low + bar.close) / 4.0,
+            Self::Hlcc4 => (bar.high + bar.low + bar.close + bar.close) / 4.0,
+        }
+    }
+}
+
+fn default_regression_deviation() -> f64 {
+    2.0
+}
+
+fn default_regression_up_color() -> [u8; 4] {
+    [41, 98, 255, 255]
+}
+
+fn default_regression_down_color() -> [u8; 4] {
+    [41, 98, 255, 255]
+}
+
+/// Settings of the regression trend drawing.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct RegressionTrendConfig {
+    /// Upper band distance in standard deviations.
+    pub upper_deviation: f64,
+    /// Lower band distance in standard deviations.
+    pub lower_deviation: f64,
+    /// Whether the upper band is drawn.
+    pub use_upper: bool,
+    /// Whether the lower band is drawn.
+    pub use_lower: bool,
+    /// Series fitted by the regression.
+    pub source: RegressionSource,
+    /// Whether Pearson's R is labelled on the chart.
+    pub show_pearson: bool,
+    /// Upper band stroke colour (RGBA).
+    pub up_color: [u8; 4],
+    /// Lower band stroke colour (RGBA).
+    pub down_color: [u8; 4],
+}
+
+/// Stored settings of a regression trend, checked on load. Accepts the legacy
+/// single `deviations` field and the expanded upper/lower form.
 #[derive(Deserialize)]
 struct RegressionTrendFields {
-    deviations: f64,
+    #[serde(default)]
+    deviations: Option<f64>,
+    #[serde(default = "default_regression_deviation")]
+    upper_deviation: f64,
+    #[serde(default = "default_regression_deviation")]
+    lower_deviation: f64,
+    #[serde(default = "enabled_true")]
+    use_upper: bool,
+    #[serde(default = "enabled_true")]
+    use_lower: bool,
+    #[serde(default)]
+    source: RegressionSource,
+    #[serde(default = "enabled_true")]
+    show_pearson: bool,
+    #[serde(default = "default_regression_up_color")]
+    up_color: [u8; 4],
+    #[serde(default = "default_regression_down_color")]
+    down_color: [u8; 4],
+}
+
+fn enabled_true() -> bool {
+    true
 }
 
 impl TryFrom<RegressionTrendFields> for RegressionTrendConfig {
     type Error = &'static str;
 
     fn try_from(fields: RegressionTrendFields) -> Result<Self, Self::Error> {
-        Self::new(fields.deviations).ok_or("regression trend settings out of bounds")
+        let (upper, lower) = match fields.deviations {
+            Some(deviations) => (deviations, deviations),
+            None => (fields.upper_deviation, fields.lower_deviation),
+        };
+        Self::validated(
+            upper,
+            lower,
+            fields.use_upper,
+            fields.use_lower,
+            fields.source,
+            fields.show_pearson,
+            fields.up_color,
+            fields.down_color,
+        )
+        .ok_or("regression trend settings out of bounds")
+    }
+}
+
+impl<'de> Deserialize<'de> for RegressionTrendConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        RegressionTrendFields::deserialize(deserializer)?
+            .try_into()
+            .map_err(serde::de::Error::custom)
     }
 }
 
 impl RegressionTrendConfig {
-    /// Bands `deviations` standard deviations either side of the fitted line
-    /// (above 0, at most 10); `None` when out of bounds.
+    /// Symmetric bands `deviations` standard deviations either side of the fitted
+    /// line (above 0, at most 10); `None` when out of bounds.
     pub fn new(deviations: f64) -> Option<Self> {
-        (deviations > 0.0 && deviations <= 10.0).then_some(Self { deviations })
+        Self::validated(
+            deviations,
+            deviations,
+            true,
+            true,
+            RegressionSource::Close,
+            true,
+            default_regression_up_color(),
+            default_regression_down_color(),
+        )
     }
 
-    /// Distance of the bands from the fitted line, in standard deviations.
+    /// Builds a config when both deviations are in (0, 10].
+    pub fn validated(
+        upper_deviation: f64,
+        lower_deviation: f64,
+        use_upper: bool,
+        use_lower: bool,
+        source: RegressionSource,
+        show_pearson: bool,
+        up_color: [u8; 4],
+        down_color: [u8; 4],
+    ) -> Option<Self> {
+        let in_range = |v: f64| v > 0.0 && v <= 10.0;
+        (in_range(upper_deviation) && in_range(lower_deviation)).then_some(Self {
+            upper_deviation,
+            lower_deviation,
+            use_upper,
+            use_lower,
+            source,
+            show_pearson,
+            up_color,
+            down_color,
+        })
+    }
+
+    /// Distance of the upper band from the fitted line, in standard deviations.
     pub fn deviations(&self) -> f64 {
-        self.deviations
+        self.upper_deviation
     }
 }
 
 impl Default for RegressionTrendConfig {
-    /// Bands two standard deviations away.
+    /// Bands two standard deviations away, both sides on, close source.
     fn default() -> Self {
-        Self { deviations: 2.0 }
+        Self {
+            upper_deviation: 2.0,
+            lower_deviation: 2.0,
+            use_upper: true,
+            use_lower: true,
+            source: RegressionSource::Close,
+            show_pearson: true,
+            up_color: default_regression_up_color(),
+            down_color: default_regression_down_color(),
+        }
     }
 }
 

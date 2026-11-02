@@ -34,17 +34,23 @@ pub(crate) struct Moments {
 impl Moments {
     /// Moments of the closes of `bars`: the mean, corrected for rounding, then the centred sums.
     pub(crate) fn of(bars: &[Bar]) -> Self {
-        let n = bars.len() as f64;
-        if bars.is_empty() {
+        Self::of_values(bars.iter().map(|bar| bar.close))
+    }
+
+    /// Moments of an arbitrary y series against bar index 0..n-1.
+    pub(crate) fn of_values(values: impl IntoIterator<Item = f64>) -> Self {
+        let values: Vec<f64> = values.into_iter().collect();
+        let n = values.len() as f64;
+        if values.is_empty() {
             return Self::default();
         }
         let mean_x = (n - 1.0) / 2.0;
-        let mean_y = bars.iter().map(|bar| bar.close).sum::<f64>() / n;
-        // Correct the rounding of the sum, so equal closes give their close as the mean.
-        let mean_y = mean_y + bars.iter().map(|bar| bar.close - mean_y).sum::<f64>() / n;
+        let mean_y = values.iter().sum::<f64>() / n;
+        // Correct the rounding of the sum, so equal values give their value as the mean.
+        let mean_y = mean_y + values.iter().map(|y| y - mean_y).sum::<f64>() / n;
         let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
-        for (i, bar) in bars.iter().enumerate() {
-            let (dx, dy) = (i as f64 - mean_x, bar.close - mean_y);
+        for (i, &y) in values.iter().enumerate() {
+            let (dx, dy) = (i as f64 - mean_x, y - mean_y);
             sxx += dx * dx;
             sxy += dx * dy;
             syy += dy * dy;

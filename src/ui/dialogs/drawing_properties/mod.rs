@@ -141,8 +141,10 @@ mod tests {
             (Tool::ShortPos, "Size by"),
             (Tool::FixedRangeVolumeProfile, "Rows"),
             (Tool::AnchoredVolumeProfile, "Rows"),
-            (Tool::RegressionTrend, "Deviations"),
+            (Tool::RegressionTrend, "Upper deviation"),
             (Tool::ParallelChannel, "Show middle line"),
+            (Tool::FlatTopBottom, "Price labels"),
+            (Tool::DisjointChannel, "Price labels"),
         ] {
             chart.drawings_mut().drawings.clear();
             let mut drawing = Drawing::new(7, tool);

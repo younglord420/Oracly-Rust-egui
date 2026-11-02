@@ -228,6 +228,7 @@ impl DrawingProps {
                 drawing.volume_profile = settings.volume_profile;
                 drawing.regression_trend = settings.regression_trend;
                 drawing.channel_midline = settings.channel_midline;
+                drawing.show_price_labels = settings.show_price_labels;
             }
             if drawing.id == id.0
                 && !points.is_empty()

@@ -43,6 +43,17 @@ impl egui::cache::ComputerMut<LevelLabelKey<'_>, String> for LevelLabelFormatter
     }
 }
 
+/// Stroke weight: emphasise the anchors (0 / 1) and the midpoint (0.5).
+fn fib_level_stroke_width(value: f32) -> f32 {
+    if (value - 0.0).abs() < 1e-6 || (value - 1.0).abs() < 1e-6 {
+        stroke::MEDIUM
+    } else if (value - 0.5).abs() < 1e-6 {
+        stroke::THIN
+    } else {
+        stroke::HAIRLINE
+    }
+}
+
 fn level_label(
     painter: &egui::Painter,
     config: &FibonacciConfig,
@@ -190,8 +201,11 @@ impl Drawing {
                 level.color[3],
             );
 
-            // Draw line with extend support
-            painter.hline(x_start..=x_end, y, Stroke::new(stroke::HAIRLINE, lvl_color));
+            painter.hline(
+                x_start..=x_end,
+                y,
+                Stroke::new(fib_level_stroke_width(level.value), lvl_color),
+            );
 
             let label_text = level_label(painter, &config, level, Some(price_at_lvl));
             if label_text.is_empty()
@@ -210,12 +224,12 @@ impl Drawing {
                     } else {
                         x_end - DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
                     },
-                    y - DESIGN_TOKENS.rounding.xl,
+                    y - DESIGN_TOKENS.rounding.sm,
                 ),
                 if config.labels_on_left {
-                    egui::Align2::LEFT_BOTTOM
+                    egui::Align2::LEFT_CENTER
                 } else {
-                    egui::Align2::RIGHT_BOTTOM
+                    egui::Align2::RIGHT_CENTER
                 },
                 label_text,
                 egui::FontId::proportional(typography::XS),
@@ -280,8 +294,11 @@ impl Drawing {
 
             // Only draw if within chart rect
             if y >= chart_rect.min.y && y <= chart_rect.max.y {
-                // Draw line with extend support
-                painter.hline(x_start..=x_end, y, Stroke::new(stroke::HAIRLINE, lvl_color));
+                painter.hline(
+                    x_start..=x_end,
+                    y,
+                    Stroke::new(fib_level_stroke_width(level.value), lvl_color),
+                );
 
                 let label_text = level_label(painter, &config, level, Some(price_at_lvl));
                 if label_text.is_empty()
@@ -300,12 +317,12 @@ impl Drawing {
                         } else {
                             x_end - DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
                         },
-                        y - DESIGN_TOKENS.rounding.xl,
+                        y - DESIGN_TOKENS.rounding.sm,
                     ),
                     if config.labels_on_left {
-                        egui::Align2::LEFT_BOTTOM
+                        egui::Align2::LEFT_CENTER
                     } else {
-                        egui::Align2::RIGHT_BOTTOM
+                        egui::Align2::RIGHT_CENTER
                     },
                     label_text,
                     egui::FontId::proportional(typography::XS),

@@ -2,7 +2,7 @@
 
 use crate::drawings::{
     Drawing, DrawingToolType as Tool, FibonacciLevel, GannConfig, GannFanDirection,
-    PitchforkConfig, PitchforkLevel, PositionSize, RegressionTrendConfig,
+    PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource, RegressionTrendConfig,
 };
 
 use crate::data::{ProfileDisplay, VolumeProfileConfig};
@@ -44,6 +44,8 @@ impl InputsTab {
                 | Tool::AnchoredVolumeProfile
                 | Tool::RegressionTrend
                 | Tool::ParallelChannel
+                | Tool::FlatTopBottom
+                | Tool::DisjointChannel
         )
     }
 
@@ -325,19 +327,83 @@ impl InputsTab {
                 }
             }
             Tool::RegressionTrend => {
-                let config = drawing.regression_trend.unwrap_or_default();
-                let mut deviations = config.deviations();
+                let mut config = drawing.regression_trend.unwrap_or_default();
+                let original = config;
+                pickers.resize_with(2, ColorPickerState::default);
                 FormGrid::new("regression_inputs").show(ui, |ui| {
-                    number(ui, "Deviations", &mut deviations, f64::MIN_POSITIVE..=10.0)
+                    number(
+                        ui,
+                        "Upper deviation",
+                        &mut config.upper_deviation,
+                        f64::MIN_POSITIVE..=10.0,
+                    );
+                    number(
+                        ui,
+                        "Lower deviation",
+                        &mut config.lower_deviation,
+                        f64::MIN_POSITIVE..=10.0,
+                    );
+                    let label = form_label(ui, "Source");
+                    let ctx = ui.ctx().clone();
+                    let control_width = form_control_width_for(ui);
+                    ui.label_inputs_by(label.id, |ui| {
+                        ui.combo_select_width(
+                            "regression_source",
+                            &mut config.source,
+                            RegressionSource::all(),
+                            |v| l10n::text(&ctx, v.label()),
+                            control_width,
+                        );
+                    });
+                    ui.end_row();
+                    let label = form_label(ui, "Up colour");
+                    ui.label_inputs_by(label.id, |ui| {
+                        level_color(ui, &mut config.up_color, &mut pickers[0]);
+                    });
+                    ui.end_row();
+                    let label = form_label(ui, "Down colour");
+                    ui.label_inputs_by(label.id, |ui| {
+                        level_color(ui, &mut config.down_color, &mut pickers[1]);
+                    });
+                    ui.end_row();
                 });
-                if deviations != config.deviations() {
-                    drawing.regression_trend = RegressionTrendConfig::new(deviations);
+                ui.checkbox(
+                    &mut config.use_upper,
+                    l10n::text(ui.ctx(), "Use upper deviation"),
+                );
+                ui.checkbox(
+                    &mut config.use_lower,
+                    l10n::text(ui.ctx(), "Use lower deviation"),
+                );
+                ui.checkbox(
+                    &mut config.show_pearson,
+                    l10n::text(ui.ctx(), "Pearson's R"),
+                );
+                if config != original {
+                    if let Some(valid) = RegressionTrendConfig::validated(
+                        config.upper_deviation,
+                        config.lower_deviation,
+                        config.use_upper,
+                        config.use_lower,
+                        config.source,
+                        config.show_pearson,
+                        config.up_color,
+                        config.down_color,
+                    ) {
+                        drawing.regression_trend = Some(valid);
+                    }
                 }
             }
             Tool::ParallelChannel => {
                 ui.checkbox(
                     &mut drawing.channel_midline,
                     l10n::text(ui.ctx(), "Show middle line"),
+                );
+            }
+            Tool::FlatTopBottom | Tool::DisjointChannel => {
+                ui.checkbox(
+                    &mut drawing.show_price_labels,
+                    l10n::text(ui.ctx(), "Price labels"),
                 );
             }
             _ => {}
@@ -632,8 +698,11 @@ fn pitchfork(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
     let mut config = drawing.pitchfork.clone().unwrap_or_else(|| {
         let mut config = PitchforkConfig::default();
         for level in &mut config.levels {
-            level.color = drawing.color;
-            level.width = Some(if level.value == 1.0 {
+            // Keep distinct median / half colours; paint the rest with the drawing colour.
+            if (level.value - 0.0).abs() > 1e-4 && (level.value - 0.5).abs() > 1e-4 {
+                level.color = drawing.color;
+            }
+            level.width = Some(if (level.value - 1.0).abs() < f32::EPSILON {
                 crate::styles::stroke::HAIRLINE
             } else {
                 drawing.stroke_width
@@ -641,23 +710,22 @@ fn pitchfork(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
         }
         config
     });
+    config.ensure_standard_levels();
     let original = config.clone();
     ui.strong(l10n::text(ui.ctx(), "Pitchfork levels"));
-    ui.label(l10n::text(
-        ui.ctx(),
-        "Multiples of the median-to-tine distance",
-    ));
+    ui.label(
+        egui::RichText::new(l10n::text(
+            ui.ctx(),
+            "0 = median · 1 = tines · check to show",
+        ))
+        .size(ui.active_theme().text.small)
+        .color(ui.active_theme().ui.text_secondary),
+    );
     level_grid(
         ui,
         &mut config.levels,
         pickers,
-        PitchforkLevel {
-            value: 2.0,
-            visible: true,
-            color: drawing.color,
-            line_style: LineStyle::Solid,
-            width: Some(drawing.stroke_width),
-        },
+        PitchforkLevel::new(2.0, true, drawing.color),
         |level| LevelRow {
             visible: &mut level.visible,
             value: &mut level.value,

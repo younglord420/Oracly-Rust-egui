@@ -49,6 +49,10 @@ impl DrawingToolType {
                 | Self::FibonacciSpeedResistanceArcs
                 | Self::FibonacciWedge
                 | Self::Pitchfan
+                | Self::Pitchfork
+                | Self::SchiffPitchfork
+                | Self::ModifiedSchiffPitchfork
+                | Self::InsidePitchfork
                 | Self::GhostFeed
                 | Self::LongPos
                 | Self::ShortPos

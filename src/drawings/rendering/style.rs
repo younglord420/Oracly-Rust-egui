@@ -305,17 +305,13 @@ impl Drawing {
                 | DrawingToolType::InsidePitchfork
         );
         let custom_fork = fork && self.pitchfork.is_some();
-        // Keep body fills of annotations and legacy forks; analysis labels keep their own fill.
+        // Annotation body fills take the drawing fill colour. Pitchfork bands are styled only
+        // through PitchforkConfig (Inputs → Background), not Drawing::fill_color.
         let fill = |color: &mut Color32| {
             if color.a() > 0
-                && !custom_fork
                 && matches!(
                     self.tool_type,
-                    DrawingToolType::Pitchfork
-                        | DrawingToolType::SchiffPitchfork
-                        | DrawingToolType::ModifiedSchiffPitchfork
-                        | DrawingToolType::InsidePitchfork
-                        | DrawingToolType::TextLabel
+                    DrawingToolType::TextLabel
                         | DrawingToolType::AnchoredText
                         | DrawingToolType::Note
                         | DrawingToolType::Callout

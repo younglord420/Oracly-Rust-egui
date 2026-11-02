@@ -38,7 +38,8 @@ pub use domain::{
     ArrowStyle, ChartPoint, Drawing, DrawingInteractionMode, DrawingOptions, DrawingTemplate,
     DrawingToolType, FibonacciConfig, FibonacciLevel, FontWeight, GannConfig, GannFanDirection,
     GhostCandle, GhostFeedConfig, HandlePos, ParseToolTypeError, PitchforkConfig, PitchforkLevel,
-    PositionSize, PositionSizing, RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign,
+    PositionSize, PositionSizing, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
+    TextVerticalAlign,
     TimeframeVisibility,
 };
 
