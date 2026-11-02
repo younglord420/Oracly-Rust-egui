@@ -1174,7 +1174,7 @@ impl DemoApp {
             FloatingToolbarAction::ChangeColor(0, color) => {
                 self.chart.user_action(|chart| {
                     chart.drawings_mut().edit_drawing(id, |d| {
-                        d.color = color.to_srgba_unmultiplied();
+                        d.apply_primary_color(color.to_srgba_unmultiplied());
                     })
                 });
             }
@@ -2406,9 +2406,9 @@ impl DemoApp {
                         ind.set_color(0, color);
                     }
                 } else {
-                    chart
-                        .drawings_mut()
-                        .drag_edit_drawing(id, |d| d.color = color.to_srgba_unmultiplied());
+                    chart.drawings_mut().drag_edit_drawing(id, |d| {
+                        d.apply_primary_color(color.to_srgba_unmultiplied());
+                    });
                     self.colour_drag = true;
                 }
             }

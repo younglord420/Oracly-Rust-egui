@@ -82,6 +82,16 @@ impl StyleTab {
                             true,
                         ) {
                             props.color = color;
+                            // Keep Fibonacci level colours in sync with the Line swatch
+                            // (same as Inputs → Use one color / floating toolbar).
+                            if let Some(template) = &mut props.tool_settings
+                                && let Some(config) = &mut template.settings.fib_config
+                            {
+                                let rgba = color.to_srgba_unmultiplied();
+                                for level in &mut config.levels {
+                                    level.color = rgba;
+                                }
+                            }
                         }
                         line_width_combo(ui, &mut props.line_width, width_chip_w, control_h);
                         line_style_combo(
@@ -119,7 +129,8 @@ impl StyleTab {
                     | DrawingToolType::FibonacciChannel
             )
         });
-        if show_extend {
+        // Fib tools edit extend only via fib_config in fib_style_controls below.
+        if show_extend && !fib_tool {
             extend_control(ui, &mut props.extend_left, &mut props.extend_right, col_w);
         }
         if show_ends && let Some(template) = &mut props.tool_settings {

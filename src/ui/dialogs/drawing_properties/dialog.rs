@@ -853,6 +853,8 @@ mod tests {
                 (Tool::Rect, true, true, true),
                 (Tool::Brush, false, false, true),
                 (Tool::TrendLine, false, true, true),
+                // Fib extend comes only from fib_config controls, still one "Extend" row.
+                (Tool::FibonacciRetracement, false, true, true),
                 (Tool::TextLabel, true, false, true),
                 (Tool::Highlighter, false, false, true),
             ] {

@@ -220,10 +220,10 @@ impl DrawingInteraction {
                     }
                 }
                 DrawingToolType::FibonacciChannel => {
-                    // Extended levels are cut at a box around the anchors and the point, as below.
-                    let reach = Rect::from_points(&drawing.points)
-                        .union(Rect::from_pos(point))
-                        .expand(2.0 * hit_distance);
+                    // Match paint's extended rays. `ray_end` cannot use Rect::EVERYTHING
+                    // (infinite edges yield non-finite endpoints); expand far past the hit
+                    // so a point on a painted ray stays on the clipped segment.
+                    let reach = fib_channel_hit_rect(drawing, point, hit_distance);
                     if drawing
                         .fib_channel_level_lines(reach)
                         .is_some_and(|(_, lines)| {
@@ -415,6 +415,18 @@ fn convex_contains(area: &[Pos2], point: Pos2) -> bool {
         right |= cross < 0.0;
     }
     sides >= 3 && (left || right) && !(left && right)
+}
+
+/// Finite clip for Fibonacci channel hit-testing: large enough that an extended
+/// level through `point` stays on-segment after `ray_end`, without using an
+/// infinite rect (which yields non-finite endpoints).
+fn fib_channel_hit_rect(drawing: &Drawing, point: Pos2, hit_distance: f32) -> Rect {
+    let mut hull = Rect::from_pos(point);
+    for &p in &drawing.points {
+        hull = hull.union(Rect::from_pos(p));
+    }
+    let pad = hull.size().length().max(hit_distance).max(1.0) * 8.0 + 1024.0;
+    hull.expand(pad)
 }
 
 /// Calculates the perpendicular distance from `point` to the closest point on
@@ -666,6 +678,35 @@ mod tests {
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
+    /// An extended channel level painted far past the anchors still hits there.
+    #[test]
+    fn extended_fib_channel_hits_far_from_anchors() {
+        use crate::drawings::FibonacciConfig;
+        let interaction = DrawingInteraction::new();
+        let mut channel = Drawing::new(7, DrawingToolType::FibonacciChannel);
+        channel.fib_config = Some(FibonacciConfig {
+            extend_right: true,
+            ..Default::default()
+        });
+        // Base (0,400)→(300,100), width down to (150,350): level 0.5 is y = 450 - x.
+        channel.chart_points = vec![
+            ChartPoint::new(0.0, 100.0),
+            ChartPoint::new(10.0, 400.0),
+            ChartPoint::new(5.0, 150.0),
+        ];
+        channel.update_screen_coords(|bar| bar * 30.0, |price| 500.0 - price as f32);
+        let far = Pos2::new(900.0, 450.0 - 900.0);
+        assert_eq!(
+            interaction.hit_test(far, std::slice::from_ref(&channel), "1D"),
+            Some(7)
+        );
+        let miss = Pos2::new(900.0, far.y + 40.0);
+        assert_eq!(
+            interaction.hit_test(miss, std::slice::from_ref(&channel), "1D"),
+            None
+        );
+    }
+
     /// A stored drawing has its chart anchors but no screen points until the next
     /// `update_screen_coords`; until then no tool is hit, and none panics.
     #[test]
@@ -687,22 +728,22 @@ mod tests {
     }
 
     /// Each point is at least 40 px from every anchor. A ray from (0, 0) through (100, 50) runs on
-    /// through (300, 150) and back through (-100, -50) with both extensions on; one from
-    /// (500, 100) through (400, 150) runs left through (200, 250). The cross line through
-    /// (100, 100) runs down through (100, 300). The pattern's second leg runs from
-    /// (100, 100) to (200, 0) through (150, 50). The triangle's edge from (200, 0) to (100, 200)
-    /// passes (150, 100); without a fill its inside is empty. The circle around (100, 100)
-    /// through (150, 100) passes (100, 150), and its centre is empty. The pitchfork's median
-    /// leaves (0, 100) through the midpoint (100, 100) of the other anchors and runs on
-    /// flat. The Gann fan's 1x2 line from (0, 200), half the 1x1 slope to (100, 100), is at
-    /// y = 200 - 300 / 2 = 50 at x = 300. The measure fills its box, which holds (20, 80), 42 px
-    /// from its diagonal. A measure across bars at one price, from (0, 100) to (100, 100), is hit
-    /// 2 px off its border at (50, 102), but not 400 px past its end on the same line. A
-    /// highlighter is drawn 8 times its stroke width of 2, 16 px wide, so a point 7 px off its
-    /// line is on it. The date range fills the band between x = 100 and 200 at any height.
-    /// The ellipse in the box from (0, 0) to (200, 100) is lowest at (100, 100). Every drawing
-    /// extends both ways where its tool can: the trend line from (100, 100) to (200, 150) runs on
-    /// through (500, 300) and (0, 50).
+    /// through (300, 150) to the right pane edge only (never left through (-100, -50)). One from
+    /// (500, 100) through (400, 150) starts at the leftmost anchor and runs right through
+    /// (600, 50), not left through (200, 250). The cross line through (100, 100) runs down through
+    /// (100, 300). The pattern's second leg runs from (100, 100) to (200, 0) through (150, 50). The
+    /// triangle's edge from (200, 0) to (100, 200) passes (150, 100); without a fill its inside is
+    /// empty. The circle around (100, 100) through (150, 100) passes (100, 150), and its centre is
+    /// empty. The pitchfork's median leaves (0, 100) through the midpoint (100, 100) of the other
+    /// anchors and runs on flat. The Gann fan's 1x2 line from (0, 200), half the 1x1 slope to
+    /// (100, 100), is at y = 200 - 300 / 2 = 50 at x = 300. The measure fills its box, which holds
+    /// (20, 80), 42 px from its diagonal. A measure across bars at one price, from (0, 100) to
+    /// (100, 100), is hit 2 px off its border at (50, 102), but not 400 px past its end on the same
+    /// line. A highlighter is drawn 8 times its stroke width of 2, 16 px wide, so a point 7 px off
+    /// its line is on it. The date range fills the band between x = 100 and 200 at any height. The
+    /// ellipse in the box from (0, 0) to (200, 100) is lowest at (100, 100). Every drawing extends
+    /// both ways where its tool can: the trend line from (100, 100) to (200, 150) runs on through
+    /// (500, 300) and (0, 50).
     #[test]
     fn drawings_are_hit_along_what_they_draw() {
         use DrawingToolType as T;
@@ -718,7 +759,7 @@ mod tests {
             (
                 T::Ray,
                 (-100.0, -50.0),
-                Some(7),
+                None,
                 vec![(0.0, 0.0), (100.0, 50.0)],
             ),
             (
@@ -735,8 +776,14 @@ mod tests {
             ),
             (
                 T::Ray,
-                (200.0, 250.0),
+                (600.0, 50.0),
                 Some(7),
+                vec![(500.0, 100.0), (400.0, 150.0)],
+            ),
+            (
+                T::Ray,
+                (200.0, 250.0),
+                None,
                 vec![(500.0, 100.0), (400.0, 150.0)],
             ),
             (T::CrossLine, (100.0, 300.0), Some(7), vec![(100.0, 100.0)]),

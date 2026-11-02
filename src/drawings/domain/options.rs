@@ -479,18 +479,19 @@ impl FibonacciConfig {
         let purple = [156, 39, 176, 255];
         let pink = [233, 30, 99, 255];
         Self {
+            // Typical trend-based extension set: 0, 0.382, 0.5, 0.618, 1, 1.618, 2.618.
             levels: vec![
                 FibonacciLevel::with_visibility(0.0, "", grey, true),
                 FibonacciLevel::with_visibility(0.236, "", red, false),
-                FibonacciLevel::with_visibility(0.382, "", orange, false),
-                FibonacciLevel::with_visibility(0.5, "", green, false),
+                FibonacciLevel::with_visibility(0.382, "", orange, true),
+                FibonacciLevel::with_visibility(0.5, "", green, true),
                 FibonacciLevel::with_visibility(0.618, "", blue, true),
                 FibonacciLevel::with_visibility(0.786, "", purple, false),
                 FibonacciLevel::with_visibility(1.0, "", grey, true),
                 FibonacciLevel::with_visibility(1.272, "", pink, false),
                 FibonacciLevel::with_visibility(1.414, "", red, false),
                 FibonacciLevel::with_visibility(1.618, "", orange, true),
-                FibonacciLevel::with_visibility(2.0, "", green, true),
+                FibonacciLevel::with_visibility(2.0, "", green, false),
                 FibonacciLevel::with_visibility(2.272, "", pink, false),
                 FibonacciLevel::with_visibility(2.618, "", purple, true),
                 FibonacciLevel::with_visibility(3.618, "", pink, false),
@@ -1309,6 +1310,7 @@ mod tests {
     }
 
     /// Anchors 100 then 200: level v sits at 200 - 100 * v, or at 100 + 100 * v when reversed.
+    /// Reference: reverse=false → p2 + ratio*(p1-p2); reverse=true → p1 + ratio*(p2-p1).
     #[test]
     fn fibonacci_retracement_position() {
         for (reverse, value, want) in [
@@ -1316,16 +1318,24 @@ mod tests {
             (false, 0.236, 176.4),
             (false, 0.618, 138.2),
             (false, 1.0, 100.0),
+            (true, 0.0, 100.0),
             (true, 0.236, 123.6),
             (true, 0.786, 178.6),
+            (true, 1.0, 200.0),
         ] {
             let config = FibonacciConfig {
                 reverse,
                 ..Default::default()
             };
-            let got = config.retracement_position(100.0, 200.0, value);
+            let (p1, p2) = (100.0, 200.0);
+            let got = config.retracement_position(p1, p2, value);
+            let expected = if reverse {
+                p1 + value * (p2 - p1)
+            } else {
+                p2 + value * (p1 - p2)
+            };
             assert!(
-                (got - want).abs() < 1e-9,
+                (got - want).abs() < 1e-9 && (got - expected).abs() < 1e-9,
                 "reverse {reverse}, level {value}: got {got}, want {want}"
             );
         }

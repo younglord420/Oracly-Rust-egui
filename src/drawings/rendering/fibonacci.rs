@@ -246,26 +246,7 @@ impl Drawing {
         // Fills, lines and hit regions share the levels' horizontal bounds
         let x_range = self.fib_level_x_range(&config, chart_rect);
 
-        // Draw filled zones between levels if enabled
-        if (config.show_background || self.fill_color.is_some()) && visible_levels.len() > 1 {
-            for i in 0..visible_levels.len() - 1 {
-                let level1 = visible_levels[i];
-
-                let (y1, y2) = (ys[i], ys[i + 1]);
-
-                // Fill with semi-transparent color using config opacity
-                let fill_color = self.fill_color32().unwrap_or_else(|| {
-                    Color32::from_rgba_unmultiplied(
-                        level1.color[0],
-                        level1.color[1],
-                        level1.color[2],
-                        config.background_opacity,
-                    )
-                });
-                let fill_rect = Rect::from_x_y_ranges(x_range, y1.min(y2)..=y1.max(y2));
-                painter.rect_filled(fill_rect, 0.0, fill_color);
-            }
-        }
+        paint_fib_level_bands(painter, self, &config, &visible_levels, ys, x_range, None);
 
         let (x_start, x_end) = (x_range.min, x_range.max);
         let level_width = config.levels_line_width.max(stroke::HAIRLINE);
@@ -323,30 +304,15 @@ impl Drawing {
         // Fills, lines and hit regions share the levels' horizontal bounds
         let x_range = self.fib_level_x_range(&config, chart_rect);
 
-        // Draw filled zones between levels if enabled
-        if (config.show_background || self.fill_color.is_some()) && visible_levels.len() > 1 {
-            for i in 0..visible_levels.len() - 1 {
-                let level1 = visible_levels[i];
-
-                let (y1, y2) = (ys[i], ys[i + 1]);
-
-                // Only draw if at least partially visible
-                if (y1 >= chart_rect.min.y || y2 >= chart_rect.min.y)
-                    && (y1 <= chart_rect.max.y || y2 <= chart_rect.max.y)
-                {
-                    let fill_color = self.fill_color32().unwrap_or_else(|| {
-                        Color32::from_rgba_unmultiplied(
-                            level1.color[0],
-                            level1.color[1],
-                            level1.color[2],
-                            config.background_opacity,
-                        )
-                    });
-                    let fill_rect = Rect::from_x_y_ranges(x_range, y1.min(y2)..=y1.max(y2));
-                    painter.rect_filled(fill_rect, 0.0, fill_color);
-                }
-            }
-        }
+        paint_fib_level_bands(
+            painter,
+            self,
+            &config,
+            &visible_levels,
+            ys,
+            x_range,
+            Some(chart_rect),
+        );
 
         let (x_start, x_end) = (x_range.min, x_range.max);
         let level_width = config.levels_line_width.max(stroke::HAIRLINE);
@@ -608,24 +574,26 @@ impl Drawing {
             self.color[3],
         );
 
-        // Draw filled zones between levels
+        // Fill bands between consecutive enabled levels sorted by ratio.
         if (config.show_background || self.fill_color.is_some()) && visible_levels.len() > 1 {
-            for i in 0..visible_levels.len() - 1 {
-                let level1 = visible_levels[i];
-                let [p1_l1, p2_l1] = lines[i];
-                let [p1_l2, p2_l2] = lines[i + 1];
-
+            let mut bands: Vec<(&FibonacciLevel, [Pos2; 2])> = visible_levels
+                .iter()
+                .copied()
+                .zip(lines.iter().copied())
+                .collect();
+            bands.sort_by(|a, b| a.0.value.total_cmp(&b.0.value));
+            for window in bands.windows(2) {
+                let ((_, [p1_lo, p2_lo]), (hi, [p1_hi, p2_hi])) = (window[0], window[1]);
                 let fill_color = self.fill_color32().unwrap_or_else(|| {
                     Color32::from_rgba_unmultiplied(
-                        level1.color[0],
-                        level1.color[1],
-                        level1.color[2],
+                        hi.color[0],
+                        hi.color[1],
+                        hi.color[2],
                         config.background_opacity,
                     )
                 });
-
                 painter.add(egui::epaint::PathShape::convex_polygon(
-                    vec![p1_l1, p2_l1, p2_l2, p1_l2],
+                    vec![p1_lo, p2_lo, p2_hi, p1_hi],
                     fill_color,
                     Stroke::NONE,
                 ));
@@ -1251,6 +1219,49 @@ fn level_color(level: &FibonacciLevel) -> Color32 {
         level.color[2],
         level.color[3],
     )
+}
+
+/// Fill bands between consecutive enabled levels sorted by ratio, using the
+/// higher-ratio level's colour (or the drawing-wide fill when set).
+fn paint_fib_level_bands(
+    painter: &egui::Painter,
+    drawing: &Drawing,
+    config: &FibonacciConfig,
+    visible_levels: &[&FibonacciLevel],
+    ys: &[f32],
+    x_range: Rangef,
+    clip: Option<Rect>,
+) {
+    if !(config.show_background || drawing.fill_color.is_some()) || visible_levels.len() < 2 {
+        return;
+    }
+    let mut bands: Vec<(&FibonacciLevel, f32)> = visible_levels
+        .iter()
+        .copied()
+        .zip(ys.iter().copied())
+        .collect();
+    bands.sort_by(|a, b| a.0.value.total_cmp(&b.0.value));
+    for window in bands.windows(2) {
+        let ((_, y1), (hi, y2)) = (window[0], window[1]);
+        if let Some(rect) = clip
+            && !((y1 >= rect.min.y || y2 >= rect.min.y) && (y1 <= rect.max.y || y2 <= rect.max.y))
+        {
+            continue;
+        }
+        let fill_color = drawing.fill_color32().unwrap_or_else(|| {
+            Color32::from_rgba_unmultiplied(
+                hi.color[0],
+                hi.color[1],
+                hi.color[2],
+                config.background_opacity,
+            )
+        });
+        painter.rect_filled(
+            Rect::from_x_y_ranges(x_range, y1.min(y2)..=y1.max(y2)),
+            0.0,
+            fill_color,
+        );
+    }
 }
 
 fn band_color(level: &FibonacciLevel, opacity: u8) -> Color32 {
@@ -1891,9 +1902,14 @@ mod tests {
             crate::drawings::ChartPoint::new(30.0, 130.0),
         ];
         for (start, end, origin, logarithmic, ratio, want) in [
+            // price = C + ratio * (B - A)
             (100.0, 150.0, 130.0, false, 0.0, 130.0),
+            (100.0, 150.0, 130.0, false, 0.382, 149.1),
+            (100.0, 150.0, 130.0, false, 0.5, 155.0),
             (100.0, 150.0, 130.0, false, 0.618, 160.9),
             (100.0, 150.0, 130.0, false, 1.0, 180.0),
+            (100.0, 150.0, 130.0, false, 1.618, 210.9),
+            (100.0, 150.0, 130.0, false, 2.618, 260.9),
             // C * (B/A)^0.5 = 20 * sqrt(100) = 200.
             (10.0, 1000.0, 20.0, true, 0.5, 200.0),
             (10.0, 1000.0, 0.0, true, 0.5, 495.0),
@@ -1910,8 +1926,61 @@ mod tests {
                 ..FibonacciConfig::extension_default()
             });
             let (_, prices) = extension.fib_levels().unwrap();
-            assert!((prices[0] - want).abs() < 1e-4);
+            assert!(
+                (prices[0] - want).abs() < 1e-4,
+                "A={start} B={end} C={origin} r={ratio}: got {}, want {want}",
+                prices[0]
+            );
         }
+
+        // Fill bands use the higher-ratio level's colour between consecutive enabled ratios.
+        let mut retracement =
+            Drawing::new(0, crate::drawings::DrawingToolType::FibonacciRetracement);
+        retracement.chart_points = vec![
+            crate::drawings::ChartPoint::new(10.0, 100.0),
+            crate::drawings::ChartPoint::new(50.0, 200.0),
+        ];
+        retracement.fib_config = Some(FibonacciConfig {
+            show_background: true,
+            background_opacity: 40,
+            levels: vec![
+                FibonacciLevel::new(0.5, "", [10, 20, 30, 255]),
+                FibonacciLevel::new(0.0, "", [1, 2, 3, 255]),
+                FibonacciLevel::new(1.0, "", [200, 100, 50, 255]),
+            ],
+            ..FibonacciConfig::default()
+        });
+        retracement.update_screen_coords(|b| b, |p| (300.0 - p) as f32);
+        let output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
+            retracement.render_fibonacci(ui.painter(), rect)
+        });
+        let fills: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.fill.a() == 40 => Some(r.fill),
+                _ => None,
+            })
+            .collect();
+        output.drop_without_applying_deltas();
+        assert!(
+            fills.contains(&Color32::from_rgba_unmultiplied(10, 20, 30, 40))
+                && fills.contains(&Color32::from_rgba_unmultiplied(200, 100, 50, 40)),
+            "expected higher-ratio band colours, got {fills:?}"
+        );
+
+        // Primary colour swatch paints every Fibonacci level.
+        retracement.apply_primary_color([9, 8, 7, 255]);
+        assert_eq!(retracement.color, [9, 8, 7, 255]);
+        assert!(
+            retracement
+                .fib_config
+                .as_ref()
+                .unwrap()
+                .levels
+                .iter()
+                .all(|l| l.color == [9, 8, 7, 255])
+        );
         extension.update_screen_coords(|b| b, |p| (1000.0 - p) as f32);
         extension.tool_type = crate::drawings::DrawingToolType::TrendBasedFibTime;
         extension.fib_config = None;

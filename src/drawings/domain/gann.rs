@@ -1,6 +1,18 @@
 //! Saved price and time divisions for Gann grids, and the fan and arcs of Gann squares.
 
+use egui::Pos2;
 use serde::{Deserialize, Serialize};
+
+/// The corner opposite `start` of a flexible Gann square: towards
+/// `end`, as wide and high as the larger of the two distances between them.
+pub fn gann_square_corner(start: Pos2, end: Pos2) -> Pos2 {
+    let size = (end.x - start.x).abs().max((end.y - start.y).abs());
+    let sign = |a: f32, b: f32| if b >= a { 1.0 } else { -1.0 };
+    Pos2::new(
+        start.x + size * sign(start.x, end.x),
+        start.y + size * sign(start.y, end.y),
+    )
+}
 
 /// The corners the fan lines of a Gann square start from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -40,13 +52,14 @@ pub struct GannConfig {
 
 impl Default for GannConfig {
     fn default() -> Self {
-        let levels = (0..=8).map(|i| i as f32 / 8.0).collect::<Vec<_>>();
+        // Standard box/square grid on both axes; square fan uses 3×1 … 1×3.
+        let levels = vec![0.0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0];
         Self {
             price_levels: levels.clone(),
             time_levels: levels,
             show_grid: true,
             show_fan: true,
-            fan_ratios: vec![0.125, 0.25, 1.0 / 3.0, 0.5, 1.0, 2.0, 3.0, 4.0, 8.0],
+            fan_ratios: vec![3.0, 2.0, 1.0, 0.5, 1.0 / 3.0],
             fan_direction: GannFanDirection::default(),
             show_arcs: true,
             arc_ratios: vec![0.25, 0.5, 0.75, 1.0],

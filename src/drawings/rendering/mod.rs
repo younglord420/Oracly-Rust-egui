@@ -215,7 +215,7 @@ impl Drawing {
             }
             T::GannFixed => boxed(&mut outline, Rect::from_two_pos(first, second)),
             T::GannSquare => {
-                let corner = gann::gann_square_corner(first, second);
+                let corner = crate::drawings::gann_square_corner(first, second);
                 boxed(&mut outline, Rect::from_two_pos(first, corner));
             }
             T::RotatedRect => {

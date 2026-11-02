@@ -39,7 +39,7 @@ pub use domain::{
     DrawingToolType, FibonacciConfig, FibonacciLevel, FontWeight, GannConfig, GannFanDirection,
     GhostCandle, GhostFeedConfig, HandlePos, ParseToolTypeError, PitchforkConfig, PitchforkLevel,
     PositionSize, PositionSizing, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
-    TextVerticalAlign, TimeframeVisibility,
+    TextVerticalAlign, TimeframeVisibility, gann_square_corner,
 };
 
 // Re-export manager types

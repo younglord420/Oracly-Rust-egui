@@ -2,7 +2,9 @@
 //!
 //! Includes: Gann fan, square, box, and fixed angle tools.
 
-use crate::drawings::domain::{Drawing, DrawingToolType, GannConfig, GannFanDirection};
+use crate::drawings::domain::{
+    Drawing, DrawingToolType, GannConfig, GannFanDirection, gann_square_corner,
+};
 use crate::styles::{stroke, typography};
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind};
@@ -27,30 +29,15 @@ fn gann_fan_line_y(start: Pos2, end: Pos2, ratio: f32, x: f32) -> f32 {
 /// moves N price units per M time units.
 pub(super) const GANN_FAN_RATIOS: [f32; 9] = [8.0, 4.0, 3.0, 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 0.125];
 
-/// The Gann fan's lines from `start` towards the edge on `end`'s side, then
-/// the line to `end`.
+/// The Gann fan's rays from `start` to the right pane edge, then the line to `end`.
+/// The 1×1 ray (ratio 1) always passes through `end`.
 pub(super) fn gann_fan_lines(start: Pos2, end: Pos2, rect: Rect) -> Vec<[Pos2; 2]> {
-    let x = if end.x < start.x {
-        rect.min.x
-    } else {
-        rect.max.x
-    };
+    let x = rect.max.x;
     GANN_FAN_RATIOS
         .iter()
         .map(|&ratio| [start, Pos2::new(x, gann_fan_line_y(start, end, ratio, x))])
         .chain([[start, end]])
         .collect()
-}
-
-/// The corner opposite `start` of a flexible Gann square: towards
-/// `end`, as wide and high as the larger of the two distances between them.
-pub(super) fn gann_square_corner(start: Pos2, end: Pos2) -> Pos2 {
-    let size = (end.x - start.x).abs().max((end.y - start.y).abs());
-    let sign = |a: f32, b: f32| if b >= a { 1.0 } else { -1.0 };
-    Pos2::new(
-        start.x + size * sign(start.x, end.x),
-        start.y + size * sign(start.y, end.y),
-    )
 }
 
 /// The fan lines of a Gann square whose first anchor is `start` and opposite
@@ -170,11 +157,8 @@ impl Drawing {
 
         let start = self.points[0];
         let end = self.points[1];
-        let edge = if end.x < start.x {
-            chart_rect.min.x
-        } else {
-            chart_rect.max.x
-        };
+        // Rays always extend to the right pane edge; 1×1 still passes through `end`.
+        let edge = chart_rect.max.x;
         let painter = &painter.with_clip_rect(chart_rect);
 
         let color = Color32::from_rgba_unmultiplied(
@@ -184,18 +168,17 @@ impl Drawing {
             self.color[3],
         );
 
-        // Gann fan angles with colors - 9 standard Gann angles
-        // An NxM line moves N price units per M time units: N/M times the 1x1 slope
+        // An N/M line moves N price units per M time units: N/M times the 1×1 slope.
         let styles: [(&str, Color32); 9] = [
-            ("8×1", DESIGN_TOKENS.semantic.extended.bearish), // Steepest resistance
-            ("4×1", DESIGN_TOKENS.semantic.indicators.ma),    // Strong resistance
-            ("3×1", DESIGN_TOKENS.semantic.extended.favorite_gold), // Moderate resistance
-            ("2×1", DESIGN_TOKENS.semantic.extended.caution), // Mild resistance
-            ("1×1", DESIGN_TOKENS.semantic.extended.purple),  // 45° balance line
-            ("1×2", DESIGN_TOKENS.semantic.indicators.ema),   // Mild support
-            ("1×3", DESIGN_TOKENS.semantic.drawings.fib_100), // Moderate support
-            ("1×4", DESIGN_TOKENS.semantic.extended.bullish), // Strong support
-            ("1×8", DESIGN_TOKENS.semantic.extended.bullish), // Strongest support
+            ("8/1", DESIGN_TOKENS.semantic.extended.bearish),
+            ("4/1", DESIGN_TOKENS.semantic.indicators.ma),
+            ("3/1", DESIGN_TOKENS.semantic.extended.favorite_gold),
+            ("2/1", DESIGN_TOKENS.semantic.extended.caution),
+            ("1/1", DESIGN_TOKENS.semantic.extended.purple),
+            ("1/2", DESIGN_TOKENS.semantic.indicators.ema),
+            ("1/3", DESIGN_TOKENS.semantic.drawings.fib_100),
+            ("1/4", DESIGN_TOKENS.semantic.extended.bullish),
+            ("1/8", DESIGN_TOKENS.semantic.extended.bullish),
         ];
 
         let mut labels = Vec::<Rect>::new();
@@ -225,7 +208,7 @@ impl Drawing {
 
                 painter.line_segment([start, fan_end], Stroke::new(stroke_width, stroke_color));
 
-                // Draw label at chart edge with background
+                // Draw label at the right pane edge with background
                 if end_y >= chart_rect.min.y && end_y <= chart_rect.max.y {
                     let label_bg = DESIGN_TOKENS
                         .semantic
@@ -236,11 +219,7 @@ impl Drawing {
                     let gann_label_height = DESIGN_TOKENS.sizing.technical_labels.gann_label_height;
                     let label_rect = Rect::from_min_size(
                         Pos2::new(
-                            if end.x < start.x {
-                                edge + DESIGN_TOKENS.spacing.xs
-                            } else {
-                                edge - gann_label_width - DESIGN_TOKENS.spacing.xs
-                            },
+                            edge - gann_label_width - DESIGN_TOKENS.spacing.xs,
                             end_y - gann_label_height / 2.0,
                         ),
                         egui::Vec2::new(gann_label_width, gann_label_height),
@@ -648,15 +627,15 @@ mod tests {
         let start = Pos2::new(0.0, 100.0);
         let end = Pos2::new(10.0, 90.0);
         let cases = [
-            ("8x1", 8.0, 20.0),
-            ("4x1", 4.0, 60.0),
-            ("3x1", 3.0, 70.0),
-            ("2x1", 2.0, 80.0),
-            ("1x1", 1.0, 90.0),
-            ("1x2", 0.5, 95.0),
-            ("1x3", 1.0 / 3.0, 96.6667),
-            ("1x4", 0.25, 97.5),
-            ("1x8", 0.125, 98.75),
+            ("8/1", 8.0, 20.0),
+            ("4/1", 4.0, 60.0),
+            ("3/1", 3.0, 70.0),
+            ("2/1", 2.0, 80.0),
+            ("1/1", 1.0, 90.0),
+            ("1/2", 0.5, 95.0),
+            ("1/3", 1.0 / 3.0, 96.6667),
+            ("1/4", 0.25, 97.5),
+            ("1/8", 0.125, 98.75),
         ];
         for direction in [1.0, -1.0] {
             for (label, ratio, expected) in cases {
@@ -667,6 +646,60 @@ mod tests {
                     "{label} direction {direction}: {y} != {expected}"
                 );
             }
+        }
+    }
+
+    /// Rays always run to the right pane edge; the 1×1 ray still passes through p2
+    /// even when p2 lies to the left of the origin.
+    #[test]
+    fn gann_fan_rays_extend_right_and_one_by_one_through_p2() {
+        let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, 300.0));
+        for end in [Pos2::new(100.0, 50.0), Pos2::new(-50.0, 150.0)] {
+            let start = Pos2::new(0.0, 100.0);
+            let lines = gann_fan_lines(start, end, rect);
+            let one = lines
+                .iter()
+                .find(|l| (gann_fan_line_y(start, end, 1.0, l[1].x) - l[1].y).abs() < 1e-3)
+                .expect("1/1 ray");
+            assert_eq!(one[1].x, rect.max.x, "ray must end at the right edge");
+            // At p2's x the 1×1 price matches the second anchor.
+            let y_at_p2 = gann_fan_line_y(start, end, 1.0, end.x);
+            assert!((y_at_p2 - end.y).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn gann_box_default_grid_matches_standard_ratios() {
+        let config = GannConfig::default();
+        assert_eq!(
+            config.price_levels,
+            [0.0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0]
+        );
+        assert_eq!(config.time_levels, config.price_levels);
+        assert_eq!(config.fan_ratios, [3.0, 2.0, 1.0, 0.5, 1.0 / 3.0]);
+        assert_eq!(config.arc_ratios, [0.25, 0.5, 0.75, 1.0]);
+    }
+
+    /// Square arcs stay quarter-ellipses of box deltas in every quadrant.
+    #[test]
+    fn gann_square_arcs_flip_with_quadrant() {
+        let start = Pos2::new(50.0, 50.0);
+        for corner in [
+            Pos2::new(150.0, 150.0),
+            Pos2::new(-50.0, 150.0),
+            Pos2::new(150.0, -50.0),
+            Pos2::new(-50.0, -50.0),
+        ] {
+            let arcs = gann_square_arcs(start, corner, &[1.0]);
+            assert_eq!(arcs.len(), 1, "{corner:?}");
+            let (dx, dy) = (corner.x - start.x, corner.y - start.y);
+            let first = arcs[0][0];
+            let last = *arcs[0].last().unwrap();
+            assert!(
+                (first - Pos2::new(start.x + dx, start.y)).length() < 0.1
+                    && (last - Pos2::new(start.x, start.y + dy)).length() < 0.1,
+                "{corner:?}: {first:?} .. {last:?}"
+            );
         }
     }
     #[test]

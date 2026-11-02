@@ -2,7 +2,7 @@
 
 use super::tabs::CoordinatesState;
 use crate::drawings::validation::{MAX_PITCHFORK_LEVEL, MAX_STROKE_WIDTH};
-use crate::drawings::{Drawing, DrawingTemplate, TimeframeVisibility};
+use crate::drawings::{Drawing, DrawingTemplate, DrawingToolType, TimeframeVisibility};
 use crate::model::LineStyle;
 use crate::styles::typography::FONT_SIZES;
 use crate::widget::Chart;
@@ -192,8 +192,17 @@ impl DrawingProps {
             drawing.color = self.color.to_srgba_unmultiplied();
             drawing.stroke_width = self.line_width;
             drawing.line_style = self.line_style;
-            drawing.extend_left = self.extend_left;
-            drawing.extend_right = self.extend_right;
+            let fib_tool = matches!(
+                drawing.tool_type,
+                DrawingToolType::FibonacciRetracement
+                    | DrawingToolType::FibonacciExtension
+                    | DrawingToolType::FibonacciChannel
+            );
+            // Fib tools read extend from fib_config; keep Drawing.extend in sync on apply.
+            if !fib_tool {
+                drawing.extend_left = self.extend_left;
+                drawing.extend_right = self.extend_right;
+            }
             drawing.text = (!self.label.is_empty()).then(|| self.label.clone());
             let fill = self
                 .fill_enabled
@@ -229,6 +238,10 @@ impl DrawingProps {
                 drawing.regression_trend = settings.regression_trend;
                 drawing.channel_midline = settings.channel_midline;
                 drawing.show_price_labels = settings.show_price_labels;
+            }
+            if fib_tool && let Some(config) = &drawing.fib_config {
+                drawing.extend_left = config.extend_left;
+                drawing.extend_right = config.extend_right;
             }
             if drawing.id == id.0
                 && !points.is_empty()

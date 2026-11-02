@@ -634,6 +634,24 @@ impl Drawing {
         )
     }
 
+    /// Set the primary stroke colour and, for Fibonacci tools, every level colour.
+    ///
+    /// Floating toolbar / object-tree colour picks use this so a single swatch
+    /// drives the painted levels (same effect as Inputs → Use one color).
+    pub fn apply_primary_color(&mut self, color: [u8; 4]) {
+        self.color = color;
+        if self.tool_type != DrawingToolType::ElliottCorrection
+            && let Some(fill) = &mut self.fill_color
+        {
+            fill[..3].copy_from_slice(&color[..3]);
+        }
+        if let Some(config) = &mut self.fib_config {
+            for level in &mut config.levels {
+                level.color = color;
+            }
+        }
+    }
+
     /// Get the fill color as Color32, if set
     #[inline]
     pub fn fill_color32(&self) -> Option<egui::Color32> {
@@ -689,6 +707,17 @@ impl Drawing {
             min_y = min_y.min(p.y);
             max_x = max_x.max(p.x);
             max_y = max_y.max(p.y);
+        }
+
+        // Painted square can extend past the drag anchor when |Δx| ≠ |Δy|.
+        if self.tool_type == DrawingToolType::GannSquare
+            && let (Some(&start), Some(&end)) = (self.points.first(), self.points.get(1))
+        {
+            let corner = super::gann_square_corner(start, end);
+            min_x = min_x.min(corner.x);
+            min_y = min_y.min(corner.y);
+            max_x = max_x.max(corner.x);
+            max_y = max_y.max(corner.y);
         }
 
         Some(egui::Rect::from_min_max(
