@@ -44,6 +44,42 @@ pub struct PitchforkConfig {
 }
 
 impl PitchforkConfig {
+    /// Rays of a new pitchfan, matching the former fixed ratios.
+    pub fn pitchfan() -> Self {
+        let color = [255, 255, 255, 255];
+        Self {
+            levels: [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+                .map(|value| {
+                    let edge = value <= f32::EPSILON || (value - 1.0).abs() <= 1e-4;
+                    let mut level = PitchforkLevel::new(
+                        value,
+                        true,
+                        [color[0], color[1], color[2], if edge { 255 } else { 150 }],
+                    );
+                    if !edge {
+                        level.width = Some(crate::styles::stroke::HAIRLINE);
+                    }
+                    level
+                })
+                .to_vec(),
+            show_background: false,
+            background_opacity: 0,
+        }
+    }
+
+    /// Recolour a pitchfan from the drawing's primary colour, keeping inner rays lighter.
+    pub fn recolor_pitchfan(&mut self, color: [u8; 4]) {
+        for level in &mut self.levels {
+            let edge = level.value <= f32::EPSILON || (level.value - 1.0).abs() <= 1e-4;
+            level.color = [
+                color[0],
+                color[1],
+                color[2],
+                if edge { color[3] } else { 150 },
+            ];
+        }
+    }
+
     /// Standard level ratios offered in the Inputs list (median … 2× tine).
     pub const STANDARD_VALUES: [f32; 10] =
         [0.0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0, 1.5, 1.75, 2.0];

@@ -1,5 +1,6 @@
 //! Saved price and time divisions for Gann grids, and the fan and arcs of Gann squares.
 
+use crate::model::LineStyle;
 use egui::Pos2;
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,41 @@ pub enum GannFanDirection {
     Both,
 }
 
+/// Saved presentation of one ray in a Gann fan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GannFanAngle {
+    /// Whether this ray is painted.
+    pub enabled: bool,
+    /// Price units per time unit relative to the base angle. Must be positive and finite.
+    pub ratio: f32,
+    /// Ray color as unmultiplied RGBA.
+    pub color: [u8; 4],
+    /// Ray width in logical pixels.
+    pub line_width: f32,
+    /// Ray dash presentation.
+    pub line_style: LineStyle,
+}
+
+impl GannFanAngle {
+    /// Creates an enabled solid fan ray.
+    pub fn new(ratio: f32, color: [u8; 4], line_width: f32) -> Self {
+        Self {
+            enabled: true,
+            ratio,
+            color,
+            line_width,
+            line_style: LineStyle::Solid,
+        }
+    }
+}
+
+impl Default for GannFanAngle {
+    fn default() -> Self {
+        Self::new(1.0, [128, 128, 128, 255], 1.0)
+    }
+}
+
 /// Divisions of a Gann box or square, and the grid, fan and arcs of a Gann square.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -48,6 +84,8 @@ pub struct GannConfig {
     /// Radius of each arc of a Gann square around its first anchor, as a fraction of its side.
     /// Must be positive and finite; the part outside the square is not drawn.
     pub arc_ratios: Vec<f32>,
+    /// Editable rays of a standalone Gann fan.
+    pub fan_angles: Vec<GannFanAngle>,
 }
 
 impl Default for GannConfig {
@@ -63,6 +101,25 @@ impl Default for GannConfig {
             fan_direction: GannFanDirection::default(),
             show_arcs: true,
             arc_ratios: vec![0.25, 0.5, 0.75, 1.0],
+            fan_angles: default_fan_angles(),
         }
     }
+}
+
+fn default_fan_angles() -> Vec<GannFanAngle> {
+    let tokens = &crate::tokens::DESIGN_TOKENS.semantic;
+    [
+        (8.0, tokens.extended.bearish, 1.0),
+        (4.0, tokens.indicators.ma, 1.0),
+        (3.0, tokens.extended.favorite_gold, 1.0),
+        (2.0, tokens.extended.caution, 1.0),
+        (1.0, tokens.extended.purple, 2.0),
+        (0.5, tokens.indicators.ema, 1.0),
+        (1.0 / 3.0, tokens.drawings.fib_100, 1.0),
+        (0.25, tokens.extended.bullish, 1.0),
+        (0.125, tokens.extended.bullish, 1.0),
+    ]
+    .into_iter()
+    .map(|(ratio, color, width)| GannFanAngle::new(ratio, color.to_srgba_unmultiplied(), width))
+    .collect()
 }

@@ -227,65 +227,73 @@ impl Drawing {
     }
 
     pub(crate) fn render_pitchfan(&self, painter: &egui::Painter, rect: Rect) {
-        let &[center, end, boundary, ..] = self.points.as_slice() else {
+        let Some(&center) = self.points.first() else {
             return;
         };
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-        let line_stroke_main = Stroke::new(self.stroke_width, color);
-
-        for (i, (&ratio, [_, fan_end])) in PITCHFAN_RATIOS
-            .iter()
-            .zip(pitchfan_lines(center, end, boundary, rect))
-            .enumerate()
-        {
-            let line_stroke = if i == 0 || i == PITCHFAN_RATIOS.len() - 1 {
-                line_stroke_main
+        let color = self.color32();
+        if self.points.len() < 3 {
+            painter.circle_filled(center, DESIGN_TOKENS.rounding.md, color);
+            if let Some(&end) = self.points.get(1) {
+                painter.line_segment(
+                    [center, end],
+                    Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
+                );
+                painter.circle_filled(end, DESIGN_TOKENS.rounding.sm, color);
+            }
+            return;
+        }
+        let boundary = self.points[2];
+        let end = self.points[1];
+        for level in self.pitchfan_levels() {
+            let [_, fan_end] = pitchfan_ray(center, end, boundary, level.value, rect);
+            let rgba = level.color;
+            let line_color = Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
+            let width = level.width.unwrap_or(self.stroke_width);
+            if !(width > 0.0 && width <= crate::drawings::validation::MAX_STROKE_WIDTH) {
+                continue;
+            }
+            let stroke = Stroke::new(width, line_color);
+            if let Some((dash, gap)) = level.line_style.dash_pattern() {
+                super::utils::draw_dashed_line(painter, center, fan_end, stroke, dash, gap);
             } else {
-                Stroke::new(
-                    stroke::HAIRLINE,
-                    Color32::from_rgba_unmultiplied(
-                        self.color[0],
-                        self.color[1],
-                        self.color[2],
-                        150,
-                    ),
-                )
-            };
-
-            painter.line_segment([center, fan_end], line_stroke);
-
-            // Place labels at the visible end of each ray, where the fan is widest.
-            let run = fan_end - center;
-            let t = if fan_end.y < rect.min.y {
-                (rect.min.y - center.y) / run.y
-            } else if fan_end.y > rect.max.y {
-                (rect.max.y - center.y) / run.y
-            } else {
-                1.0
-            };
-            let label_pos = center + run * t;
-            if ratio > 0.0 {
+                painter.line_segment([center, fan_end], stroke);
+            }
+            if level.value > 0.0 {
+                let run = fan_end - center;
+                let t = if fan_end.y < rect.min.y {
+                    (rect.min.y - center.y) / run.y
+                } else if fan_end.y > rect.max.y {
+                    (rect.max.y - center.y) / run.y
+                } else {
+                    1.0
+                };
                 painter.text(
-                    label_pos,
+                    center + run * t,
                     if fan_end.x >= center.x {
                         egui::Align2::RIGHT_BOTTOM
                     } else {
                         egui::Align2::LEFT_BOTTOM
                     },
-                    format!("{:.1}%", ratio * 100.0),
+                    format!("{:.1}%", level.value * 100.0),
                     egui::FontId::proportional(typography::XS),
-                    color,
+                    line_color,
                 );
             }
         }
-
         painter.circle_filled(center, DESIGN_TOKENS.rounding.md, color);
         painter.circle_filled(end, DESIGN_TOKENS.rounding.sm, color);
+    }
+
+    fn pitchfan_levels(&self) -> Vec<crate::drawings::PitchforkLevel> {
+        let mut config = self
+            .pitchfork
+            .clone()
+            .unwrap_or_else(crate::drawings::PitchforkConfig::pitchfan);
+        config
+            .levels
+            .retain(|level| level.visible && (0.0..=MAX_PITCHFORK_LEVEL).contains(&level.value));
+        config.levels.sort_by(|a, b| a.value.total_cmp(&b.value));
+        config.levels
     }
 }
 
@@ -346,25 +354,24 @@ impl Drawing {
     }
 }
 
-/// Fractions along the pitchfork's tine span through which the fan rays pass.
-const PITCHFAN_RATIOS: [f32; 7] = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
-
 /// Rays from the first pivot through fractional points on the second-to-third leg.
-pub(super) fn pitchfan_lines(
-    center: Pos2,
-    end: Pos2,
-    boundary: Pos2,
-    rect: Rect,
-) -> Vec<[Pos2; 2]> {
-    PITCHFAN_RATIOS
-        .iter()
-        .map(|&ratio| {
-            [
-                center,
-                super::lines::ray_end(center, end.lerp(boundary, ratio), rect),
-            ]
-        })
-        .collect()
+pub(super) fn pitchfan_lines(drawing: &Drawing, rect: Rect) -> Vec<[Pos2; 2]> {
+    match drawing.points.as_slice() {
+        &[center, end] => vec![[center, end]],
+        &[center, end, boundary, ..] => drawing
+            .pitchfan_levels()
+            .into_iter()
+            .map(|level| pitchfan_ray(center, end, boundary, level.value, rect))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn pitchfan_ray(center: Pos2, end: Pos2, boundary: Pos2, ratio: f32, rect: Rect) -> [Pos2; 2] {
+    [
+        center,
+        super::lines::ray_end(center, end.lerp(boundary, ratio), rect),
+    ]
 }
 
 /// Median from `origin` through `through`, and the parallels from the tine anchors,

@@ -5,9 +5,11 @@
 use crate::drawings::domain::{
     Drawing, DrawingToolType, GannConfig, GannFanDirection, gann_square_corner,
 };
+use crate::model::LineStyle;
+use crate::painting::dashed_line::draw_dashed_line;
 use crate::styles::{stroke, typography};
 use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind};
+use egui::{Color32, Pos2, Rect, Stroke};
 
 /// Screen y at `x` of the fan line through `start` whose slope is `ratio`
 /// times the 1x1 slope from `start` to `end`.
@@ -27,17 +29,65 @@ fn gann_fan_line_y(start: Pos2, end: Pos2, ratio: f32, x: f32) -> f32 {
 
 /// Slopes of the Gann fan's lines as multiples of the 1x1 slope: an NxM line
 /// moves N price units per M time units.
-pub(super) const GANN_FAN_RATIOS: [f32; 9] = [8.0, 4.0, 3.0, 2.0, 1.0, 0.5, 1.0 / 3.0, 0.25, 0.125];
-
 /// The Gann fan's rays from `start` to the right pane edge, then the line to `end`.
 /// The 1×1 ray (ratio 1) always passes through `end`.
-pub(super) fn gann_fan_lines(start: Pos2, end: Pos2, rect: Rect) -> Vec<[Pos2; 2]> {
+pub(super) fn gann_fan_lines(
+    start: Pos2,
+    end: Pos2,
+    rect: Rect,
+    config: &GannConfig,
+) -> Vec<[Pos2; 2]> {
     let x = rect.max.x;
-    GANN_FAN_RATIOS
+    config
+        .fan_angles
         .iter()
-        .map(|&ratio| [start, Pos2::new(x, gann_fan_line_y(start, end, ratio, x))])
+        .filter(|angle| angle.enabled && angle.ratio.is_finite() && angle.ratio > 0.0)
+        .map(|angle| {
+            [
+                start,
+                Pos2::new(x, gann_fan_line_y(start, end, angle.ratio, x)),
+            ]
+        })
         .chain([[start, end]])
         .collect()
+}
+
+fn paint_styled_segment(
+    painter: &egui::Painter,
+    segment: [Pos2; 2],
+    stroke: Stroke,
+    style: LineStyle,
+) {
+    match style.dash_pattern() {
+        Some((dash, gap)) => {
+            draw_dashed_line(painter, segment[0], segment[1], stroke, dash, gap);
+        }
+        None => {
+            painter.line_segment(segment, stroke);
+        }
+    }
+}
+
+fn paint_styled_rect(painter: &egui::Painter, rect: Rect, stroke: Stroke, style: LineStyle) {
+    for segment in [
+        [rect.left_top(), rect.right_top()],
+        [rect.right_top(), rect.right_bottom()],
+        [rect.right_bottom(), rect.left_bottom()],
+        [rect.left_bottom(), rect.left_top()],
+    ] {
+        paint_styled_segment(painter, segment, stroke, style);
+    }
+}
+
+fn fan_angle_label(ratio: f32) -> String {
+    if ratio >= 1.0 {
+        format!("{ratio:.3}/1")
+    } else {
+        format!("1/{:.3}", 1.0 / ratio)
+    }
+    .replace(".000", "")
+    .replace(".00", "")
+    .replace(".0", "")
 }
 
 /// The fan lines of a Gann square whose first anchor is `start` and opposite
@@ -139,11 +189,23 @@ impl Drawing {
                         50
                     },
                 );
-                let stroke = Stroke::new(DESIGN_TOKENS.stroke.extra_thin, color);
+                let stroke = Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color);
                 if vertical {
-                    painter.vline(start.x + (end.x - start.x) * ratio, rect.y_range(), stroke);
+                    let x = start.x + (end.x - start.x) * ratio;
+                    paint_styled_segment(
+                        painter,
+                        [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)],
+                        stroke,
+                        self.line_style,
+                    );
                 } else {
-                    painter.hline(rect.x_range(), start.y + (end.y - start.y) * ratio, stroke);
+                    let y = start.y + (end.y - start.y) * ratio;
+                    paint_styled_segment(
+                        painter,
+                        [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)],
+                        stroke,
+                        self.line_style,
+                    );
                 }
             }
         }
@@ -168,45 +230,31 @@ impl Drawing {
             self.color[3],
         );
 
-        // An N/M line moves N price units per M time units: N/M times the 1×1 slope.
-        let styles: [(&str, Color32); 9] = [
-            ("8/1", DESIGN_TOKENS.semantic.extended.bearish),
-            ("4/1", DESIGN_TOKENS.semantic.indicators.ma),
-            ("3/1", DESIGN_TOKENS.semantic.extended.favorite_gold),
-            ("2/1", DESIGN_TOKENS.semantic.extended.caution),
-            ("1/1", DESIGN_TOKENS.semantic.extended.purple),
-            ("1/2", DESIGN_TOKENS.semantic.indicators.ema),
-            ("1/3", DESIGN_TOKENS.semantic.drawings.fib_100),
-            ("1/4", DESIGN_TOKENS.semantic.extended.bullish),
-            ("1/8", DESIGN_TOKENS.semantic.extended.bullish),
-        ];
-
+        let default = GannConfig::default();
+        let config = self.gann.as_ref().unwrap_or(&default);
         let mut labels = Vec::<Rect>::new();
-        for (angle_ratio, (label, angle_color)) in GANN_FAN_RATIOS.iter().zip(&styles) {
-            let end_y = gann_fan_line_y(start, end, *angle_ratio, edge);
+        for angle in config
+            .fan_angles
+            .iter()
+            .filter(|angle| angle.enabled && angle.ratio.is_finite() && angle.ratio > 0.0)
+        {
+            let end_y = gann_fan_line_y(start, end, angle.ratio, edge);
 
             // Only draw if within reasonable bounds
             if end_y.is_finite() {
                 let fan_end = Pos2::new(edge, end_y);
-
-                // Use color based on angle (1:1 is thicker)
-                let stroke_width = if (*angle_ratio - 1.0).abs() < 0.01 {
-                    stroke::THICK
-                } else {
-                    stroke::HAIRLINE
-                };
-                let stroke_color = if self.color[3] == 255 {
-                    *angle_color
-                } else {
-                    Color32::from_rgba_unmultiplied(
-                        angle_color.r(),
-                        angle_color.g(),
-                        angle_color.b(),
-                        180,
-                    )
-                };
-
-                painter.line_segment([start, fan_end], Stroke::new(stroke_width, stroke_color));
+                let stroke_color = Color32::from_rgba_unmultiplied(
+                    angle.color[0],
+                    angle.color[1],
+                    angle.color[2],
+                    angle.color[3],
+                );
+                paint_styled_segment(
+                    painter,
+                    [start, fan_end],
+                    Stroke::new(angle.line_width.max(stroke::HAIRLINE), stroke_color),
+                    angle.line_style,
+                );
 
                 // Draw label at the right pane edge with background
                 if end_y >= chart_rect.min.y && end_y <= chart_rect.max.y {
@@ -232,7 +280,7 @@ impl Drawing {
                     painter.text(
                         label_rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        *label,
+                        fan_angle_label(angle.ratio),
                         egui::FontId::proportional(typography::XS),
                         stroke_color,
                     );
@@ -241,7 +289,12 @@ impl Drawing {
         }
 
         // Draw the base trend line (connecting start to end)
-        painter.line_segment([start, end], Stroke::new(self.stroke_width, color));
+        paint_styled_segment(
+            painter,
+            [start, end],
+            Stroke::new(self.stroke_width, color),
+            self.line_style,
+        );
 
         // Draw anchor points
         painter.circle_filled(start, DESIGN_TOKENS.rounding.lg, color);
@@ -281,11 +334,11 @@ impl Drawing {
         painter.rect_filled(square_rect, 0.0, fill_color);
 
         // Draw main square border
-        painter.rect_stroke(
+        paint_styled_rect(
+            painter,
             square_rect,
-            0.0,
             Stroke::new(self.stroke_width, color),
-            StrokeKind::Inside,
+            self.line_style,
         );
 
         let config = self.gann.clone().unwrap_or_default();
@@ -297,13 +350,13 @@ impl Drawing {
         if config.show_fan {
             let line_color =
                 Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 200);
-            for (ratio, segment) in gann_square_fan_lines(start, corner, &config) {
-                let width = if ratio == 1.0 {
-                    stroke::MEDIUM
-                } else {
-                    stroke::HAIRLINE
-                };
-                painter.line_segment(segment, Stroke::new(width, line_color));
+            for (_ratio, segment) in gann_square_fan_lines(start, corner, &config) {
+                paint_styled_segment(
+                    painter,
+                    segment,
+                    Stroke::new(self.stroke_width.max(stroke::HAIRLINE), line_color),
+                    self.line_style,
+                );
             }
         }
 
@@ -311,10 +364,14 @@ impl Drawing {
             let arc_color =
                 Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 100);
             for arc in gann_square_arcs(start, corner, &config.arc_ratios) {
-                painter.add(egui::Shape::line(
-                    arc,
-                    Stroke::new(stroke::HAIRLINE, arc_color),
-                ));
+                for pair in arc.windows(2) {
+                    paint_styled_segment(
+                        painter,
+                        [pair[0], pair[1]],
+                        Stroke::new(self.stroke_width.max(stroke::HAIRLINE), arc_color),
+                        self.line_style,
+                    );
+                }
             }
         }
 
@@ -349,11 +406,11 @@ impl Drawing {
         painter.rect_filled(rect, 0.0, fill_color);
 
         // Draw main box border
-        painter.rect_stroke(
+        paint_styled_rect(
+            painter,
             rect,
-            0.0,
             Stroke::new(self.stroke_width, color),
-            StrokeKind::Inside,
+            self.line_style,
         );
 
         self.draw_gann_grid(painter, p1, p2);
@@ -361,13 +418,17 @@ impl Drawing {
         // Draw main diagonals (1:1 angles)
         let diag_color =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 200);
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [rect.left_top(), rect.right_bottom()],
-            Stroke::new(stroke::MEDIUM, diag_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), diag_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [rect.right_top(), rect.left_bottom()],
-            Stroke::new(stroke::MEDIUM, diag_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), diag_color),
+            self.line_style,
         );
 
         // Draw Gann angle lines from corners (2:1, 3:1, 4:1 angles)
@@ -375,9 +436,11 @@ impl Drawing {
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 120);
 
         for segment in gann_box_angle_lines(p1, p2) {
-            painter.line_segment(
+            paint_styled_segment(
+                painter,
                 segment,
-                Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+                Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+                self.line_style,
             );
         }
 
@@ -463,11 +526,11 @@ impl Drawing {
         painter.rect_filled(rect, 0.0, fill_color);
 
         // Draw outer square
-        painter.rect_stroke(
+        paint_styled_rect(
+            painter,
             rect,
-            0.0,
             Stroke::new(self.stroke_width, color),
-            StrokeKind::Inside,
+            self.line_style,
         );
 
         self.draw_gann_grid(painter, p1, p2);
@@ -475,25 +538,37 @@ impl Drawing {
         // Draw main diagonals (1:1 Gann angles)
         let diag_color =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 200);
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [rect.left_top(), rect.right_bottom()],
-            Stroke::new(stroke::MEDIUM, diag_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), diag_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [rect.right_top(), rect.left_bottom()],
-            Stroke::new(stroke::MEDIUM, diag_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), diag_color),
+            self.line_style,
         );
 
         // Draw cardinal cross through center
-        painter.hline(
-            rect.x_range(),
-            center.y,
-            Stroke::new(stroke::HAIRLINE, diag_color),
+        paint_styled_segment(
+            painter,
+            [
+                Pos2::new(rect.min.x, center.y),
+                Pos2::new(rect.max.x, center.y),
+            ],
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), diag_color),
+            self.line_style,
         );
-        painter.vline(
-            center.x,
-            rect.y_range(),
-            Stroke::new(stroke::HAIRLINE, diag_color),
+        paint_styled_segment(
+            painter,
+            [
+                Pos2::new(center.x, rect.min.y),
+                Pos2::new(center.x, rect.max.y),
+            ],
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), diag_color),
+            self.line_style,
         );
 
         // Draw 45° angle lines from each corner to opposite edges
@@ -506,37 +581,53 @@ impl Drawing {
         let mid_left = Pos2::new(rect.min.x, center.y);
         let mid_right = Pos2::new(rect.max.x, center.y);
 
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_top, rect.left_bottom()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_top, rect.right_bottom()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_bottom, rect.left_top()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_bottom, rect.right_top()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_left, rect.right_top()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_left, rect.right_bottom()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_right, rect.left_top()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
-        painter.line_segment(
+        paint_styled_segment(
+            painter,
             [mid_right, rect.left_bottom()],
-            Stroke::new(DESIGN_TOKENS.stroke.light, angle_color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), angle_color),
+            self.line_style,
         );
 
         // Draw aspect ratio label
@@ -656,7 +747,7 @@ mod tests {
         let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, 300.0));
         for end in [Pos2::new(100.0, 50.0), Pos2::new(-50.0, 150.0)] {
             let start = Pos2::new(0.0, 100.0);
-            let lines = gann_fan_lines(start, end, rect);
+            let lines = gann_fan_lines(start, end, rect, &GannConfig::default());
             let one = lines
                 .iter()
                 .find(|l| (gann_fan_line_y(start, end, 1.0, l[1].x) - l[1].y).abs() < 1e-3)
@@ -724,7 +815,7 @@ mod tests {
         let output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
             drawing.render_gann_fixed(ui.painter())
         });
-        let verticals=output.shapes.iter().filter(|s|matches!(&s.shape,egui::Shape::LineSegment{points,stroke} if stroke.width==DESIGN_TOKENS.stroke.extra_thin && points[0].x==points[1].x && points[0].y==100.0 && points[1].y==200.0)).count();
+        let verticals=output.shapes.iter().filter(|s|matches!(&s.shape,egui::Shape::LineSegment{points,stroke} if stroke.width==drawing.stroke_width && stroke.color.a()<200 && points[0].x==points[1].x && points[0].x>20.0 && points[0].x<120.0 && points[0].y==100.0 && points[1].y==200.0)).count();
         output.drop_without_applying_deltas();
         assert_eq!(
             verticals, 3,
@@ -818,5 +909,53 @@ mod tests {
             near(arcs[1][0], Pos2::new(100.0, 66.33))
                 && near(*arcs[1].last().unwrap(), Pos2::new(66.33, 100.0))
         );
+    }
+
+    #[test]
+    fn standalone_fan_uses_saved_enabled_ratios_and_legacy_defaults() {
+        let mut config = GannConfig::default();
+        config.fan_angles.truncate(2);
+        config.fan_angles[0].enabled = false;
+        config.fan_angles[1].ratio = 2.5;
+        let start = Pos2::new(0.0, 100.0);
+        let end = Pos2::new(10.0, 90.0);
+        let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 200.0));
+        let lines = gann_fan_lines(start, end, rect, &config);
+        assert_eq!(lines.len(), 2, "one enabled ray plus the base line");
+        assert!((lines[0][1].y - -150.0).abs() < 1e-3);
+
+        config.fan_angles[1].color = [10, 20, 30, 255];
+        config.fan_angles[1].line_width = 3.0;
+        config.fan_angles[1].line_style = LineStyle::Dashed;
+        let mut drawing = Drawing::new(0, DrawingToolType::GannFan);
+        drawing.points = vec![start, end];
+        drawing.gann = Some(config);
+        let output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
+            drawing.render_gann_fan(ui.painter(), rect)
+        });
+        let styled_segments = output
+            .shapes
+            .iter()
+            .filter(|shape| {
+                matches!(
+                    &shape.shape,
+                    egui::Shape::LineSegment { stroke, .. }
+                        if stroke.width == 3.0
+                            && stroke.color == Color32::from_rgb(10, 20, 30)
+                )
+            })
+            .count();
+        output.drop_without_applying_deltas();
+        assert!(
+            styled_segments > 1,
+            "the configured dashed ray uses its color, width, and style"
+        );
+
+        let restored: GannConfig = serde_json::from_value(serde_json::json!({
+            "price_levels": [0.5],
+            "time_levels": [0.5]
+        }))
+        .unwrap();
+        assert_eq!(restored.fan_angles, GannConfig::default().fan_angles);
     }
 }

@@ -26,7 +26,7 @@ pub(crate) mod utils {
 
 pub use traits::DrawingRenderer;
 
-use crate::drawings::domain::{Drawing, DrawingToolType};
+use crate::drawings::domain::{Drawing, DrawingToolType, GannConfig};
 use crate::model::{Bar, SpanCache};
 use egui::{Pos2, Rect};
 use std::rc::Rc;
@@ -285,10 +285,12 @@ impl Drawing {
                 outline.lines = self.pitchfork_lines(rect)?;
                 outline.areas = self.pitchfork_bands(rect);
             }
-            T::Pitchfan => {
-                outline.lines = pitchfork::pitchfan_lines(first, second, *p.get(2)?, rect)
+            T::Pitchfan => outline.lines = pitchfork::pitchfan_lines(self, rect),
+            T::GannFan => {
+                let default = GannConfig::default();
+                let config = self.gann.as_ref().unwrap_or(&default);
+                outline.lines = gann::gann_fan_lines(first, second, rect, config);
             }
-            T::GannFan => outline.lines = gann::gann_fan_lines(first, second, rect),
             T::FlatTopBottom | T::DisjointChannel => return self.wedge_channel_outline(rect),
             T::ParallelChannel => return self.parallel_channel_outline(rect),
             T::FibonacciTimeZones => outline.lines = self.fibonacci_time_zone_lines(rect),
@@ -1209,6 +1211,26 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn three_anchor_tools_preview_their_first_leg() {
+        for tool in [DrawingToolType::Pitchfan, DrawingToolType::FibonacciWedge] {
+            let mut drawing = Drawing::new(1, tool);
+            drawing.points = vec![Pos2::new(40.0, 80.0), Pos2::new(180.0, 140.0)];
+            let shapes = paint(&drawing);
+            fn has_guide(shapes: &[Shape]) -> bool {
+                shapes.iter().any(|shape| match shape {
+                    Shape::Vec(inner) => has_guide(inner),
+                    Shape::LineSegment { points, .. } => {
+                        points[0].distance(Pos2::new(40.0, 80.0)) < 1.0
+                            && points[1].distance(Pos2::new(180.0, 140.0)) < 1.0
+                    }
+                    _ => false,
+                })
+            }
+            assert!(has_guide(&shapes), "{tool:?} hides its first anchor");
         }
     }
 

@@ -305,6 +305,16 @@ impl DrawingProps {
             }) {
                 return Err("Gann fan and arc ratios must be positive and finite");
             }
+            if settings.gann.as_ref().is_some_and(|c| {
+                c.fan_angles.iter().any(|angle| {
+                    !angle.ratio.is_finite()
+                        || angle.ratio <= 0.0
+                        || !angle.line_width.is_finite()
+                        || !(angle.line_width > 0.0 && angle.line_width <= MAX_STROKE_WIDTH)
+                })
+            }) {
+                return Err("Gann fan angles require positive ratios and widths up to 100");
+            }
             if settings.ghost_feed.is_some_and(|c| !c.is_valid()) {
                 return Err(
                     "Ghost feed average range must be positive and noise nonnegative, both finite",

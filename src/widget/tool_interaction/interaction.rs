@@ -218,7 +218,9 @@ pub fn handle_active_tool<F1, F2>(
     // Set crosshair cursor for drag-to-draw tools
     if matches!(
         interaction_mode,
-        DrawingInteractionMode::DragToDraw | DrawingInteractionMode::ContinuousDraw
+        DrawingInteractionMode::DragToDraw
+            | DrawingInteractionMode::ContinuousDraw
+            | DrawingInteractionMode::MultiPoint
     ) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
     }

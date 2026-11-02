@@ -5999,6 +5999,7 @@ mod tests {
             (Tool::SchiffPitchfork, "Pitchfork levels"),
             (Tool::ModifiedSchiffPitchfork, "Pitchfork levels"),
             (Tool::InsidePitchfork, "Pitchfork levels"),
+            (Tool::Pitchfan, "Fan levels"),
             (Tool::GannBox, "Price divisions"),
             (Tool::GannSquare, "Price divisions"),
             (Tool::GannFixed, "Price divisions"),
@@ -6007,7 +6008,6 @@ mod tests {
             (Tool::FixedRangeVolumeProfile, "Rows"),
             (Tool::AnchoredVolumeProfile, "Rows"),
             (Tool::RegressionTrend, "Deviations"),
-            (Tool::ParallelChannel, "Show middle line"),
         ] {
             app.chart.drawings_mut().drawings.clear();
             let mut drawing = Drawing::new(7, tool);

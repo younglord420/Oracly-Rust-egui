@@ -298,7 +298,7 @@ impl Drawing {
             volume_profile: None,
             regression_trend: (tool_type == DrawingToolType::RegressionTrend)
                 .then(RegressionTrendConfig::default),
-            pitchfork: None,
+            pitchfork: (tool_type == DrawingToolType::Pitchfan).then(PitchforkConfig::pitchfan),
             channel_midline: matches!(tool_type, DrawingToolType::ParallelChannel),
             show_price_labels: matches!(
                 tool_type,
@@ -323,6 +323,11 @@ impl Drawing {
     pub fn with_color(id: usize, tool_type: DrawingToolType, color: [u8; 4]) -> Self {
         let mut drawing = Self::new(id, tool_type);
         drawing.color = color;
+        if tool_type == DrawingToolType::Pitchfan
+            && let Some(config) = &mut drawing.pitchfork
+        {
+            config.recolor_pitchfan(color);
+        }
         if tool_type != DrawingToolType::ElliottCorrection
             && let Some(fill) = &mut drawing.fill_color
         {

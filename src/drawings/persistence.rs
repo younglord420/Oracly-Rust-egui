@@ -254,6 +254,20 @@ impl StoredDrawing {
                     .flat_map(|c| c.arc_ratios.iter().copied())
                     .collect(),
             ),
+            (
+                "gann.fan_angles",
+                d.gann
+                    .iter()
+                    .flat_map(|c| c.fan_angles.iter().map(|angle| angle.ratio))
+                    .collect(),
+            ),
+            (
+                "gann.fan_angle_widths",
+                d.gann
+                    .iter()
+                    .flat_map(|c| c.fan_angles.iter().map(|angle| angle.line_width))
+                    .collect(),
+            ),
         ] {
             // Pitchfork tines are drawn at their multiple of the median's distance.
             let limit = if name == "pitchfork.levels" {
@@ -970,6 +984,13 @@ mod tests {
                 fan_direction: crate::drawings::GannFanDirection::Reverse,
                 show_arcs: false,
                 arc_ratios: vec![0.75],
+                fan_angles: vec![crate::drawings::GannFanAngle {
+                    enabled: false,
+                    ratio: 2.5,
+                    color: [10, 20, 30, 40],
+                    line_width: 3.0,
+                    line_style: LineStyle::Dashed,
+                }],
             });
             drawing.ghost_feed = Some(crate::drawings::GhostFeedConfig {
                 average_range_ticks: 2.5,

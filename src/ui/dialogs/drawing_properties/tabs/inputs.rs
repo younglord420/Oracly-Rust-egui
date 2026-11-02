@@ -1,7 +1,7 @@
 //! Inputs that correspond to the selected tool's saved drawing configuration.
 
 use crate::drawings::{
-    Drawing, DrawingToolType as Tool, FibonacciLevel, GannConfig, GannFanDirection,
+    Drawing, DrawingToolType as Tool, FibonacciLevel, GannConfig, GannFanAngle, GannFanDirection,
     PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource, TextHorizontalAlign,
     TextVerticalAlign,
 };
@@ -35,6 +35,8 @@ impl InputsTab {
                 | Tool::SchiffPitchfork
                 | Tool::ModifiedSchiffPitchfork
                 | Tool::InsidePitchfork
+                | Tool::Pitchfan
+                | Tool::GannFan
                 | Tool::GannBox
                 | Tool::GannSquare
                 | Tool::GannFixed
@@ -44,7 +46,6 @@ impl InputsTab {
                 | Tool::FixedRangeVolumeProfile
                 | Tool::AnchoredVolumeProfile
                 | Tool::RegressionTrend
-                | Tool::ParallelChannel
         )
     }
 
@@ -63,6 +64,8 @@ impl InputsTab {
             | Tool::SchiffPitchfork
             | Tool::ModifiedSchiffPitchfork
             | Tool::InsidePitchfork => pitchfork(ui, drawing, pickers),
+            Tool::Pitchfan => pitchfan(ui, drawing, pickers),
+            Tool::GannFan => gann_fan(ui, drawing, pickers),
             Tool::GannBox | Tool::GannSquare | Tool::GannFixed => {
                 let mut config = drawing.gann.clone().unwrap_or_else(|| {
                     if drawing.tool_type == Tool::GannFixed {
@@ -428,12 +431,6 @@ impl InputsTab {
                 {
                     drawing.regression_trend = Some(valid);
                 }
-            }
-            Tool::ParallelChannel => {
-                ui.checkbox(
-                    &mut drawing.channel_midline,
-                    l10n::text(ui.ctx(), "Show middle line"),
-                );
             }
             _ => {}
         }
@@ -975,6 +972,115 @@ fn pitchfork(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
     }
 }
 
+fn pitchfan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let mut config = drawing.pitchfork.clone().unwrap_or_else(|| {
+        let mut config = PitchforkConfig::pitchfan();
+        config.recolor_pitchfan(drawing.color);
+        config
+    });
+    let original = config.clone();
+    ui.strong(l10n::text(ui.ctx(), "Fan levels"));
+    level_grid(
+        ui,
+        &mut config.levels,
+        pickers,
+        PitchforkLevel::new(0.5, true, drawing.color),
+        |level| LevelRow {
+            visible: &mut level.visible,
+            value: &mut level.value,
+            legacy_label: None,
+            color: &mut level.color,
+            line_style: Some(&mut level.line_style),
+            width: Some((&mut level.width, drawing.stroke_width)),
+            range: 0.0..=crate::drawings::validation::MAX_PITCHFORK_LEVEL,
+        },
+    );
+    if config != original {
+        drawing.pitchfork = Some(config);
+    }
+}
+
+fn gann_fan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let mut config = drawing.gann.clone().unwrap_or_default();
+    let original = config.clone();
+    let theme = ui.active_theme();
+    let control_h = super::style::control_row_height(ui);
+    let compact = ui.available_width() < 300.0;
+    let ratio_w = if compact { 50.0 } else { 62.0 };
+    let style_w = if compact { 54.0 } else { 72.0 };
+    let width_w = if compact { 48.0 } else { 62.0 };
+    let mut remove = None;
+
+    pickers.resize_with(config.fan_angles.len(), ColorPickerState::default);
+    ui.strong(l10n::text(ui.ctx(), "Fan angles"));
+    egui::Grid::new(ui.scope_id().with("gann_fan_angles"))
+        .num_columns(6)
+        .spacing([theme.spacing.xs, theme.spacing.xs])
+        .show(ui, |ui| {
+            for (index, angle) in config.fan_angles.iter_mut().enumerate() {
+                ui.push_id(index, |ui| {
+                    let name = |ui: &Ui, property| {
+                        l10n::format_text(ui.ctx(), property, &[("0", (index + 1).to_string())])
+                    };
+                    ui.checkbox(&mut angle.enabled, "")
+                        .accessible_name(name(ui, "Angle {0} visible"));
+                    ui.add_sized(
+                        [ratio_w, control_h],
+                        egui::DragValue::new(&mut angle.ratio)
+                            .range(f32::MIN_POSITIVE..=f32::MAX)
+                            .speed(0.01)
+                            .max_decimals(6),
+                    )
+                    .accessible_name(name(ui, "Angle {0} ratio"));
+                    level_color(ui, &mut angle.color, &mut pickers[index]);
+                    super::style::line_width_combo_with_id(
+                        ui,
+                        ("gann_fan_angle_width", index),
+                        &name(ui, "Angle {0} width"),
+                        &mut angle.line_width,
+                        width_w,
+                        control_h,
+                    );
+                    super::style::line_style_combo(
+                        ui,
+                        ("gann_fan_angle_style", index),
+                        &name(ui, "Angle {0} line style"),
+                        &mut angle.line_style,
+                        style_w,
+                        control_h,
+                    );
+                    if Button::icon(&crate::icons::icons::TRASH)
+                        .ghost()
+                        .small()
+                        .tooltip("Remove")
+                        .show(ui)
+                        .clicked()
+                    {
+                        remove = Some(index);
+                    }
+                });
+                ui.end_row();
+            }
+        });
+    if let Some(index) = remove {
+        config.fan_angles.remove(index);
+        pickers.remove(index);
+    }
+    if Button::new("Add angle")
+        .secondary()
+        .small()
+        .show(ui)
+        .clicked()
+    {
+        config
+            .fan_angles
+            .push(GannFanAngle::new(1.0, drawing.color, drawing.stroke_width));
+    }
+    if config != original {
+        drawing.gann = Some(config);
+    }
+}
+
 fn fractions(
     ui: &mut Ui,
     title: &str,
@@ -1045,4 +1151,29 @@ fn level_color(ui: &mut Ui, color: &mut [u8; 4], state: &mut ColorPickerState) -
         return true;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inputs_cover_all_configured_fib_tools_and_gann_fan() {
+        for tool in [
+            Tool::FibonacciRetracement,
+            Tool::FibonacciExtension,
+            Tool::FibonacciChannel,
+            Tool::FibonacciWedge,
+            Tool::FibonacciTimeZones,
+            Tool::FibonacciSpeedFan,
+            Tool::TrendBasedFibTime,
+            Tool::FibonacciCircles,
+            Tool::FibonacciSpeedResistanceArcs,
+            Tool::GannFan,
+            Tool::Pitchfan,
+        ] {
+            assert!(InputsTab::available(tool), "{tool:?}");
+        }
+        assert!(!InputsTab::available(Tool::FibonacciSpiral));
+    }
 }

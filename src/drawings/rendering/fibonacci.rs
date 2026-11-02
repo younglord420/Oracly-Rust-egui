@@ -574,8 +574,8 @@ impl Drawing {
             self.color[3],
         );
 
-        // Fill bands between consecutive enabled levels sorted by ratio.
-        if (config.show_background || self.fill_color.is_some()) && visible_levels.len() > 1 {
+        // Background is the only channel fill; the generic fill swatch does not apply here.
+        if config.show_background && visible_levels.len() > 1 {
             let mut bands: Vec<(&FibonacciLevel, [Pos2; 2])> = visible_levels
                 .iter()
                 .copied()
@@ -584,14 +584,12 @@ impl Drawing {
             bands.sort_by(|a, b| a.0.value.total_cmp(&b.0.value));
             for window in bands.windows(2) {
                 let ((_, [p1_lo, p2_lo]), (hi, [p1_hi, p2_hi])) = (window[0], window[1]);
-                let fill_color = self.fill_color32().unwrap_or_else(|| {
-                    Color32::from_rgba_unmultiplied(
-                        hi.color[0],
-                        hi.color[1],
-                        hi.color[2],
-                        config.background_opacity,
-                    )
-                });
+                let fill_color = Color32::from_rgba_unmultiplied(
+                    hi.color[0],
+                    hi.color[1],
+                    hi.color[2],
+                    config.background_opacity,
+                );
                 painter.add(egui::epaint::PathShape::convex_polygon(
                     vec![p1_lo, p2_lo, p2_hi, p1_hi],
                     fill_color,
@@ -609,12 +607,10 @@ impl Drawing {
                 level.color[3],
             );
 
-            let stroke_width = if level.value == 0.0 || level.value == 1.0 {
-                self.stroke_width
-            } else {
-                stroke::HAIRLINE
-            };
-            painter.line_segment([draw_start, draw_end], Stroke::new(stroke_width, lvl_color));
+            painter.line_segment(
+                [draw_start, draw_end],
+                Stroke::new(config.levels_line_width.max(stroke::HAIRLINE), lvl_color),
+            );
 
             let h_align = config.effective_h_align();
             let point = match h_align {
@@ -809,23 +805,21 @@ impl Drawing {
         let config = self.fibonacci_config();
         let mut levels: Vec<_> = config.visible_levels().collect();
         levels.sort_by(|a, b| a.value.total_cmp(&b.value));
-        if config.show_background || self.fill_color.is_some() {
+        if config.show_background {
             for pair in levels.windows(2) {
                 let a = speed_fan_line_end(start, end, pair[0].value, chart_rect);
                 let b = speed_fan_line_end(start, end, pair[1].value, chart_rect);
                 if a.is_finite() && b.is_finite() {
                     painter.add(egui::Shape::convex_polygon(
                         vec![start, a, b],
-                        self.fill_color32().unwrap_or_else(|| {
-                            band_color(
-                                if self.fib_config.is_none() {
-                                    pair[0]
-                                } else {
-                                    pair[1]
-                                },
-                                config.background_opacity,
-                            )
-                        }),
+                        band_color(
+                            if self.fib_config.is_none() {
+                                pair[0]
+                            } else {
+                                pair[1]
+                            },
+                            config.background_opacity,
+                        ),
                         Stroke::NONE,
                     ));
                 }
@@ -934,6 +928,23 @@ impl Drawing {
     }
 
     pub(crate) fn render_fibonacci_wedge(&self, painter: &egui::Painter, rect: Rect) {
+        let Some(&start) = self.points.first() else {
+            return;
+        };
+        if self.points.len() < 3 {
+            let color = self.color32();
+            painter.circle_filled(start, DESIGN_TOKENS.rounding.md, color);
+            if let Some(&edge) = self.points.get(1) {
+                self.styled_segment(
+                    painter,
+                    start,
+                    edge,
+                    Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
+                );
+                painter.circle_filled(edge, DESIGN_TOKENS.rounding.sm, color);
+            }
+            return;
+        }
         let &[start, edge, boundary, ..] = self.points.as_slice() else {
             return;
         };
@@ -997,9 +1008,16 @@ impl Drawing {
     }
 
     pub(super) fn fibonacci_wedge_outline(&self) -> Option<super::Outline> {
-        let &[start, edge, boundary, ..] = self.points.as_slice() else {
+        let &[start, edge, ..] = self.points.as_slice() else {
             return None;
         };
+        if self.points.len() < 3 {
+            return Some(super::Outline {
+                lines: vec![[start, edge]],
+                ..super::Outline::default()
+            });
+        }
+        let boundary = self.points[2];
         let config = self.fib_config.clone().unwrap_or_default();
         let mut outline = super::Outline::default();
         let mut outer = 0.0_f32;

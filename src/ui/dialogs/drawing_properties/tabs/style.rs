@@ -19,6 +19,9 @@ const LINE_WIDTHS: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
 
 /// Primary line styles shown in the Appearance style combo.
 const LINE_STYLES: [LineStyle; 3] = [LineStyle::Solid, LineStyle::Dashed, LineStyle::Dotted];
+const LINE_PICKER: usize = 0;
+const FILL_PICKER: usize = 1;
+const FIB_TREND_PICKER: usize = 2;
 
 /// Standard control height for Drawing Properties rows (28px).
 pub(super) fn control_row_height(_ui: &Ui) -> f32 {
@@ -35,6 +38,19 @@ pub(super) fn control_column_width(ui: &Ui) -> f32 {
     }
 }
 
+fn has_fib_style_controls(tool: DrawingToolType) -> bool {
+    matches!(
+        tool,
+        DrawingToolType::FibonacciRetracement
+            | DrawingToolType::FibonacciExtension
+            | DrawingToolType::FibonacciChannel
+    )
+}
+
+fn shows_generic_line_row(tool: DrawingToolType) -> bool {
+    !has_fib_style_controls(tool)
+}
+
 /// Style / Appearance section renderer.
 pub struct StyleTab;
 
@@ -43,8 +59,16 @@ impl StyleTab {
     pub fn show(ui: &mut Ui, props: &mut DrawingProps, pickers: &mut Vec<ColorPickerState>) {
         let tool = props.tool_settings.as_ref().map(|t| t.settings.tool_type);
         let regression = tool == Some(DrawingToolType::RegressionTrend);
-        if pickers.len() < if regression { 7 } else { 2 } {
-            pickers.resize_with(if regression { 7 } else { 2 }, ColorPickerState::default);
+        let fib_tool = tool.is_some_and(has_fib_style_controls);
+        let picker_count = if regression {
+            7
+        } else if fib_tool {
+            FIB_TREND_PICKER + 1
+        } else {
+            FILL_PICKER + 1
+        };
+        if pickers.len() < picker_count {
+            pickers.resize_with(picker_count, ColorPickerState::default);
         }
         let theme = ui.active_theme();
         let gap = 6.0;
@@ -58,54 +82,46 @@ impl StyleTab {
         let style_chip_w = (pair_w - width_chip_w).max(56.0);
         let ends_combo_w = col_w;
 
-        ui.horizontal(|ui| {
-            ui.set_min_height(control_h);
-            ui.spacing_mut().item_spacing.x = gap;
-            if !compact {
-                ui.label(
-                    egui::RichText::new(l10n::text(ui.ctx(), "Line"))
-                        .size(theme.text.body)
-                        .color(theme.ui.text_secondary),
-                );
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.allocate_ui_with_layout(
-                    Vec2::new(col_w.min(ui.available_width()), control_h),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.spacing_mut().item_spacing.x = gap;
-                        if let Some(color) = color_swatch(
-                            ui,
-                            &mut pickers[0],
-                            props.color,
-                            "drawing_props_color",
-                            true,
-                        ) {
-                            props.color = color;
-                            // Keep Fibonacci level colours in sync with the Line swatch
-                            // (same as Inputs → Use one color / floating toolbar).
-                            if let Some(template) = &mut props.tool_settings
-                                && let Some(config) = &mut template.settings.fib_config
-                            {
-                                let rgba = color.to_srgba_unmultiplied();
-                                for level in &mut config.levels {
-                                    level.color = rgba;
-                                }
+        if tool.is_none_or(shows_generic_line_row) {
+            ui.horizontal(|ui| {
+                ui.set_min_height(control_h);
+                ui.spacing_mut().item_spacing.x = gap;
+                if !compact {
+                    ui.label(
+                        egui::RichText::new(l10n::text(ui.ctx(), "Line"))
+                            .size(theme.text.body)
+                            .color(theme.ui.text_secondary),
+                    );
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(col_w.min(ui.available_width()), control_h),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = gap;
+                            if let Some(color) = color_swatch(
+                                ui,
+                                &mut pickers[LINE_PICKER],
+                                props.color,
+                                "drawing_props_color",
+                                true,
+                            ) {
+                                props.color = color;
                             }
-                        }
-                        line_width_combo(ui, &mut props.line_width, width_chip_w, control_h);
-                        line_style_combo(
-                            ui,
-                            "drawing_props_line_style",
-                            "Line style",
-                            &mut props.line_style,
-                            style_chip_w,
-                            control_h,
-                        );
-                    },
-                );
+                            line_width_combo(ui, &mut props.line_width, width_chip_w, control_h);
+                            line_style_combo(
+                                ui,
+                                "drawing_props_line_style",
+                                "Line style",
+                                &mut props.line_style,
+                                style_chip_w,
+                                control_h,
+                            );
+                        },
+                    );
+                });
             });
-        });
+        }
 
         let show_extend = tool.is_some_and(|tool| tool.supports_extend());
         let show_ends = props.tool_settings.as_ref().is_some_and(|t| {
@@ -119,14 +135,6 @@ impl StyleTab {
                     | DrawingToolType::Arrow
                     | DrawingToolType::Path
                     | DrawingToolType::Polyline
-            )
-        });
-        let fib_tool = tool.is_some_and(|tool| {
-            matches!(
-                tool,
-                DrawingToolType::FibonacciRetracement
-                    | DrawingToolType::FibonacciExtension
-                    | DrawingToolType::FibonacciChannel
             )
         });
         // Fib tools edit extend only via fib_config in fib_style_controls below.
@@ -167,7 +175,7 @@ impl StyleTab {
             fib_style_controls(
                 ui,
                 config,
-                &mut pickers[0],
+                &mut pickers[FIB_TREND_PICKER],
                 tool_type,
                 col_w,
                 width_chip_w,
@@ -201,7 +209,7 @@ impl StyleTab {
         if pickers.len() < 2 {
             pickers.resize_with(2, ColorPickerState::default);
         }
-        let fill_picker = &mut pickers[1];
+        let fill_picker = &mut pickers[FILL_PICKER];
         let theme = ui.active_theme();
         let control_h = control_row_height(ui);
         ui.spacing_mut().interact_size.y = control_h;
@@ -1206,4 +1214,24 @@ fn paint_soft_selected(ui: &Ui, rect: egui::Rect, response: &egui::Response, sel
         StrokeKind::Inside,
     );
     crate::styles::focus::draw_focus_ring(ui, response, radius);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fib_style_uses_only_functional_rows_and_a_dedicated_picker() {
+        for tool in [
+            DrawingToolType::FibonacciRetracement,
+            DrawingToolType::FibonacciExtension,
+            DrawingToolType::FibonacciChannel,
+        ] {
+            assert!(has_fib_style_controls(tool));
+            assert!(!shows_generic_line_row(tool));
+        }
+        assert_ne!(LINE_PICKER, FIB_TREND_PICKER);
+        assert_ne!(FILL_PICKER, FIB_TREND_PICKER);
+        assert!(shows_generic_line_row(DrawingToolType::TrendLine));
+    }
 }

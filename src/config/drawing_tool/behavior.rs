@@ -42,6 +42,8 @@ impl DrawingToolType {
                 | Self::CrossLine
                 | Self::FibonacciRetracement
                 | Self::FibonacciExtension
+                | Self::FibonacciChannel
+                | Self::FibonacciSpeedFan
                 | Self::FibonacciTimeZones
                 | Self::TrendBasedFibTime
                 | Self::FibonacciCircles
