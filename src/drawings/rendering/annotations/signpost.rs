@@ -2,7 +2,7 @@
 
 use crate::drawings::domain::Drawing;
 use crate::drawings::rendering::utils::draw_dashed_line;
-use crate::styles::stroke;
+use crate::painting::pixel_snap::PixelSnap;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke};
 
@@ -13,7 +13,8 @@ impl Drawing {
         if self.points.is_empty() {
             return;
         }
-        let pos = self.points[0];
+        let snap = PixelSnap::of(painter);
+        let pos = Pos2::new(snap.line_center(self.points[0].x, 1.5), snap.edge(self.points[0].y));
         let color = Color32::from_rgba_unmultiplied(
             self.color[0],
             self.color[1],
@@ -21,7 +22,6 @@ impl Drawing {
             self.color[3],
         );
 
-        // Draw vertical line from point to top of chart (dashed)
         let dash = DESIGN_TOKENS.sizing.annotation.signpost_padding_x;
         let gap = DESIGN_TOKENS.sizing.annotation.signpost_padding_y;
         if rect.min.y < pos.y {
@@ -29,75 +29,83 @@ impl Drawing {
                 painter,
                 Pos2::new(pos.x, rect.min.y),
                 pos,
-                Stroke::new(stroke::THICK, color),
+                Stroke::new(1.5, color),
                 dash,
                 gap,
             );
         }
 
-        // Draw sign plate at top
         let text = self.text.as_deref().unwrap_or("Event");
+        let lum = 0.2126 * f32::from(color.r())
+            + 0.7152 * f32::from(color.g())
+            + 0.0722 * f32::from(color.b());
+        let text_fg = if lum > 165.0 {
+            Color32::from_rgb(18, 20, 24)
+        } else {
+            Color32::WHITE
+        };
         let font = self.annotation_font();
-        let galley = painter.layout_no_wrap(text.to_string(), font.clone(), Color32::WHITE);
+        let galley = painter.layout_no_wrap(text.to_string(), font, text_fg);
         let text_size = galley.size();
         let padding = egui::vec2(
             DESIGN_TOKENS.sizing.annotation.callout_padding_x,
             DESIGN_TOKENS.sizing.annotation.text_padding_y,
         );
-        let sign_rect = Rect::from_min_size(
+        let sign_min = Pos2::new(
+            snap.edge(pos.x - text_size.x * 0.5 - padding.x),
+            snap.edge(rect.min.y + DESIGN_TOKENS.spacing.lg),
+        );
+        let sign_rect = Rect::from_min_max(
+            sign_min,
             Pos2::new(
-                pos.x - text_size.x / 2.0 - padding.x,
-                rect.min.y + DESIGN_TOKENS.spacing.lg,
+                snap.edge(sign_min.x + text_size.x + padding.x * 2.0),
+                snap.edge(sign_min.y + text_size.y + padding.y * 2.0),
             ),
-            text_size + padding * 2.0,
         );
 
-        // Sign plate with arrow pointing down
         painter.rect_filled(sign_rect, DESIGN_TOKENS.rounding.md, color);
 
-        // Arrow below sign pointing to line
-        let arrow_size = DESIGN_TOKENS.sizing.annotation.signpost_padding_x;
+        let arrow_size = 6.0;
         let arrow_points = vec![
             Pos2::new(pos.x, sign_rect.max.y + arrow_size),
             Pos2::new(pos.x - arrow_size, sign_rect.max.y),
             Pos2::new(pos.x + arrow_size, sign_rect.max.y),
         ];
-        let arrow_shape =
-            egui::epaint::PathShape::convex_polygon(arrow_points, color, Stroke::NONE);
-        painter.add(arrow_shape);
+        painter.add(egui::epaint::PathShape::convex_polygon(
+            arrow_points,
+            color,
+            Stroke::NONE,
+        ));
 
-        // Sign text
-        painter.text(
-            sign_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            text,
-            font,
-            Color32::WHITE,
+        painter.galley(
+            Pos2::new(
+                snap.edge(sign_rect.center().x - text_size.x * 0.5),
+                snap.edge(sign_rect.center().y - text_size.y * 0.5),
+            ),
+            galley,
+            text_fg,
         );
 
-        // Date label if we have chart point data
         if !self.chart_points.is_empty() {
             let bar_idx = self.chart_points[0].bar_idx as i64;
             let date_text = format!("Bar {bar_idx}");
             let date_font = self.annotation_font();
             painter.text(
                 Pos2::new(
-                    pos.x,
-                    sign_rect.max.y + arrow_size + DESIGN_TOKENS.sizing.annotation.signpost_bracket,
+                    snap.edge(pos.x),
+                    snap.edge(
+                        sign_rect.max.y
+                            + arrow_size
+                            + DESIGN_TOKENS.sizing.annotation.signpost_bracket,
+                    ),
                 ),
                 egui::Align2::CENTER_TOP,
                 date_text,
                 date_font,
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150),
+                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 170),
             );
         }
 
-        // Anchor point at position
-        painter.circle_filled(pos, DESIGN_TOKENS.rounding.lg, color);
-        painter.circle_stroke(
-            pos,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
-        );
+        painter.circle_filled(pos, 3.5, color);
     }
 }

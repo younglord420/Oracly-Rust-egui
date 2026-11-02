@@ -41,6 +41,8 @@ pub struct DrawingPropertiesDialog {
     default_template: Option<DrawingTemplate>,
     /// Clear leftover popups (e.g. Template menu) once on the next show after open/close.
     clear_popups: bool,
+    /// Incremented on each `open` so section fold states reset cleanly.
+    open_generation: u64,
     /// Validation error from the most recent edit.
     pub error: Option<String>,
 }
@@ -69,6 +71,7 @@ impl DrawingPropertiesDialog {
             saving_template: false,
             default_template: None,
             clear_popups: false,
+            open_generation: 0,
         }
     }
 
@@ -82,6 +85,7 @@ impl DrawingPropertiesDialog {
         self.template_name.clear();
         self.saving_template = false;
         self.clear_popups = true;
+        self.open_generation = self.open_generation.wrapping_add(1);
         self.default_template = props.tool_settings.as_ref().map(|template| {
             DrawingTemplate::from_drawing(&Drawing::new(0, template.settings.tool_type))
         });
@@ -551,19 +555,44 @@ impl DrawingPropertiesDialog {
         if !section_available(self.active_tab) {
             self.active_tab = PropertiesTab::Style;
         }
-        // Scroll once when a host jumps to a section via `active_tab` (e.g. Open Text).
+        if state.open_generation != self.open_generation {
+            state.open_generation = self.open_generation;
+            state.open_appearance = true;
+            state.open_fill = true;
+            state.open_label = false;
+            state.open_inputs = false;
+            state.open_coordinates = false;
+            state.open_visibility = true;
+            state.scrolled_tab = None;
+        }
+        // Scroll and unfold once when a host jumps to a section via `active_tab` (e.g. Open Text).
         let scroll_to = (state.scrolled_tab != Some(self.active_tab)).then_some(self.active_tab);
+        if let Some(tab) = scroll_to {
+            match tab {
+                PropertiesTab::Style => state.open_appearance = true,
+                PropertiesTab::Text => state.open_label = true,
+                PropertiesTab::Inputs => state.open_inputs = true,
+                PropertiesTab::Coordinates => state.open_coordinates = true,
+                PropertiesTab::Visibility => state.open_visibility = true,
+            }
+        }
 
-        // Vertical auto-shrink stays on: a full-height body would push the pinned footer out.
+        let avail_body_h = (ui.available_height()
+            - FOOTER_HEIGHT
+            - if self.error.is_some() { 40.0 } else { 0.0 })
+        .max(0.0);
+        let max_scroll_h = if self.config.height > 0.0 {
+            avail_body_h
+        } else {
+            avail_body_h.min(360.0)
+        };
+
+        // Vertical auto-shrink stays on: collapsed sections shrink the dialog, while expanded
+        // sections scroll smoothly within `max_scroll_h` above the pinned footer.
         egui::ScrollArea::vertical()
             .id_salt("drawing_properties_sections")
             .auto_shrink([false, true])
-            .max_height(
-                (ui.available_height()
-                    - FOOTER_HEIGHT
-                    - if self.error.is_some() { 40.0 } else { 0.0 })
-                .max(0.0),
-            )
+            .max_height(max_scroll_h)
             .show(ui, |ui| {
                 // Keep dense rows wrapping inside the dialog instead of growing it.
                 let body_width = ui.available_width();
@@ -584,6 +613,7 @@ impl DrawingPropertiesDialog {
                     ui,
                     "drawing_props_appearance",
                     "Appearance",
+                    &mut state.open_appearance,
                     scroll_appearance,
                     |ui| StyleTab::show(ui, &mut self.props, &mut state.pickers),
                 );
@@ -594,6 +624,7 @@ impl DrawingPropertiesDialog {
                         ui,
                         "drawing_props_label",
                         "Label",
+                        &mut state.open_label,
                         scroll,
                         |ui| TextTab::show(ui, &mut self.props, &mut state.text_picker),
                     );
@@ -605,6 +636,7 @@ impl DrawingPropertiesDialog {
                         ui,
                         "drawing_props_fill",
                         "Fill",
+                        &mut state.open_fill,
                         scroll,
                         |ui| StyleTab::show_fill(ui, &mut self.props, &mut state.pickers),
                     );
@@ -616,6 +648,7 @@ impl DrawingPropertiesDialog {
                         ui,
                         "drawing_props_inputs",
                         "Inputs",
+                        &mut state.open_inputs,
                         scroll,
                         |ui| {
                             let color = self.props.color.to_srgba_unmultiplied();
@@ -636,6 +669,7 @@ impl DrawingPropertiesDialog {
                     ui,
                     "drawing_props_coordinates",
                     "Coordinates",
+                    &mut state.open_coordinates,
                     scroll_coords,
                     |ui| CoordinatesTab::show(ui, &mut self.coordinates),
                 );
@@ -645,6 +679,7 @@ impl DrawingPropertiesDialog {
                     ui,
                     "drawing_props_visibility",
                     "Visibility",
+                    &mut state.open_visibility,
                     scroll_vis,
                     |ui| VisibilityTab::show(ui, &mut self.props),
                 );
@@ -729,6 +764,14 @@ struct UiState {
     had_focus: bool,
     /// Last section scrolled into view for `active_tab` deep-links.
     scrolled_tab: Option<PropertiesTab>,
+    /// Generation of `open()` this state was initialized for.
+    open_generation: u64,
+    open_appearance: bool,
+    open_label: bool,
+    open_fill: bool,
+    open_inputs: bool,
+    open_coordinates: bool,
+    open_visibility: bool,
 }
 
 /// Only previewed drawings are restored; incoming host drawings and metadata stay intact.

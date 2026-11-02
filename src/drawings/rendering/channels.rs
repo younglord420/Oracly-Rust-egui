@@ -575,7 +575,12 @@ mod tests {
                                 -10.0 * 3f32.sqrt(),
                             ),
                             (
-                                Color32::from_rgba_unmultiplied(242, 54, 69, 51),
+                                Color32::from_rgba_unmultiplied(
+                                    drawing.color[0],
+                                    drawing.color[1],
+                                    drawing.color[2],
+                                    51,
+                                ),
                                 10.0 * 3f32.sqrt(),
                             ),
                         ] {
@@ -605,7 +610,7 @@ mod tests {
                         .collect();
                     for offset in [-10.0 * 3f32.sqrt(), 10.0 * 3f32.sqrt()] {
                         assert!(lines.iter().any(|(p, s)| s.width == 3.0
-                            && s.color == Color32::from_rgb(41, 98, 255)
+                            && s.color == DESIGN_TOKENS.semantic.brand.accent
                             && p[0].distance(Pos2::new(xs[0], center_y(xs[0]) + offset)) < 1e-3
                             && p[1].distance(Pos2::new(xs[1], center_y(xs[1]) + offset)) < 1e-3));
                     }

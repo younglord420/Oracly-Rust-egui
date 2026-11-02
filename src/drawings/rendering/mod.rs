@@ -646,7 +646,7 @@ mod tests {
             DrawingToolType::TimeCycles,
             DrawingToolType::XABCDPattern,
         ] {
-            let mut drawing = Drawing::new(7, tool);
+            let mut drawing = Drawing::with_color(7, tool, [242, 54, 69, 255]);
             drawing.points = [
                 (100., 100.),
                 (300., 300.),

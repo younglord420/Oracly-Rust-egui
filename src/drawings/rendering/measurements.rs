@@ -64,15 +64,16 @@ impl Drawing {
             );
 
             // Draw cross lines inside rect (+ shape with arrows)
-            let center_x = (rect.min.x + rect.max.x) / 2.0;
-            let center_y = (rect.min.y + rect.max.y) / 2.0;
+            let snap = crate::painting::pixel_snap::PixelSnap::of(painter);
+            let center_x = snap.line_center((rect.min.x + rect.max.x) / 2.0, stroke::HAIRLINE);
+            let center_y = snap.line_center((rect.min.y + rect.max.y) / 2.0, stroke::HAIRLINE);
             let line_color = Color32::from_rgba_unmultiplied(
                 base_color.r(),
                 base_color.g(),
                 base_color.b(),
-                150,
+                170,
             );
-            let line_stroke = Stroke::new(stroke::MEDIUM, line_color);
+            let line_stroke = Stroke::new(stroke::HAIRLINE, line_color);
 
             // Vertical line (from top to bottom)
             painter.line_segment(
@@ -161,16 +162,14 @@ impl Drawing {
             let size = text_size + padding * 2.0;
             let clip = painter.clip_rect();
             let pos = Pos2::new(box_x, box_y).clamp(clip.min, clip.max - size.min(clip.size()));
-            let (box_x, box_y) = (pos.x, pos.y);
-            let box_rect = egui::Rect::from_min_size(pos, size);
+            let (box_x, box_y) = (snap.edge(pos.x), snap.edge(pos.y));
+            let box_rect = egui::Rect::from_min_size(Pos2::new(box_x, box_y), size);
             painter.rect_filled(box_rect, DESIGN_TOKENS.rounding.md, base_color);
 
             // Draw text with padding
-            painter.text(
-                Pos2::new(box_x + padding.x, box_y + padding.y),
-                egui::Align2::LEFT_TOP,
-                info,
-                font,
+            painter.galley(
+                Pos2::new(snap.edge(box_x + padding.x), snap.edge(box_y + padding.y)),
+                galley,
                 Color32::WHITE,
             );
         }
@@ -533,10 +532,19 @@ pub(super) fn boxed_label(
     color: Color32,
     bg: Color32,
 ) -> Rect {
-    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(typography::XS), color);
-    let rect = align.anchor_size(pos, galley.size() + egui::vec2(8.0, 2.0));
+    let snap = crate::painting::pixel_snap::PixelSnap::of(painter);
+    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(typography::SM), color);
+    let raw = align.anchor_size(pos, galley.size() + egui::vec2(8.0, 4.0));
+    let rect = Rect::from_min_size(
+        Pos2::new(snap.edge(raw.min.x), snap.edge(raw.min.y)),
+        raw.size().ceil(),
+    );
     painter.rect_filled(rect, DESIGN_TOKENS.rounding.sm, bg);
-    painter.galley(rect.center() - galley.size() / 2.0, galley, color);
+    let text_pos = Pos2::new(
+        snap.edge(rect.center().x - galley.size().x * 0.5),
+        snap.edge(rect.center().y - galley.size().y * 0.5),
+    );
+    painter.galley(text_pos, galley, color);
     rect
 }
 

@@ -201,7 +201,7 @@ impl CoordinatesTab {
                     });
                 } else {
                     let avail_pair = (target_w - gap).max(0.0);
-                    let outer_price_w = (avail_pair * 0.44).round();
+                    let outer_price_w = (avail_pair * 0.48).round();
                     let outer_time_w = (avail_pair - outer_price_w).max(0.0);
                     let inner_price_w = (outer_price_w - field_pad).max(28.0);
                     let inner_time_w = (outer_time_w - field_pad).max(28.0);
@@ -239,7 +239,7 @@ impl CoordinatesTab {
                                         false,
                                     );
                                 } else {
-                                    datetime_field(ui, i, point, inner_time_w, row_h);
+                                    datetime_label(ui, i, point, outer_time_w, row_h);
                                 }
                             },
                         );
@@ -284,48 +284,33 @@ fn price_field(
     response.accessible_name(l10n::text(ui.ctx(), name));
 }
 
-fn datetime_field(ui: &mut Ui, index: usize, point: &mut CoordinatePoint, width: f32, height: f32) {
-    let draft_id = ui.scope_id().with(("drawing_props_datetime", index));
-    let mut text = ui
-        .data(|d| d.get_temp::<String>(draft_id))
-        .unwrap_or_else(|| short_datetime(&point.date, &point.time));
-
-    let response = compact_field(
-        ui,
+/// Read-only date/time display on the right side of a coordinate row.
+fn datetime_label(ui: &mut Ui, index: usize, point: &CoordinatePoint, width: f32, height: f32) {
+    let theme = ui.active_theme();
+    let text = short_datetime(&point.date, &point.time);
+    let display = if text.is_empty() {
+        "—".to_owned()
+    } else {
+        text
+    };
+    let a11y = l10n::text(
+        ui.ctx(),
         if index == 0 {
             "Date and time (UTC)".to_owned()
         } else {
             format!("#{} Date and time (UTC)", index + 1)
         },
-        &mut text,
-        "25 Oct 22:45",
-        width,
-        height,
-        true,
     );
-
-    let fallback_year = NaiveDate::parse_from_str(&point.date, "%Y-%m-%d")
-        .map(|d| d.year())
-        .unwrap_or_else(|_| Utc::now().year());
-
-    if response.changed() {
-        ui.data_mut(|d| d.insert_temp(draft_id, text.clone()));
-        if let Some((date, time)) = parse_datetime_input(&text, fallback_year) {
-            apply_parsed_datetime(point, date, time);
-        }
-    } else if !response.has_focus() {
-        // Drop the draft so the next idle frame shows the canonical short form.
-        ui.data_mut(|d| d.remove::<String>(draft_id));
-    }
-}
-
-/// Keep existing seconds when the short field only edited HH:MM.
-fn apply_parsed_datetime(point: &mut CoordinatePoint, date: String, time: String) {
-    point.date = date;
-    if time.len() == 5 && point.time.starts_with(&time) {
-        return;
-    }
-    point.time = time;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width.max(24.0), height), egui::Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, ui.is_enabled(), &a11y));
+    ui.painter().text(
+        egui::pos2(rect.max.x - 2.0, rect.center().y.round()),
+        egui::Align2::RIGHT_CENTER,
+        display,
+        egui::FontId::proportional(theme.text.body),
+        theme.ui.text_secondary,
+    );
 }
 
 fn compact_field(
@@ -419,6 +404,7 @@ fn month_abbr(month: u32) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn parse_month(token: &str) -> Option<u32> {
     match token.to_ascii_lowercase().as_str() {
         "jan" | "january" => Some(1),
@@ -440,6 +426,7 @@ fn parse_month(token: &str) -> Option<u32> {
 /// Accepts the short display form or ISO `YYYY-MM-DD HH:MM[:SS]`.
 ///
 /// Short forms without a year (`25 Oct 22:45`) keep `fallback_year` from the existing point.
+#[cfg(test)]
 fn parse_datetime_input(input: &str, fallback_year: i32) -> Option<(String, String)> {
     let input = input.trim();
     if input.is_empty() {
@@ -489,6 +476,7 @@ fn parse_datetime_input(input: &str, fallback_year: i32) -> Option<(String, Stri
     }
 }
 
+#[cfg(test)]
 fn format_time_storage(time: NaiveTime, keep_fraction: bool) -> String {
     if keep_fraction {
         time.format("%H:%M:%S%.f").to_string()

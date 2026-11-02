@@ -1,7 +1,9 @@
 //! Text label and anchored text rendering
 
 use crate::drawings::domain::Drawing;
+use crate::painting::pixel_snap::PixelSnap;
 use crate::styles::stroke;
+use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Stroke, epaint::StrokeKind};
 
@@ -12,7 +14,8 @@ impl Drawing {
         if self.points.is_empty() {
             return;
         }
-        let pos = self.points[0];
+        let snap = PixelSnap::of(painter);
+        let pos = Pos2::new(snap.edge(self.points[0].x), snap.edge(self.points[0].y));
         let text = self.text.as_deref().unwrap_or("Label");
 
         let color = Color32::from_rgba_unmultiplied(
@@ -22,48 +25,32 @@ impl Drawing {
             self.color[3],
         );
 
-        // Draw background box
         let font = self.annotation_font();
-        let galley = painter.layout_no_wrap(text.to_string(), font.clone(), color);
+        let galley = painter.layout_no_wrap(text.to_string(), font, color);
         let text_size = galley.size();
 
         let padding = egui::vec2(
             DESIGN_TOKENS.sizing.annotation.label_padding_x,
             DESIGN_TOKENS.sizing.annotation.text_padding_y,
         );
-        let box_rect = egui::Rect::from_min_size(pos - padding, text_size + padding * 2.0);
-
-        // Dark semi-transparent background
-        painter.rect_filled(
-            box_rect,
-            DESIGN_TOKENS.rounding.md,
-            DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.9),
+        let box_rect = egui::Rect::from_min_max(
+            Pos2::new(snap.edge(pos.x - padding.x), snap.edge(pos.y - padding.y)),
+            Pos2::new(
+                snap.edge(pos.x + text_size.x + padding.x),
+                snap.edge(pos.y + text_size.y + padding.y),
+            ),
         );
+
+        let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+        painter.rect_filled(box_rect, DESIGN_TOKENS.rounding.md, bg);
         painter.rect_stroke(
             box_rect,
             DESIGN_TOKENS.rounding.md,
-            Stroke::new(stroke::MEDIUM, color),
-            StrokeKind::Outside,
+            Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.8)),
+            StrokeKind::Inside,
         );
 
-        // Draw text
-        painter.text(pos, egui::Align2::LEFT_TOP, text, font, color);
-
-        // Anchor indicator at corner
-        painter.circle_filled(
-            Pos2::new(box_rect.left(), box_rect.top()),
-            DESIGN_TOKENS.rounding.sm,
-            color,
-        );
-        painter.circle_stroke(
-            Pos2::new(box_rect.left(), box_rect.top()),
-            DESIGN_TOKENS.rounding.sm,
-            Stroke::new(stroke::HAIRLINE, Color32::WHITE),
-        );
+        painter.galley(pos, galley, color);
     }
 
     /// Renders anchored text at its pane-relative screen position.
@@ -71,7 +58,8 @@ impl Drawing {
         if self.points.is_empty() {
             return;
         }
-        let pos = self.points[0];
+        let snap = PixelSnap::of(painter);
+        let pos = Pos2::new(snap.edge(self.points[0].x), snap.edge(self.points[0].y));
         let text = self.text.as_deref().unwrap_or("Anchored Text");
 
         let color = Color32::from_rgba_unmultiplied(
@@ -81,66 +69,35 @@ impl Drawing {
             self.color[3],
         );
 
-        // Font and sizing
         let font = self.annotation_font();
-        let galley = painter.layout_no_wrap(text.to_string(), font.clone(), color);
+        let galley = painter.layout_no_wrap(text.to_string(), font, color);
         let text_size = galley.size();
 
         let padding = egui::vec2(
             DESIGN_TOKENS.sizing.annotation.signpost_padding_x,
             DESIGN_TOKENS.sizing.annotation.label_padding_y,
         );
-        let prefix_width = painter
-            .layout_no_wrap("#".into(), font.clone(), color)
-            .size()
-            .x;
-        let text_offset = prefix_width + DESIGN_TOKENS.spacing.sm;
-        let box_rect = egui::Rect::from_min_size(
+        let box_rect = egui::Rect::from_min_max(
             pos,
-            text_size + padding * 2.0 + egui::vec2(text_offset, 0.0),
+            Pos2::new(
+                snap.edge(pos.x + text_size.x + padding.x * 2.0),
+                snap.edge(pos.y + text_size.y + padding.y * 2.0),
+            ),
         );
 
-        // Background with anchor icon
-        painter.rect_filled(
-            box_rect,
-            DESIGN_TOKENS.rounding.sm,
-            DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.86),
-        );
+        let bg = painter.ctx().active_theme().chart.bg_axis.gamma_multiply(0.92);
+        painter.rect_filled(box_rect, DESIGN_TOKENS.rounding.sm, bg);
         painter.rect_stroke(
             box_rect,
             DESIGN_TOKENS.rounding.sm,
-            Stroke::new(stroke::HAIRLINE, color),
-            StrokeKind::Outside,
+            Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.8)),
+            StrokeKind::Inside,
         );
 
-        // Anchor icon before text
-        painter.text(
-            pos + padding,
-            egui::Align2::LEFT_TOP,
-            "#",
-            self.annotation_font(),
+        painter.galley(
+            Pos2::new(snap.edge(pos.x + padding.x), snap.edge(pos.y + padding.y)),
+            galley,
             color,
-        );
-
-        // Main text
-        painter.text(
-            Pos2::new(pos.x + padding.x + text_offset, pos.y + padding.y),
-            egui::Align2::LEFT_TOP,
-            text,
-            font,
-            color,
-        );
-
-        // Anchor point
-        painter.circle_filled(pos, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_stroke(
-            pos,
-            DESIGN_TOKENS.rounding.md,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
         );
     }
 }

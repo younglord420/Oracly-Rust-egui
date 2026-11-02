@@ -379,7 +379,7 @@ fn dialogs_expose_titles_and_label_their_fields() {
             },
             &[
                 (Role::TextInput, "Price"),
-                (Role::TextInput, "Date and time (UTC)"),
+                (Role::Label, "Date and time (UTC)"),
             ],
         ),
         (

@@ -221,7 +221,8 @@ fn fill(path: &usvg::Path, transform: Transform, pixmap: &mut Pixmap) {
     pixmap.fill_path(path.data(), &paint, rule, transform, None);
 }
 
-/// Strokes `path` a whole number of physical pixels wide, in proportion to its authored width.
+/// Strokes `path` a whole number of physical pixels wide for axis-aligned paths, and with
+/// optical weight for diagonal/curved paths so angled tool icons do not stair-step at 1x.
 fn stroke(
     path: &usvg::Path,
     transform: Transform,
@@ -234,9 +235,13 @@ fn stroke(
         return;
     };
     let mut style = stroke.to_tiny_skia();
-    style.width = (stroke.width().get() / NOMINAL_STROKE * pixels_per_point)
-        .round()
-        .max(1.0);
+    let nominal = stroke.width().get() / NOMINAL_STROKE * pixels_per_point;
+    let snap_width = nominal.round().max(1.0);
+    style.width = if has_angled_or_curved_segment(&pixels) {
+        nominal.max(1.3 * pixels_per_point.min(1.5))
+    } else {
+        snap_width
+    };
     // Dashes keep their length relative to the icon.
     style.dash = stroke.dasharray().and_then(|dashes| {
         StrokeDash::new(
@@ -244,11 +249,43 @@ fn stroke(
             stroke.dashoffset() * scale,
         )
     });
-    let Some(pixels) = snap_to_pixels(&pixels, style.width) else {
+    let Some(pixels) = snap_to_pixels(&pixels, snap_width) else {
         return;
     };
     let paint = solid_paint(stroke.paint(), stroke.opacity());
     pixmap.stroke_path(&pixels, &paint, &style, Transform::identity(), None);
+}
+
+fn has_angled_or_curved_segment(path: &Path) -> bool {
+    let segments: Vec<PathSegment> = path.segments().collect();
+    let mut start = Point::zero();
+    let mut cur = Point::zero();
+    for seg in segments {
+        match seg {
+            PathSegment::MoveTo(p) => {
+                start = p;
+                cur = p;
+            }
+            PathSegment::LineTo(p) => {
+                let dx = (p.x - cur.x).abs();
+                let dy = (p.y - cur.y).abs();
+                if dx >= 1e-3 && dy >= 1e-3 {
+                    return true;
+                }
+                cur = p;
+            }
+            PathSegment::QuadTo(_, _) | PathSegment::CubicTo(_, _, _) => return true,
+            PathSegment::Close => {
+                let dx = (start.x - cur.x).abs();
+                let dy = (start.y - cur.y).abs();
+                if dx >= 1e-3 && dy >= 1e-3 {
+                    return true;
+                }
+                cur = start;
+            }
+        }
+    }
+    false
 }
 
 /// Moves the horizontal and vertical line segments of `path` so that a stroke `width` pixels wide covers whole

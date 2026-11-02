@@ -64,6 +64,7 @@ impl Drawing {
             let mut weighted = shape.clone();
             let dir = egui::vec2(shape.angle.cos(), shape.angle.sin());
             weighted.pos += dir * 0.5;
+            weighted.opacity_factor = 0.55;
             painter.add(Shape::Text(shape));
             painter.add(Shape::Text(weighted));
         } else {
@@ -137,7 +138,7 @@ impl Drawing {
         } else {
             (egui::vec2(1.0, 0.0), 0.0)
         };
-        if angle.abs() < 1e-3 {
+        if angle.abs() < 0.02 {
             angle = 0.0;
         }
         // Screen-upward normal vector (`u` points rightwards, so `n.y <= 0`).
@@ -291,6 +292,7 @@ impl Drawing {
                 let mut weighted = t.clone();
                 let dir = egui::vec2(t.angle.cos(), t.angle.sin());
                 weighted.pos += dir * 0.5;
+                weighted.opacity_factor = 0.55;
                 *shape = Shape::Vec(vec![Shape::Text(t.clone()), Shape::Text(weighted)]);
             }
             return;
@@ -620,8 +622,7 @@ fn fewer_circle_sides(shape: &mut Shape, pixels_per_point: f32) {
     }
 }
 
-/// Moves horizontal and vertical line segments onto the pixel grid, so that a level line stays
-/// crisp and one width while the price scale glides under it.
+/// Moves horizontal and vertical line segments and upright text onto the physical pixel grid.
 fn snap_axis_aligned_lines(shape: &mut Shape, snap: crate::painting::pixel_snap::PixelSnap) {
     match shape {
         Shape::Vec(shapes) => {
@@ -639,15 +640,18 @@ fn snap_axis_aligned_lines(shape: &mut Shape, snap: crate::painting::pixel_snap:
                 (a.x, b.x) = (x, x);
             }
         }
+        Shape::Text(t) if t.angle.abs() < 1e-4 => {
+            t.pos = Pos2::new(snap.edge(t.pos.x), snap.edge(t.pos.y));
+        }
         _ => {}
     }
 }
 
 /// The fewest sides of a polygon whose sides stay within a quarter of a physical pixel of a
-/// circle of `radius` physical pixels, from 8 to 128.
+/// circle of `radius` physical pixels, from 24 to 128.
 pub(super) fn circle_sides(radius: f32) -> usize {
     let step = (1.0 - 0.25 / radius).clamp(-1.0, 1.0).acos();
-    ((std::f32::consts::PI / step).ceil() as usize).clamp(8, 128)
+    ((std::f32::consts::PI / step).ceil() as usize).clamp(24, 128)
 }
 
 #[cfg(test)]
@@ -695,7 +699,7 @@ mod tests {
     }
 
     fn pattern(tool: DrawingToolType) -> Drawing {
-        let mut drawing = Drawing::new(1, tool);
+        let mut drawing = Drawing::with_color(1, tool, [242, 54, 69, 255]);
         drawing.points = [
             (100., 300.),
             (180., 100.),

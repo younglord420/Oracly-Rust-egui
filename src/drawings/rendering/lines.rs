@@ -282,8 +282,8 @@ impl Drawing {
                 Pos2::new(rect.min.x, rect.center().y),
                 Pos2::new(rect.max.x, rect.center().y),
                 Stroke::new(stroke::HAIRLINE, self.color32()),
-                DESIGN_TOKENS.rounding.lg,
-                DESIGN_TOKENS.rounding.md,
+                DESIGN_TOKENS.rounding.sm,
+                DESIGN_TOKENS.rounding.xs,
             );
         }
     }
@@ -304,8 +304,8 @@ impl Drawing {
             Pos2::new(rect.min.x, middle_y),
             Pos2::new(rect.max.x, middle_y),
             Stroke::new(stroke::HAIRLINE, middle_color),
-            DESIGN_TOKENS.rounding.lg,
-            DESIGN_TOKENS.rounding.md,
+            DESIGN_TOKENS.rounding.sm,
+            DESIGN_TOKENS.rounding.xs,
         );
 
         // Draw middle vertical line
@@ -315,8 +315,8 @@ impl Drawing {
             Pos2::new(middle_x, rect.min.y),
             Pos2::new(middle_x, rect.max.y),
             Stroke::new(stroke::HAIRLINE, middle_color),
-            DESIGN_TOKENS.rounding.lg,
-            DESIGN_TOKENS.rounding.md,
+            DESIGN_TOKENS.rounding.sm,
+            DESIGN_TOKENS.rounding.xs,
         );
 
         // Width in bars below, height in price on the right
