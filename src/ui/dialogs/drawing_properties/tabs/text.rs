@@ -2,7 +2,7 @@
 //!
 //! Tools that accept free-form text show a multiline label editor and a single toolbar row
 //! combining text color, size (`Small`, `Normal`, `Large`, `Huge`), `Bold`, `Italic`, and
-//! (for line/shape labels) vertical (`Top`, `Middle`, `Bottom`) and horizontal (`Left`,
+//! (for line/shape labels) vertical (`Top`, `Inside`, `Middle`, `Bottom`) and horizontal (`Left`,
 //! `Center`, `Right`) placement. Tools whose text is generated automatically still expose
 //! the formatting row.
 
@@ -164,12 +164,26 @@ impl TextTab {
                 }
 
                 if has_line_alignment {
+                    let v_choices = if matches!(
+                        tool,
+                        Some(
+                            crate::drawings::DrawingToolType::FlatTopBottom
+                                | crate::drawings::DrawingToolType::DisjointChannel
+                        )
+                    ) {
+                        TextVerticalAlign::channel()
+                    } else {
+                        TextVerticalAlign::all()
+                    };
+                    if !v_choices.contains(&template.settings.text_v_align) {
+                        template.settings.text_v_align = TextVerticalAlign::Inside;
+                    }
                     super::style::text_combo_popup(
                         ui,
                         "text_v_align",
                         "Vertical text alignment",
                         &mut template.settings.text_v_align,
-                        TextVerticalAlign::all(),
+                        v_choices,
                         |align| l10n::text(&ctx, align.label()),
                         align_w,
                         control_h,

@@ -316,8 +316,9 @@ impl Default for StorageMetadata {
 
 impl DrawingStorage {
     /// Current storage format version. Version 3 preserves editable ray and extended-line
-    /// extensions; versions 1 and 2 migrate to their former rendered reach when loaded.
-    pub const CURRENT_VERSION: u32 = 3;
+    /// extensions. Version 4 gives pitchforks the forward reach they were painted with
+    /// before the extend control existed. Versions 1 and 2 migrate to their former rendered reach.
+    pub const CURRENT_VERSION: u32 = 4;
 
     /// Create new storage for a symbol
     pub fn new(symbol: impl Into<String>) -> Self {
@@ -458,7 +459,7 @@ impl DrawingStorage {
         let load: fn(serde_json::Value) -> Result<StoredDrawing, serde_json::Error> = match version
         {
             1 => v1::load,
-            2 | Self::CURRENT_VERSION => |value| {
+            2..=Self::CURRENT_VERSION => |value| {
                 // Checked here, not in `Drawing`'s serde, which other formats share:
                 // serde's own error lists every variant.
                 if let Some(name) = value.pointer("/drawing/tool_type").and_then(|t| t.as_str()) {
@@ -506,6 +507,19 @@ impl DrawingStorage {
                                 }
                                 _ => {}
                             }
+                        }
+                        if version < 4
+                            && matches!(
+                                tool,
+                                DrawingToolType::Pitchfork
+                                    | DrawingToolType::SchiffPitchfork
+                                    | DrawingToolType::ModifiedSchiffPitchfork
+                                    | DrawingToolType::InsidePitchfork
+                            )
+                            && !drawing.drawing.extend_left
+                            && !drawing.drawing.extend_right
+                        {
+                            drawing.drawing.extend_right = true;
                         }
                         if tool.is_cursor() {
                             return Err(serde::de::Error::custom(format!(
@@ -1430,11 +1444,11 @@ mod tests {
                 .show_on_all
         );
 
-        let got = DrawingStorage::from_json(&current.replace("\"version\": 3", "\"version\": 4"))
+        let got = DrawingStorage::from_json(&current.replace("\"version\": 4", "\"version\": 5"))
             .unwrap_err()
             .to_string();
         assert!(
-            got.contains("unsupported drawing storage version 4"),
+            got.contains("unsupported drawing storage version 5"),
             "{got}"
         );
     }

@@ -143,8 +143,6 @@ mod tests {
             (Tool::AnchoredVolumeProfile, "Rows"),
             (Tool::RegressionTrend, "Source"),
             (Tool::ParallelChannel, "Show middle line"),
-            (Tool::FlatTopBottom, "Price labels"),
-            (Tool::DisjointChannel, "Price labels"),
         ] {
             chart.drawings_mut().drawings.clear();
             let mut drawing = Drawing::new(7, tool);

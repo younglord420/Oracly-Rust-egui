@@ -45,8 +45,6 @@ impl InputsTab {
                 | Tool::AnchoredVolumeProfile
                 | Tool::RegressionTrend
                 | Tool::ParallelChannel
-                | Tool::FlatTopBottom
-                | Tool::DisjointChannel
         )
     }
 
@@ -435,12 +433,6 @@ impl InputsTab {
                 ui.checkbox(
                     &mut drawing.channel_midline,
                     l10n::text(ui.ctx(), "Show middle line"),
-                );
-            }
-            Tool::FlatTopBottom | Tool::DisjointChannel => {
-                ui.checkbox(
-                    &mut drawing.show_price_labels,
-                    l10n::text(ui.ctx(), "Price labels"),
                 );
             }
             _ => {}

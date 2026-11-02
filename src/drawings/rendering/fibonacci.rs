@@ -111,6 +111,7 @@ fn paint_fib_level_and_label(
     };
     let y_min = match v_align {
         TextVerticalAlign::Top => y - pad_y - text_h,
+        TextVerticalAlign::Inside => y - text_h,
         TextVerticalAlign::Middle => y - text_h * 0.5,
         TextVerticalAlign::Bottom => y + pad_y,
     };
@@ -668,7 +669,8 @@ impl Drawing {
                     lvl_color,
                 );
                 let alignment = match (h_align, config.label_v_align) {
-                    (TextHorizontalAlign::Left, TextVerticalAlign::Top) => {
+                    (TextHorizontalAlign::Left, TextVerticalAlign::Top)
+                    | (TextHorizontalAlign::Left, TextVerticalAlign::Inside) => {
                         egui::Align2::LEFT_BOTTOM
                     }
                     (TextHorizontalAlign::Left, TextVerticalAlign::Middle) => {
@@ -677,7 +679,8 @@ impl Drawing {
                     (TextHorizontalAlign::Left, TextVerticalAlign::Bottom) => {
                         egui::Align2::LEFT_TOP
                     }
-                    (TextHorizontalAlign::Center, TextVerticalAlign::Top) => {
+                    (TextHorizontalAlign::Center, TextVerticalAlign::Top)
+                    | (TextHorizontalAlign::Center, TextVerticalAlign::Inside) => {
                         egui::Align2::CENTER_BOTTOM
                     }
                     (TextHorizontalAlign::Center, TextVerticalAlign::Middle) => {
@@ -686,7 +689,8 @@ impl Drawing {
                     (TextHorizontalAlign::Center, TextVerticalAlign::Bottom) => {
                         egui::Align2::CENTER_TOP
                     }
-                    (TextHorizontalAlign::Right, TextVerticalAlign::Top) => {
+                    (TextHorizontalAlign::Right, TextVerticalAlign::Top)
+                    | (TextHorizontalAlign::Right, TextVerticalAlign::Inside) => {
                         egui::Align2::RIGHT_BOTTOM
                     }
                     (TextHorizontalAlign::Right, TextVerticalAlign::Middle) => {
@@ -703,6 +707,7 @@ impl Drawing {
                 };
                 let dy = match config.label_v_align {
                     TextVerticalAlign::Top => -4.0,
+                    TextVerticalAlign::Inside => -1.0,
                     TextVerticalAlign::Middle => 0.0,
                     TextVerticalAlign::Bottom => 4.0,
                 };

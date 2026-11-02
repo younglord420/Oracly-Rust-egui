@@ -170,7 +170,7 @@ pub struct Drawing {
     /// Whether a rectangle or parallel channel draws its dashed halfway line.
     #[serde(default)]
     pub channel_midline: bool,
-    /// Whether Flat Top/Bottom and Disjoint Channel show a price label at each line end.
+    /// Whether Flat Top/Bottom and Disjoint Channel show a price label.
     #[serde(default)]
     pub show_price_labels: bool,
     /// Level lines and band fill of the pitchfork tools.
@@ -251,12 +251,24 @@ impl Drawing {
             font_weight: FontWeight::Normal,
             font_italic: false,
             text_color: None,
-            text_v_align: TextVerticalAlign::Top,
+            text_v_align: if matches!(
+                tool_type,
+                DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
+            ) {
+                TextVerticalAlign::Inside
+            } else {
+                TextVerticalAlign::Top
+            },
             text_h_align: TextHorizontalAlign::Center,
             extend_left: tool_type == DrawingToolType::ExtendedLine,
             extend_right: matches!(
                 tool_type,
-                DrawingToolType::Ray | DrawingToolType::ExtendedLine
+                DrawingToolType::Ray
+                    | DrawingToolType::ExtendedLine
+                    | DrawingToolType::Pitchfork
+                    | DrawingToolType::SchiffPitchfork
+                    | DrawingToolType::ModifiedSchiffPitchfork
+                    | DrawingToolType::InsidePitchfork
             ),
             arrow_start_style: ArrowStyle::None,
             arrow_end_style: if matches!(
@@ -288,7 +300,10 @@ impl Drawing {
                 .then(RegressionTrendConfig::default),
             pitchfork: None,
             channel_midline: matches!(tool_type, DrawingToolType::ParallelChannel),
-            show_price_labels: false,
+            show_price_labels: matches!(
+                tool_type,
+                DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
+            ),
             gann: None,
             ghost_feed: None,
             // Z-order (default: 0, higher values render on top)

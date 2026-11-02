@@ -315,6 +315,7 @@ impl Chart {
                 .and_then(|link| link.footprint.as_ref()),
         };
         drawing_manager.render_all(painter, price_rect, &view);
+        self.paint_horizontal_drawing_tags(painter, price_rect, price_map, drawing_manager);
         if drawing_manager.text_editor.as_ref().is_some_and(|editor| {
             drawing_manager
                 .drawings
@@ -322,6 +323,66 @@ impl Chart {
                 .any(|d| d.id == editor.id && drawing_manager.owns_pane(d))
         }) {
             text::show_editor(ui, drawing_manager, response.id, price_rect);
+        }
+    }
+
+    /// Price-axis tags for horizontal lines, horizontal rays, and cross lines on this pane.
+    fn paint_horizontal_drawing_tags(
+        &self,
+        painter: &Painter,
+        price_rect: Rect,
+        price_map: &PriceMap,
+        drawing_manager: &DrawingManager,
+    ) {
+        let axis_right = if self.config.show_right_axis {
+            price_rect.right() + self.config.right_axis_width
+        } else if self.config.show_left_axis {
+            price_rect.left()
+        } else {
+            return;
+        };
+        let mut occupied = Vec::new();
+        for drawing in drawing_manager
+            .drawings
+            .iter()
+            .chain(drawing_manager.curr_drawing.iter())
+            .filter(|drawing| drawing.visible && drawing_manager.owns_pane(drawing))
+        {
+            if !matches!(
+                drawing.tool_type,
+                crate::drawings::DrawingToolType::HorizontalLine
+                    | crate::drawings::DrawingToolType::HorizontalRay
+                    | crate::drawings::DrawingToolType::CrossLine
+            ) {
+                continue;
+            }
+            let Some(price) = drawing.chart_points.first().map(|point| point.price) else {
+                continue;
+            };
+            if !price.is_finite()
+                || !price_map
+                    .range()
+                    .contains(price_map.transform().to_scale(price))
+            {
+                continue;
+            }
+            let y = price_map.price_to_y(price);
+            let label = price_map.transform().label(
+                price_map.transform().to_scale(price),
+                crate::chart::rendering::axes::tag_decimals(price_map, y),
+                None,
+            );
+            let fill = drawing.color32();
+            occupied.push(crate::chart::rendering::axes::render_axis_value(
+                painter,
+                price_rect,
+                axis_right,
+                y,
+                label,
+                (crate::chart::rendering::axes::tag_text_color(fill), fill),
+                &occupied,
+                self.config.price_axis.allow_label_overlap,
+            ));
         }
     }
 

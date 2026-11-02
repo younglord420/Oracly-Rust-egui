@@ -97,11 +97,22 @@ impl Drawing {
             .round();
             let y = match self.text_v_align {
                 TextVerticalAlign::Top => r.top() - size.y - 4.0,
+                TextVerticalAlign::Inside => r.top() + 4.0,
                 TextVerticalAlign::Middle => r.center().y - size.y * 0.5,
                 TextVerticalAlign::Bottom => r.bottom() + 4.0,
             }
             .round();
             return Some((TextShape::new(Pos2::new(x, y), galley, color), None));
+        }
+
+        // Two-boundary channels: Top on the upper line, Bottom on the lower, Inside between.
+        if matches!(
+            self.tool_type,
+            DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
+        ) && let Some(layout) =
+            self.place_channel_line_label(galley.clone(), color, rect, size, gap)
+        {
+            return Some(layout);
         }
 
         // Determine the primary segment (a -> b) along which the label runs.
@@ -161,6 +172,7 @@ impl Drawing {
         };
         let perp_shift = match self.text_v_align {
             TextVerticalAlign::Top => size.y + gap,
+            TextVerticalAlign::Inside => size.y + 2.0,
             TextVerticalAlign::Middle => size.y * 0.5,
             TextVerticalAlign::Bottom => -gap,
         };
@@ -181,6 +193,105 @@ impl Drawing {
         Some((
             TextShape::new(top_left, galley, color).with_angle(angle),
             line_cut,
+        ))
+    }
+
+    /// Label Text on Flat Top/Bottom and Disjoint Channel: Top on the upper boundary,
+    /// Bottom on the lower boundary, Inside between both.
+    fn place_channel_line_label(
+        &self,
+        galley: std::sync::Arc<egui::Galley>,
+        color: Color32,
+        rect: Rect,
+        size: egui::Vec2,
+        gap: f32,
+    ) -> Option<LineLabelLayout> {
+        let outline = self.outline(rect)?;
+        let &[first, second, ..] = outline.lines.as_slice() else {
+            return None;
+        };
+        let mid_y = |line: [Pos2; 2]| (line[0].y + line[1].y) * 0.5;
+        let (upper, lower) = if mid_y(first) <= mid_y(second) {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let align = match self.text_v_align {
+            TextVerticalAlign::Bottom => TextVerticalAlign::Bottom,
+            TextVerticalAlign::Inside | TextVerticalAlign::Middle => TextVerticalAlign::Inside,
+            TextVerticalAlign::Top => TextVerticalAlign::Top,
+        };
+        let (a, b) = match align {
+            TextVerticalAlign::Bottom => (lower[0], lower[1]),
+            _ => (upper[0], upper[1]),
+        };
+        let (left_pt, right_pt) = if a.x < b.x || (a.x == b.x && a.y <= b.y) {
+            (a, b)
+        } else {
+            (b, a)
+        };
+        let delta = right_pt - left_pt;
+        let len = delta.length();
+        let (u, mut angle) = if len > 1e-3 {
+            (delta / len, delta.angle())
+        } else {
+            (egui::vec2(1.0, 0.0), 0.0)
+        };
+        if angle.abs() < 0.02 {
+            angle = 0.0;
+        }
+        let n_up = egui::vec2(u.y, -u.x);
+        let anchor_t = match self.text_h_align {
+            TextHorizontalAlign::Left => 8.0_f32.min(len * 0.25),
+            TextHorizontalAlign::Center => len * 0.5,
+            TextHorizontalAlign::Right => len - 8.0_f32.min(len * 0.25),
+        };
+        let anchor = left_pt + u * anchor_t;
+        let along_shift = match self.text_h_align {
+            TextHorizontalAlign::Left => 0.0,
+            TextHorizontalAlign::Center => -size.x * 0.5,
+            TextHorizontalAlign::Right => -size.x,
+        };
+        let perp_shift = match align {
+            TextVerticalAlign::Top => size.y + gap,
+            TextVerticalAlign::Bottom => -gap,
+            TextVerticalAlign::Inside | TextVerticalAlign::Middle => {
+                // Midpoint between the two boundaries at this horizontal position.
+                let t = if (right_pt.x - left_pt.x).abs() > 1e-3 {
+                    ((anchor.x - left_pt.x) / (right_pt.x - left_pt.x)).clamp(0.0, 1.0)
+                } else {
+                    0.5
+                };
+                let upper_y = upper[0].y + (upper[1].y - upper[0].y) * t;
+                let lower_y = lower[0].y + (lower[1].y - lower[0].y) * t;
+                let mid = Pos2::new(anchor.x, (upper_y + lower_y) * 0.5);
+                // Offset so the text center sits at the channel midpoint.
+                let to_mid = mid - anchor;
+                return Some((
+                    TextShape::new(
+                        {
+                            let mut top_left =
+                                anchor + u * along_shift + to_mid - n_up * (size.y * 0.5);
+                            if angle == 0.0 {
+                                top_left = Pos2::new(top_left.x.round(), top_left.y.round());
+                            }
+                            top_left
+                        },
+                        galley,
+                        color,
+                    )
+                    .with_angle(angle),
+                    None,
+                ));
+            }
+        };
+        let mut top_left = anchor + u * along_shift + n_up * perp_shift;
+        if angle == 0.0 {
+            top_left = Pos2::new(top_left.x.round(), top_left.y.round());
+        }
+        Some((
+            TextShape::new(top_left, galley, color).with_angle(angle),
+            None,
         ))
     }
 
@@ -466,7 +577,6 @@ impl Drawing {
                     | T::InfoLine
                     | T::TrendAngle
                     | T::ExtendedLine
-                    | T::Ray
                     | T::Arrow
                     | T::ArrowMarker
             ) && (b.x < a.x || (self.tool_type == T::ExtendedLine && b.x == a.x && b.y < a.y))

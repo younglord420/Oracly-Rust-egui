@@ -390,7 +390,7 @@ impl Drawing {
             // Channels (4 tools)
             DrawingToolType::ParallelChannel
             | DrawingToolType::FlatTopBottom
-            | DrawingToolType::DisjointChannel => self.render_channel(painter, rect),
+            | DrawingToolType::DisjointChannel => self.render_channel(painter, rect, view),
             DrawingToolType::RegressionTrend => self.render_regression_trend(painter, view),
 
             // Patterns (6 tools)
@@ -1159,6 +1159,7 @@ mod tests {
                         drawing.extend_left = left;
                         drawing.extend_right = right;
                         drawing.fill_color = filled.then_some([12, 34, 56, 80]);
+                        drawing.show_price_labels = false;
                         drawing.update_screen_coords(|b| b * 10.0, |p| 500.0 - p as f32);
                         let other_y = |x| {
                             if tool == DrawingToolType::FlatTopBottom {

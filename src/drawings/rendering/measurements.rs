@@ -373,10 +373,6 @@ impl Drawing {
         // Draw the main line with proper stroke
         painter.line_segment([start, end], Stroke::new(self.stroke_width, color));
 
-        // Draw anchor points
-        painter.circle_filled(start, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_filled(end, DESIGN_TOKENS.rounding.md, color);
-
         let Some(info_text) = self.measurement_label(view.bars, view.instrument, view.time_axis)
         else {
             return;

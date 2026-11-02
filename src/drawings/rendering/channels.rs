@@ -39,7 +39,7 @@ fn rgba(color: [u8; 4]) -> Color32 {
 }
 
 impl Drawing {
-    pub(crate) fn render_channel(&self, painter: &egui::Painter, rect: Rect) {
+    pub(crate) fn render_channel(&self, painter: &egui::Painter, rect: Rect, view: &ChartView) {
         let Some(outline) = self.outline(rect) else {
             for pair in self.points.windows(2) {
                 painter.line_segment(
@@ -84,59 +84,39 @@ impl Drawing {
                 DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
             )
         {
-            self.paint_channel_price_labels(painter, &lines);
+            self.paint_channel_price_labels(painter, &lines, view.y_to_price);
         }
     }
 
-    /// Price at each endpoint of the two channel boundary lines.
-    fn paint_channel_price_labels(&self, painter: &egui::Painter, lines: &[[Pos2; 2]]) {
+    /// Both boundaries' prices at each painted end. Independent of Label Text placement.
+    /// The outline may reverse a right-to-left drag and may run to the pane edge, so the
+    /// label follows that point's screen price.
+    fn paint_channel_price_labels(
+        &self,
+        painter: &egui::Painter,
+        lines: &[[Pos2; 2]],
+        y_to_price: &dyn Fn(f32) -> f64,
+    ) {
+        let &[first, second, ..] = lines else {
+            return;
+        };
         let color = self.text_color32();
         let font = self.annotation_font();
-        let prices = self.channel_endpoint_prices();
-        for (point, price) in lines
-            .iter()
-            .take(2)
-            .flat_map(|line| line.iter())
-            .zip(prices)
-        {
-            let Some(price) = price else { continue };
-            let decimals = price_decimals(price);
-            let text = format!("{price:.decimals$}");
-            self.paint_endpoint_price(painter, *point, &text, color, font.clone());
-        }
-    }
-
-    fn channel_endpoint_prices(&self) -> [Option<f64>; 4] {
-        let &[a, b, c, ..] = self.chart_points.as_slice() else {
-            return [None; 4];
-        };
-        match self.tool_type {
-            DrawingToolType::FlatTopBottom => {
-                [Some(a.price), Some(b.price), Some(c.price), Some(c.price)]
-            }
-            DrawingToolType::DisjointChannel => {
-                // Mirrored slope through c: price at bar of a and b.
-                let da = b.bar_idx - a.bar_idx;
-                if da.abs() < 1e-6 {
-                    let axis = (a.price + b.price) / 2.0;
-                    [
-                        Some(a.price),
-                        Some(b.price),
-                        Some(c.price + axis - a.price),
-                        Some(c.price + axis - b.price),
-                    ]
-                } else {
-                    let slope = (b.price - a.price) / f64::from(da);
-                    let at = |bar: f32| c.price - f64::from(bar - c.bar_idx) * slope;
-                    [
-                        Some(a.price),
-                        Some(b.price),
-                        Some(at(a.bar_idx)),
-                        Some(at(b.bar_idx)),
-                    ]
+        for end in 0..2 {
+            let (upper, lower) = if first[end].y <= second[end].y {
+                (first[end], second[end])
+            } else {
+                (second[end], first[end])
+            };
+            for &(point, below) in &[(upper, false), (lower, true)] {
+                let price = y_to_price(point.y);
+                if !price.is_finite() {
+                    continue;
                 }
+                let decimals = price_decimals(price);
+                let text = format!("{price:.decimals$}");
+                self.paint_endpoint_price(painter, point, &text, below, color, font.clone());
             }
-            _ => [None; 4],
         }
     }
 
@@ -145,6 +125,7 @@ impl Drawing {
         painter: &egui::Painter,
         point: Pos2,
         text: &str,
+        below: bool,
         color: Color32,
         font: FontId,
     ) {
@@ -163,7 +144,12 @@ impl Drawing {
         } else {
             painter.layout_no_wrap(text.to_owned(), font, color)
         };
-        let pos = point + egui::vec2(4.0, -galley.size().y - 2.0);
+        let height = galley.size().y;
+        let pos = if below {
+            point + egui::vec2(4.0, 2.0)
+        } else {
+            point + egui::vec2(4.0, -height - 2.0)
+        };
         if self.font_weight == crate::drawings::FontWeight::Bold {
             let mut weighted = egui::epaint::TextShape::new(pos, galley.clone(), color);
             weighted.opacity_factor = 0.55;
@@ -824,5 +810,154 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Price labels show both boundaries at the painted ends, independent of Label Text.
+    #[test]
+    fn channel_price_labels_follow_the_painted_ends() {
+        use crate::drawings::ChartPoint;
+        use crate::drawings::TextVerticalAlign;
+        use crate::drawings::rendering::ChartView;
+        let pane = Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, 500.0));
+        let mut drawing = Drawing::new(1, DrawingToolType::FlatTopBottom);
+        drawing.points = vec![
+            Pos2::new(200.0, 200.0),
+            Pos2::new(100.0, 100.0),
+            Pos2::new(150.0, 50.0),
+        ];
+        drawing.chart_points = drawing
+            .points
+            .iter()
+            .map(|point| ChartPoint::new(point.x, f64::from(point.y)))
+            .collect();
+        drawing.extend_right = true;
+        drawing.show_price_labels = true;
+        assert_eq!(
+            Drawing::new(2, DrawingToolType::FlatTopBottom).text_v_align,
+            TextVerticalAlign::Inside
+        );
+        assert!(Drawing::new(3, DrawingToolType::FlatTopBottom).show_price_labels);
+        let texts = |drawing: &Drawing| {
+            let output = egui::Context::default().run_ui(Default::default(), |ui| {
+                let view = ChartView {
+                    instrument: None,
+                    bars: &[],
+                    revision: 0,
+                    bar_to_x: &|x| x,
+                    price_to_y: &|price| price as f32,
+                    y_to_price: &f64::from,
+                    time_axis: true,
+                    executions: None,
+                };
+                drawing.render(ui.painter(), pane, &view);
+            });
+            let labels: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some((text.galley.job.text.clone(), text.pos.y)),
+                    _ => None,
+                })
+                .collect();
+            output.drop_without_applying_deltas();
+            labels
+        };
+        for align in [
+            TextVerticalAlign::Top,
+            TextVerticalAlign::Inside,
+            TextVerticalAlign::Bottom,
+        ] {
+            drawing.text_v_align = align;
+            let labels = texts(&drawing);
+            assert!(
+                labels
+                    .iter()
+                    .any(|(label, y)| label == "50.0000" && *y < 50.0),
+                "{align:?} upper price above the line: {labels:?}"
+            );
+            assert!(
+                labels
+                    .iter()
+                    .any(|(label, y)| label == "400.00" && *y > 400.0),
+                "{align:?} extended lower price below the line: {labels:?}"
+            );
+            assert!(
+                labels.iter().any(|(label, _)| label == "100.00"),
+                "{align:?} near lower price: {labels:?}"
+            );
+        }
+        drawing.show_price_labels = false;
+        drawing.text = Some("Channel".into());
+        drawing.text_v_align = TextVerticalAlign::Inside;
+        let labelled = texts(&drawing);
+        assert!(
+            labelled.iter().any(|(label, _)| label == "Channel"),
+            "Label Text still paints without price labels: {labelled:?}"
+        );
+        assert!(
+            labelled
+                .iter()
+                .all(|(label, _)| !label.chars().all(|c| c.is_ascii_digit() || c == '.')),
+            "no price labels when disabled: {labelled:?}"
+        );
+    }
+
+    /// Label Text sits on the upper boundary, between both lines, or on the lower boundary.
+    #[test]
+    fn flat_top_bottom_label_text_follows_channel_boundaries() {
+        use crate::drawings::ChartPoint;
+        use crate::drawings::TextVerticalAlign;
+        use crate::drawings::rendering::ChartView;
+        let pane = Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, 500.0));
+        let mut drawing = Drawing::new(1, DrawingToolType::FlatTopBottom);
+        drawing.points = vec![
+            Pos2::new(100.0, 100.0),
+            Pos2::new(300.0, 100.0),
+            Pos2::new(200.0, 220.0),
+        ];
+        drawing.chart_points = drawing
+            .points
+            .iter()
+            .map(|point| ChartPoint::new(point.x, f64::from(point.y)))
+            .collect();
+        drawing.show_price_labels = false;
+        drawing.text = Some("Label".into());
+        drawing.text_h_align = crate::drawings::TextHorizontalAlign::Center;
+        let label_y = |drawing: &Drawing| {
+            let output = egui::Context::default().run_ui(Default::default(), |ui| {
+                let view = ChartView {
+                    instrument: None,
+                    bars: &[],
+                    revision: 0,
+                    bar_to_x: &|x| x,
+                    price_to_y: &|price| price as f32,
+                    y_to_price: &f64::from,
+                    time_axis: true,
+                    executions: None,
+                };
+                drawing.render(ui.painter(), pane, &view);
+            });
+            let y = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.job.text == "Label" => Some(text.pos.y),
+                _ => None,
+            });
+            output.drop_without_applying_deltas();
+            y.expect("label text")
+        };
+        drawing.text_v_align = TextVerticalAlign::Top;
+        let top_y = label_y(&drawing);
+        assert!(top_y < 100.0, "Top sits above the upper line: {top_y}");
+        drawing.text_v_align = TextVerticalAlign::Bottom;
+        let bottom_y = label_y(&drawing);
+        assert!(
+            bottom_y > 220.0,
+            "Bottom sits below the lower line: {bottom_y}"
+        );
+        drawing.text_v_align = TextVerticalAlign::Inside;
+        let inside_y = label_y(&drawing);
+        assert!(
+            (100.0..220.0).contains(&inside_y),
+            "Inside sits between both lines: {inside_y}"
+        );
     }
 }

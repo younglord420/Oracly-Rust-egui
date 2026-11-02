@@ -20,33 +20,31 @@ impl Drawing {
         }
     }
 
-    /// Ends from left to right, extended to the pane edges as configured; `None` below two
-    /// anchors. Vertical rays extend in anchor order, vertical extended lines top to bottom.
+    /// Ends of the stroked segment; `None` below two anchors. A ray always runs to the
+    /// right pane edge: from the leftmost of its two anchors along the line through both.
+    /// A vertical ray runs from the first anchor through the second to the top or bottom.
+    /// Other lines run left to right. A vertical extended line runs top to bottom.
     pub(crate) fn trend_line_ends(&self, rect: Rect) -> Option<(Pos2, Pos2)> {
         let &[a, b, ..] = self.points.as_slice() else {
             return None;
         };
-        if a.x == b.x {
-            use crate::drawings::DrawingToolType as T;
-            if matches!(self.tool_type, T::Ray | T::ExtendedLine) {
-                let (start, end) = if self.tool_type == T::ExtendedLine && b.y < a.y {
-                    (b, a)
+        if self.tool_type == crate::drawings::DrawingToolType::Ray {
+            return Some(ray_segment(a, b, rect));
+        }
+        if a.x == b.x && self.tool_type == crate::drawings::DrawingToolType::ExtendedLine {
+            let (start, end) = if b.y < a.y { (b, a) } else { (a, b) };
+            return Some((
+                if self.extend_left {
+                    ray_end(end, start, rect)
                 } else {
-                    (a, b)
-                };
-                return Some((
-                    if self.extend_left {
-                        ray_end(end, start, rect)
-                    } else {
-                        start
-                    },
-                    if self.extend_right {
-                        ray_end(start, end, rect)
-                    } else {
-                        end
-                    },
-                ));
-            }
+                    start
+                },
+                if self.extend_right {
+                    ray_end(start, end, rect)
+                } else {
+                    end
+                },
+            ));
         }
         let (mut left, mut right) = if a.x <= b.x { (a, b) } else { (b, a) };
         let slope = (right.y - left.y) / (right.x - left.x);
@@ -77,7 +75,7 @@ impl Drawing {
         }
     }
 
-    /// Render a ray with its configured extensions and its start anchor.
+    /// Render a ray with its configured extensions.
     pub(crate) fn render_ray(
         &self,
         painter: &egui::Painter,
@@ -86,12 +84,9 @@ impl Drawing {
         stroke: Stroke,
     ) {
         self.render_trend_line(painter, rect, color, stroke);
-        if self.points.len() >= 2 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.md, color);
-        }
     }
 
-    /// Render an extended line with its configured extensions and its anchors.
+    /// Render an extended line with its configured extensions.
     pub(crate) fn render_extended_line(
         &self,
         painter: &egui::Painter,
@@ -100,12 +95,6 @@ impl Drawing {
         stroke: Stroke,
     ) {
         self.render_trend_line(painter, rect, color, stroke);
-        if self.points.len() >= 2 {
-            let p1 = self.points[0];
-            let p2 = self.points[1];
-            painter.circle_filled(p1, DESIGN_TOKENS.rounding.sm, color);
-            painter.circle_filled(p2, DESIGN_TOKENS.rounding.sm, color);
-        }
     }
 
     /// Render horizontal line
@@ -127,13 +116,12 @@ impl Drawing {
         &self,
         painter: &egui::Painter,
         rect: Rect,
-        color: Color32,
+        _color: Color32,
         stroke: Stroke,
     ) {
         if !self.points.is_empty() {
             let start = self.points[0];
             self.styled_segment(painter, start, Pos2::new(rect.max.x, start.y), stroke);
-            painter.circle_filled(start, DESIGN_TOKENS.rounding.md, color);
         }
     }
 
@@ -151,7 +139,7 @@ impl Drawing {
         &self,
         painter: &egui::Painter,
         rect: Rect,
-        color: Color32,
+        _color: Color32,
         stroke: Stroke,
     ) {
         if !self.points.is_empty() {
@@ -166,7 +154,6 @@ impl Drawing {
             );
             self.styled_segment(painter, left, right, stroke);
             self.styled_segment(painter, top, bottom, stroke);
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.md, color);
         }
     }
 
@@ -563,8 +550,8 @@ impl Drawing {
     }
 }
 
-/// Where a ray from `start` through `end` leaves `rect`: on the side `end` is
-/// towards, or at the top or bottom when it is vertical. Keep the defining
+/// Where a directed ray from `start` through `end` leaves `rect`: on the side
+/// `end` is towards, or at the top or bottom when it is vertical. Keep the defining
 /// segment when its endpoint is already beyond that edge, so panning never reverses it.
 pub(super) fn ray_end(start: Pos2, end: Pos2, rect: Rect) -> Pos2 {
     let (dx, dy) = (end.x - start.x, end.y - start.y);
@@ -577,6 +564,23 @@ pub(super) fn ray_end(start: Pos2, end: Pos2, rect: Rect) -> Pos2 {
         start + (end - start) * ((edge - start.y) / dy).max(1.0)
     } else {
         start
+    }
+}
+
+/// Stroke endpoints for the Ray tool: always extend to the right pane edge.
+/// Non-vertical: from `min(x1, x2)` along the line through both anchors to `rect.right()`.
+/// Vertical: from the first anchor through the second to the top or bottom edge.
+fn ray_segment(p1: Pos2, p2: Pos2, rect: Rect) -> (Pos2, Pos2) {
+    let dx = p2.x - p1.x;
+    if dx.abs() < 1e-6 {
+        let end_y = if p2.y >= p1.y { rect.max.y } else { rect.min.y };
+        (Pos2::new(p1.x, p1.y), Pos2::new(p2.x, end_y))
+    } else {
+        let slope = (p2.y - p1.y) / dx;
+        let y_at = |x: f32| p1.y + slope * (x - p1.x);
+        let lx = p1.x.min(p2.x);
+        let rx = rect.max.x;
+        (Pos2::new(lx, y_at(lx)), Pos2::new(rx, y_at(rx)))
     }
 }
 
@@ -770,51 +774,152 @@ mod tests {
         }
     }
 
-    /// In a pane from (0, 0) to (1000, 600), a ray from (500, 100) moving 100 px across and
-    /// 50 px down per step reaches the right edge after 5 steps at y = 350, and moving 100 px
-    /// left reaches the left edge after 5 steps, also at y = 350. A vertical ray runs to the
-    /// bottom or the top edge, whichever its second anchor is towards.
+    /// Dragging the second anchor left of the first still strokes from the leftmost
+    /// anchor through both points to the right pane edge — never leftward.
     #[test]
-    fn rays_run_through_their_second_anchor_to_the_pane_edge() {
+    fn a_ray_always_extends_to_the_right_edge() {
+        use crate::drawings::DrawingToolType;
+        let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(1000.0, 600.0));
+        let mut drawing = Drawing::new(1, DrawingToolType::Ray);
+        // First click at x=300, drag left to x=100: left end follows the cursor.
+        drawing.points = vec![Pos2::new(300.0, 100.0), Pos2::new(100.0, 180.0)];
+        let (left, right) = drawing.trend_line_ends(rect).unwrap();
+        assert_eq!(left, Pos2::new(100.0, 180.0));
+        assert!(
+            (right.x - 1000.0).abs() < 0.01 && (right.y - (-180.0)).abs() < 0.01,
+            "{right:?}"
+        );
+        // Drag right of the first anchor: left end stays at the first anchor.
+        drawing.points[1] = Pos2::new(420.0, 40.0);
+        let (left, right) = drawing.trend_line_ends(rect).unwrap();
+        assert_eq!(left, Pos2::new(300.0, 100.0));
+        assert!(
+            (right.x - 1000.0).abs() < 0.01 && (right.y - (-250.0)).abs() < 0.01,
+            "{right:?}"
+        );
+        // Extension flags do not change Ray geometry.
+        drawing.points = vec![Pos2::new(200.0, 80.0), Pos2::new(800.0, 200.0)];
+        drawing.extend_left = true;
+        drawing.extend_right = false;
+        let (origin, far) = drawing.trend_line_ends(rect).unwrap();
+        assert_eq!(origin, Pos2::new(200.0, 80.0));
+        assert!(
+            (far.x - 1000.0).abs() < 0.01 && (far.y - 240.0).abs() < 0.01,
+            "{far:?}"
+        );
+    }
+
+    /// Ray stroke geometry matches right-edge extension: leftmost of the two anchors to
+    /// the right pane edge. Vertical rays still run from the first anchor through the second.
+    #[test]
+    fn rays_extend_from_leftmost_anchor_to_the_right_edge() {
         let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(1000.0, 600.0));
         let start = Pos2::new(500.0, 100.0);
         let cases = [
-            ((600.0, 150.0), (1000.0, 350.0)),
-            ((400.0, 150.0), (0.0, 350.0)),
-            ((500.0, 300.0), (500.0, 600.0)),
-            ((500.0, 50.0), (500.0, 0.0)),
+            // through right: left = start, right edge at y=350
+            (
+                Pos2::new(600.0, 150.0),
+                Pos2::new(500.0, 100.0),
+                Pos2::new(1000.0, 350.0),
+            ),
+            // through left: left = second anchor, still to the right edge
+            (
+                Pos2::new(400.0, 150.0),
+                Pos2::new(400.0, 150.0),
+                Pos2::new(1000.0, -150.0),
+            ),
+            // vertical down / up
+            (
+                Pos2::new(500.0, 300.0),
+                Pos2::new(500.0, 100.0),
+                Pos2::new(500.0, 600.0),
+            ),
+            (
+                Pos2::new(500.0, 50.0),
+                Pos2::new(500.0, 100.0),
+                Pos2::new(500.0, 0.0),
+            ),
         ];
         let wrong: Vec<String> = cases
             .into_iter()
-            .filter_map(|((x, y), (want_x, want_y))| {
-                let got = ray_end(start, Pos2::new(x, y), rect);
-                (got != Pos2::new(want_x, want_y))
-                    .then(|| format!("through ({x}, {y}): got {got:?}, want ({want_x}, {want_y})"))
+            .filter_map(|(through, want_l, want_r)| {
+                let got = ray_segment(start, through, rect);
+                (got != (want_l, want_r)).then(|| {
+                    format!("through {through:?}: got {got:?}, want ({want_l:?}, {want_r:?})")
+                })
             })
             .collect();
-        for (end, rect, want) in [
-            (
-                Pos2::new(600.0, 150.0),
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(400.0, 600.0)),
-                Pos2::new(600.0, 150.0),
-            ),
-            (
-                Pos2::new(500.0, 300.0),
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1000.0, 50.0)),
-                Pos2::new(500.0, 300.0),
-            ),
-            (start, rect, start),
-        ] {
-            assert_eq!(ray_end(start, end, rect), want);
-        }
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 
-        // y = x / 2 - 150: left edge is -150, right edge is 350.
+        // Directed `ray_end` (pitchfork / fib helpers) still reaches whichever edge it faces.
+        assert_eq!(
+            ray_end(start, Pos2::new(400.0, 150.0), rect),
+            Pos2::new(0.0, 350.0)
+        );
+
         use crate::drawings::{ArrowStyle, DrawingToolType};
         for tool in [DrawingToolType::Ray, DrawingToolType::ExtendedLine] {
             let defaults = Drawing::new(1, tool);
             assert!(defaults.extend_right);
             assert_eq!(defaults.extend_left, tool == DrawingToolType::ExtendedLine);
+            if tool == DrawingToolType::Ray {
+                for (left, right) in [(false, false), (false, true), (true, false), (true, true)] {
+                    let mut vertical = defaults.clone();
+                    vertical.points = vec![start, Pos2::new(500., 300.)];
+                    vertical.extend_left = left;
+                    vertical.extend_right = right;
+                    assert_eq!(
+                        vertical.outline(rect).unwrap().lines,
+                        [[Pos2::new(500., 100.), Pos2::new(500., 600.)]]
+                    );
+                }
+                for reversed in [false, true] {
+                    let mut drawing = defaults.clone();
+                    drawing.points = vec![start, Pos2::new(600., 150.)];
+                    if reversed {
+                        drawing.points.reverse();
+                    }
+                    drawing.extend_left = true;
+                    drawing.extend_right = false;
+                    drawing.arrow_start_style = ArrowStyle::Square;
+                    drawing.arrow_end_style = ArrowStyle::Square;
+                    // Both orders stroke from the leftmost anchor to the right edge.
+                    let expected = [Pos2::new(500., 100.), Pos2::new(1000., 350.)];
+                    assert_eq!(drawing.outline(rect).unwrap().lines, [expected]);
+                    let interaction = crate::drawings::services::DrawingInteraction::new();
+                    for (point, hit) in [
+                        (Pos2::new(400., 50.), false),
+                        (Pos2::new(550., 125.), true),
+                        (Pos2::new(800., 250.), true),
+                    ] {
+                        assert_eq!(
+                            interaction.hit_test(point, std::slice::from_ref(&drawing), "1D"),
+                            hit.then_some(1)
+                        );
+                    }
+                    let output = egui::Context::default().run_ui(Default::default(), |ui| {
+                        let view = ChartView {
+                            instrument: None,
+                            bars: &[],
+                            executions: None,
+                            revision: 0,
+                            bar_to_x: &|x| x,
+                            price_to_y: &|p| p as f32,
+                            y_to_price: &f64::from,
+                            time_axis: true,
+                        };
+                        drawing.render(ui.painter(), rect, &view);
+                    });
+                    assert!(output.shapes.iter().any(|s| matches!(&s.shape,
+                        egui::Shape::LineSegment { points, .. } if *points == expected)));
+                    for tip in expected {
+                        assert!(output.shapes.iter().any(|s| matches!(&s.shape,
+                            egui::Shape::Rect(r) if r.rect.center() == tip)));
+                    }
+                    output.drop_without_applying_deltas();
+                }
+                continue;
+            }
             for (left, right, ys) in [
                 (false, false, [100., 300.]),
                 (false, true, [100., 600.]),
@@ -830,13 +935,34 @@ mod tests {
                     [ys.map(|y| Pos2::new(500., y))]
                 );
             }
-            for (left, right, ends) in [
-                (false, false, [(500., 100.), (600., 150.)]),
-                (false, true, [(500., 100.), (1000., 350.)]),
-                (true, false, [(0., -150.), (600., 150.)]),
-                (true, true, [(0., -150.), (1000., 350.)]),
-            ] {
-                for reversed in [false, true] {
+            let cases: &[(bool, bool, [(f32, f32); 2], [(f32, f32); 2])] = &[
+                (
+                    false,
+                    false,
+                    [(500., 100.), (600., 150.)],
+                    [(500., 100.), (600., 150.)],
+                ),
+                (
+                    false,
+                    true,
+                    [(500., 100.), (1000., 350.)],
+                    [(500., 100.), (1000., 350.)],
+                ),
+                (
+                    true,
+                    false,
+                    [(0., -150.), (600., 150.)],
+                    [(0., -150.), (600., 150.)],
+                ),
+                (
+                    true,
+                    true,
+                    [(0., -150.), (1000., 350.)],
+                    [(0., -150.), (1000., 350.)],
+                ),
+            ];
+            for &(left, right, forward, backward) in cases {
+                for (reversed, ends) in [(false, forward), (true, backward)] {
                     let mut drawing = defaults.clone();
                     drawing.points = vec![start, Pos2::new(600., 150.)];
                     if reversed {
@@ -849,10 +975,11 @@ mod tests {
                     let expected = ends.map(|(x, y)| Pos2::new(x, y));
                     assert_eq!(drawing.outline(rect).unwrap().lines, [expected]);
                     let interaction = crate::drawings::services::DrawingInteraction::new();
+                    let (before, after) = (left, right);
                     for (point, hit) in [
-                        (Pos2::new(400., 50.), left),
+                        (Pos2::new(400., 50.), before),
                         (Pos2::new(550., 125.), true),
-                        (Pos2::new(800., 250.), right),
+                        (Pos2::new(800., 250.), after),
                     ] {
                         assert_eq!(
                             interaction.hit_test(point, std::slice::from_ref(&drawing), "1D"),

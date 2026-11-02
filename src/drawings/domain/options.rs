@@ -92,25 +92,33 @@ pub use crate::config::FontWeight;
 /// Vertical placement of a label relative to its line or shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
 pub enum TextVerticalAlign {
-    /// Positioned above the line or top edge.
+    /// Positioned above the line or on a channel's upper boundary.
     #[default]
     Top,
+    /// Between a channel's two boundaries (or near the top edge of a box).
+    Inside,
     /// Centered on the line or middle of the shape.
     Middle,
-    /// Positioned below the line or bottom edge.
+    /// Positioned below the line or on a channel's lower boundary.
     Bottom,
 }
 
 impl TextVerticalAlign {
     /// All vertical alignment choices in UI order.
     pub fn all() -> &'static [Self] {
-        &[Self::Top, Self::Middle, Self::Bottom]
+        &[Self::Top, Self::Inside, Self::Middle, Self::Bottom]
+    }
+
+    /// Vertical choices for two-boundary channel tools (Flat Top/Bottom, Disjoint).
+    pub fn channel() -> &'static [Self] {
+        &[Self::Top, Self::Inside, Self::Bottom]
     }
 
     /// Display name for UI controls.
     pub fn label(self) -> &'static str {
         match self {
             Self::Top => "Top",
+            Self::Inside => "Inside",
             Self::Middle => "Middle",
             Self::Bottom => "Bottom",
         }

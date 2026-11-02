@@ -79,11 +79,12 @@ impl DrawingToolType {
     }
 
     /// Whether the drawing's left and right extension flags change its geometry.
+    /// A ray always runs from its leftmost anchor through both points to the
+    /// right pane edge, so those flags do not apply.
     pub fn supports_extend(&self) -> bool {
         matches!(
             self,
             Self::TrendLine
-                | Self::Ray
                 | Self::ExtendedLine
                 | Self::Rect
                 | Self::InfoLine
@@ -94,6 +95,10 @@ impl DrawingToolType {
                 | Self::FlatTopBottom
                 | Self::DisjointChannel
                 | Self::RegressionTrend
+                | Self::Pitchfork
+                | Self::SchiffPitchfork
+                | Self::ModifiedSchiffPitchfork
+                | Self::InsidePitchfork
         )
     }
 
