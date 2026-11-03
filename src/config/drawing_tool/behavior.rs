@@ -66,12 +66,12 @@ impl DrawingToolType {
                 | Self::InsidePitchfork
                 | Self::RegressionTrend
                 | Self::GhostFeed
+                | Self::Forecast
                 | Self::LongPos
                 | Self::ShortPos
                 | Self::AnchoredVWAP
                 | Self::FixedRangeVolumeProfile
                 | Self::AnchoredVolumeProfile
-                | Self::PriceRange
                 | Self::Brush
                 | Self::Highlighter
                 | Self::ArrowMarker
@@ -176,6 +176,7 @@ impl DrawingToolType {
                 self,
                 Self::TimeCycles
                     | Self::SineLine
+                    | Self::GhostFeed
                     | Self::FairValueGap
                     | Self::OrderBlock
                     | Self::Liquidity
@@ -195,9 +196,7 @@ impl DrawingToolType {
             }
 
             // Single-click tools
-            Self::LongPos
-            | Self::ShortPos
-            | Self::HorizontalLine
+            Self::HorizontalLine
             | Self::VerticalLine
             | Self::CrossLine
             | Self::HorizontalRay
@@ -251,6 +250,8 @@ impl DrawingToolType {
             | Self::SineLine
             | Self::Callout
             | Self::Arrow
+            | Self::LongPos
+            | Self::ShortPos
             | Self::DedekindTessellation
             | Self::Sonic
             | Self::Supersonic
@@ -452,8 +453,8 @@ mod tests {
             (SharkPattern, DrawingInteractionMode::MultiPoint, 5),
             (PriceNote, DrawingInteractionMode::ClickClick, 2),
             (ArrowMarker, DrawingInteractionMode::ClickClick, 2),
-            (LongPos, DrawingInteractionMode::SingleClick, 1),
-            (ShortPos, DrawingInteractionMode::SingleClick, 1),
+            (LongPos, DrawingInteractionMode::DragToDraw, 2),
+            (ShortPos, DrawingInteractionMode::DragToDraw, 2),
             (GhostFeed, DrawingInteractionMode::MultiPoint, 5),
         ] {
             assert_eq!(tool.interaction_mode(), mode, "{tool:?}");

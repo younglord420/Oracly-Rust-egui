@@ -46,8 +46,9 @@ impl Drawing {
                 egui::StrokeKind::Inside,
             );
         }
+        // The path takes the drawing's line; the candles keep their market colours.
         for pair in self.points.windows(2) {
-            painter.line_segment([pair[0], pair[1]], Stroke::new(1.0, neutral));
+            self.styled_segment(painter, pair[0], pair[1], self.stroke());
         }
     }
 }
@@ -118,11 +119,13 @@ mod tests {
                         *count += 1;
                     }
                     Shape::LineSegment { stroke, .. } => {
-                        assert_eq!(stroke.width, 1.0);
-                        assert_eq!(
-                            stroke.color,
-                            Color32::from_rgba_unmultiplied(128, 128, 128, 128)
-                        );
+                        // Wicks stay neutral; the path takes the drawing's line.
+                        let wick = *stroke
+                            == Stroke::new(
+                                1.0,
+                                Color32::from_rgba_unmultiplied(128, 128, 128, 128),
+                            );
+                        assert!(wick || *stroke == drawing.stroke(), "{stroke:?}");
                         lines += 1;
                     }
                     shape => panic!("unexpected ghost decoration: {shape:?}"),

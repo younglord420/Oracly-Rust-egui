@@ -447,7 +447,6 @@ impl Drawing {
                         | DrawingToolType::Image
                         | DrawingToolType::Tweet
                         | DrawingToolType::Idea
-                        | DrawingToolType::Forecast
                         | DrawingToolType::ArrowMarkUp
                         | DrawingToolType::ArrowMarkDown
                         | DrawingToolType::ArrowMarkLeft

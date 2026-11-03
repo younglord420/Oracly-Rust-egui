@@ -301,6 +301,9 @@ impl DrawingPropertiesDialog {
                 drawing.ghost_feed = old.ghost_feed;
                 drawing.position_size = old.position_size;
                 drawing.position_sizing = old.position_sizing;
+                drawing.position_display = old.position_display;
+                drawing.measure = old.measure;
+                drawing.vwap = old.vwap;
                 drawing.volume_profile = old.volume_profile;
                 drawing.regression_trend = old.regression_trend;
                 drawing.channel_midline = old.channel_midline;

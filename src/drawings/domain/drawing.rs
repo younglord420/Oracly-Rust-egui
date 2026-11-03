@@ -10,9 +10,9 @@
 
 use super::{
     ArrowStyle, ChartPoint, DrawingToolType, FibonacciConfig, FontWeight, GannConfig,
-    GeometryConfig, GhostFeedConfig, PatternConfig, PitchforkConfig, PositionSize, PositionSizing,
-    PriceActionConfig, RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign,
-    TimeframeVisibility,
+    GeometryConfig, GhostFeedConfig, MeasureConfig, PatternConfig, PitchforkConfig,
+    PositionDisplay, PositionSize, PositionSizing, PriceActionConfig, RegressionTrendConfig,
+    TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility, VwapConfig,
 };
 
 use crate::data::VolumeProfileConfig;
@@ -155,6 +155,15 @@ pub struct Drawing {
     /// Instrument economics for long and short position sizing. Older drawings use unit sizing.
     #[serde(default)]
     pub position_sizing: PositionSizing,
+    /// Labels and zone colours of the long and short positions.
+    #[serde(default)]
+    pub position_display: Option<PositionDisplay>,
+    /// Readouts of the measure and range tools.
+    #[serde(default)]
+    pub measure: Option<MeasureConfig>,
+    /// Bands of the anchored VWAP.
+    #[serde(default)]
+    pub vwap: Option<VwapConfig>,
     /// Customizable Fibonacci levels for Fib tools
     pub fib_config: Option<FibonacciConfig>,
     /// Rows and value area of the volume profile tools
@@ -315,6 +324,9 @@ impl Drawing {
             timeframe_visibility: TimeframeVisibility::all(),
             position_size: None,
             position_sizing: PositionSizing::default(),
+            position_display: None,
+            measure: None,
+            vwap: None,
             fib_config: matches!(
                 tool_type,
                 DrawingToolType::FibonacciRetracement

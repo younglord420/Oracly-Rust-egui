@@ -38,10 +38,11 @@ pub use domain::{
     ArrowStyle, ChartPoint, Drawing, DrawingInteractionMode, DrawingOptions, DrawingTemplate,
     DrawingToolType, FibPreset, FibonacciConfig, FibonacciLevel, FontWeight, GannConfig,
     GannFanDirection, GannLevel, GhostCandle, GhostFeedConfig, HandlePos, HarmonicRule,
-    ParseToolTypeError, PatternConfig, PitchforkConfig, PitchforkLevel, PositionSize,
-    PositionSizing, RatioBand, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
-    TextVerticalAlign, TimeframeVisibility, Wave, WaveDegree, WaveLabel, gann_fan_label,
-    gann_square_fan_label, harmonic_rules, parse_gann_ratio,
+    MeasureConfig, ParseToolTypeError, PatternConfig, PitchforkConfig, PitchforkLevel,
+    PositionDisplay, PositionSize, PositionSizing, RatioBand, RegressionSource,
+    RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility, VwapConfig,
+    Wave, WaveDegree, WaveLabel, gann_fan_label, gann_square_fan_label, harmonic_rules,
+    parse_gann_ratio,
 };
 pub use domain::{
     BlockState, DEDEKIND_CURVATURES, DedekindGeodesic, GapState, GeometryConfig, LiquidityState,

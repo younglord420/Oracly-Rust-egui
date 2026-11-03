@@ -370,6 +370,7 @@ impl HandleService {
                 {
                     drawing.points[level].y = new_pos.y;
                     drawing.chart_points[level].price = y_to_price(new_pos.y);
+                    drawing.keep_position_sides(level);
                 }
                 HandlePos::End if drawing.points.len() > 1 && drawing.chart_points.len() > 1 => {
                     let x = new_pos.x.max(drawing.points[0].x);
@@ -378,13 +379,18 @@ impl HandleService {
                         drawing.chart_points[level].bar_idx = x_to_bar(x);
                     }
                 }
-                _ => Self::update_multi_point_handle(
-                    drawing,
-                    handle,
-                    new_pos,
-                    &x_to_bar,
-                    &y_to_price,
-                ),
+                _ => {
+                    Self::update_multi_point_handle(
+                        drawing,
+                        handle,
+                        new_pos,
+                        &x_to_bar,
+                        &y_to_price,
+                    );
+                    if matches!(handle, HandlePos::Start | HandlePos::Point(0)) {
+                        drawing.keep_position_sides(0);
+                    }
+                }
             },
             _ => {
                 Self::update_multi_point_handle(drawing, handle, new_pos, &x_to_bar, &y_to_price);

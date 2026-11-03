@@ -316,20 +316,18 @@ pub(crate) const MAX_CACHED_SPANS: usize = 32;
 impl Drawing {
     /// Renders the drawing as unselected.
     pub fn render_original(&self, painter: &egui::Painter, rect: Rect, view: &ChartView) {
-        self.render_with_selection(painter, rect, view, false);
+        self.render_with_selection(painter, rect, view);
     }
 
     /// Main rendering dispatcher - routes to category-specific render methods
     ///
     /// This method handles rendering for every drawing tool type,
-    /// delegating to the appropriate category-specific implementation. `selected`
-    /// lets a tool mark its selection, as a position's statistics block does.
+    /// delegating to the appropriate category-specific implementation.
     pub(crate) fn render_with_selection(
         &self,
         painter: &egui::Painter,
         rect: Rect,
         view: &ChartView,
-        selected: bool,
     ) {
         if self.points.is_empty() {
             return;
@@ -441,8 +439,9 @@ impl Drawing {
             DrawingToolType::SineLine => self.render_sine_line(painter, rect),
 
             // Projection (6 tools)
-            DrawingToolType::LongPos => self.render_pos_tool(painter, view, true, selected),
-            DrawingToolType::ShortPos => self.render_pos_tool(painter, view, false, selected),
+            DrawingToolType::LongPos | DrawingToolType::ShortPos => {
+                self.render_pos_tool(painter, view);
+            }
             DrawingToolType::Forecast => self.render_forecast(painter, view),
             DrawingToolType::BarsPattern => self.render_bars_pattern(painter, view),
             // Candle colours and the neutral path are independent of the common drawing style.

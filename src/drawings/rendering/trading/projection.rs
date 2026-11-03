@@ -4,6 +4,10 @@ use crate::drawings::domain::Drawing;
 use crate::drawings::rendering::ChartView;
 use crate::drawings::rendering::measurements::boxed_label;
 use crate::drawings::rendering::utils::draw_dashed_line;
+use crate::model::percent_change;
+use crate::scales::{
+    DefaultPriceFormatter, PriceFormatter, instrument_price_precision, price_decimals,
+};
 use crate::styles::stroke;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind};
@@ -32,27 +36,20 @@ impl Drawing {
         // Main projection line with arrow
         self.draw_projection_main_line(painter, start, end, color);
 
-        // Third point for AB=CD projection
-        let proj_point = if self.points.len() >= 3 {
-            self.points[2]
-        } else {
-            Pos2::new(end.x + (end.x - start.x) * 0.5, end.y)
+        // The measured move repeats from the third anchor; until it is placed there is none.
+        let [a, b, c, ..] = self.chart_points.as_slice() else {
+            return;
         };
-
-        // Draw projected move (dashed)
-        let dx = end.x - start.x;
+        let Some(&proj_point) = self.points.get(2) else {
+            return;
+        };
         let dy = end.y - start.y;
         let dashed_color =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150);
-
-        let proj_end = if let [a, b, c, ..] = self.chart_points.as_slice() {
-            Pos2::new(
-                (view.bar_to_x)(c.bar_idx + b.bar_idx - a.bar_idx),
-                (view.price_to_y)(c.price + b.price - a.price),
-            )
-        } else {
-            Pos2::new(proj_point.x + dx, proj_point.y + dy)
-        };
+        let proj_end = Pos2::new(
+            (view.bar_to_x)(c.bar_idx + b.bar_idx - a.bar_idx),
+            (view.price_to_y)(c.price + b.price - a.price),
+        );
         draw_dashed_line(
             painter,
             proj_point,
@@ -65,8 +62,18 @@ impl Drawing {
         // Target zone (shaded rectangle at projection end)
         self.draw_projection_target_zone(painter, proj_end, dy, dashed_color);
 
-        // Labels
-        self.draw_projection_labels(painter, start, end, proj_end, dy, color, dashed_color);
+        let precision = view
+            .instrument
+            .and_then(instrument_price_precision)
+            .map_or_else(|| price_decimals(a.price), usize::from);
+        self.draw_projection_labels(
+            painter,
+            [start, end, proj_end],
+            dy,
+            precision,
+            color,
+            dashed_color,
+        );
     }
 
     pub(super) fn draw_projection_main_line(
@@ -122,34 +129,23 @@ impl Drawing {
     fn draw_projection_labels(
         &self,
         painter: &egui::Painter,
-        start: Pos2,
-        end: Pos2,
-        proj_end: Pos2,
+        [start, end, proj_end]: [Pos2; 3],
         dy: f32,
+        precision: usize,
         color: Color32,
         dashed_color: Color32,
     ) {
-        // Price/percentage labels
-        let price_change = if !self.chart_points.is_empty() && self.chart_points.len() >= 2 {
-            (self.chart_points[1].price - self.chart_points[0].price).abs()
-        } else {
-            dy.abs() as f64 / 10.0
+        let [a, b, ..] = self.chart_points.as_slice() else {
+            return;
         };
-
-        let pct_change = if !self.chart_points.is_empty()
-            && self.chart_points.len() >= 2
-            && self.chart_points[0].price != 0.0
-        {
-            ((self.chart_points[1].price - self.chart_points[0].price) / self.chart_points[0].price
-                * 100.0)
-                .abs()
-        } else {
-            0.0
-        };
+        let format = |price: f64| DefaultPriceFormatter::with_precision(precision).format(price);
+        let change = b.price - a.price;
+        let sign = if change < 0.0 { "\u{2212}" } else { "+" };
+        let pct_change = percent_change(a.price, b.price).abs();
 
         // Move label (at midpoint of AB)
         let mid_ab = Pos2::new((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
-        let label_text = format!("{price_change:.2} ({pct_change:.1}%)");
+        let label_text = format!("{sign}{} ({sign}{pct_change:.2}%)", format(change.abs()));
         boxed_label(
             painter,
             egui::Align2::CENTER_CENTER,
@@ -169,8 +165,8 @@ impl Drawing {
             || "Target: n/a".to_owned(),
             |c| {
                 format!(
-                    "Target: {:.2}",
-                    c.price + self.chart_points[1].price - self.chart_points[0].price
+                    "Target: {}",
+                    format(c.price + self.chart_points[1].price - self.chart_points[0].price)
                 )
             },
         );
@@ -203,10 +199,13 @@ mod tests {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 drawing.draw_projection_labels(
                     ui.painter(),
-                    Pos2::new(100.0, 300.0),
-                    Pos2::new(300.0, 200.0),
-                    Pos2::new(500.0, 100.0),
+                    [
+                        Pos2::new(100.0, 300.0),
+                        Pos2::new(300.0, 200.0),
+                        Pos2::new(500.0, 100.0),
+                    ],
                     -100.0,
+                    2,
                     Color32::BLUE,
                     Color32::BLUE,
                 );

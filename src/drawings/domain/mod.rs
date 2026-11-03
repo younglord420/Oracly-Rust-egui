@@ -12,6 +12,7 @@ mod ghost_feed;
 mod options;
 mod pattern;
 mod pitchfork;
+mod position;
 mod price_action;
 mod template;
 
@@ -29,14 +30,16 @@ pub use geometry::{
 pub use ghost_feed::{GhostCandle, GhostFeedConfig, MAX_GHOST_CANDLES};
 pub(crate) use options::fib_ratio_color;
 pub use options::{
-    ArrowStyle, DrawingOptions, FibPreset, FibonacciConfig, FibonacciLevel, FontWeight, HandlePos,
-    PositionSize, PositionSizing, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
-    TextVerticalAlign, TimeframeVisibility,
+    ArrowStyle, DEFAULT_ACCOUNT_BALANCE, DrawingOptions, FibPreset, FibonacciConfig,
+    FibonacciLevel, FontWeight, HandlePos, MeasureConfig, PositionDisplay, PositionSize,
+    PositionSizing, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
+    TextVerticalAlign, TimeframeVisibility, VwapConfig,
 };
 pub use pattern::{
     HarmonicRule, PatternConfig, RatioBand, Wave, WaveDegree, WaveLabel, harmonic_rules,
 };
 pub use pitchfork::{PitchforkConfig, PitchforkLevel};
+pub use position::POSITION_REWARD_RATIO;
 pub use price_action::{
     BlockState, GapState, LiquidityState, PriceActionConfig, ZoneEnd, ZoneFormation, block_state,
     gap_state, liquidity_state,

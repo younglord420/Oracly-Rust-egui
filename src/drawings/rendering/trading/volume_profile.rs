@@ -7,9 +7,9 @@ use crate::drawings::rendering::{ChartView, MAX_CACHED_SPANS, bars_between};
 use crate::localization as l10n;
 use crate::model::{Bar, SpanCache};
 use crate::painting::volume_profile::ProfileStyle;
+use crate::scales::PriceFormatter;
 use crate::styles::{stroke, typography};
-use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Shape, Stroke};
+use egui::{Color32, Pos2, Shape, Stroke};
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
@@ -49,9 +49,16 @@ impl Drawing {
         bars: &[Bar],
         color: Color32,
     ) {
-        // VWAP, then the bands, in standard deviations from it.
-        const OFFSETS: [f64; 5] = [0.0, 1.0, -1.0, 2.0, -2.0];
-        const NAMES: [&str; 4] = ["+1 SD", "-1 SD", "+2 SD", "-2 SD"];
+        // VWAP, then the inner and outer bands, in standard deviations from it.
+        let config = self.vwap.unwrap_or_default();
+        let m = config.multiplier.abs();
+        let offsets = [0.0, m, -m, 2.0 * m, -2.0 * m];
+        let names = [
+            format!("+{m} SD"),
+            format!("-{m} SD"),
+            format!("+{} SD", 2.0 * m),
+            format!("-{} SD", 2.0 * m),
+        ];
 
         // Only bars inside the clip rect (plus one on each side) become
         // points; bar_to_x is linear, so they are found without a scan.
@@ -78,7 +85,7 @@ impl Drawing {
         for (i, value) in (from..to).zip(anchored_vwap(bars, &checkpoints, from..to)) {
             let Some((vwap, sigma)) = value else { continue };
             let x = (view.bar_to_x)((first + i) as f32);
-            for (line, k) in lines.iter_mut().zip(OFFSETS) {
+            for (line, k) in lines.iter_mut().zip(offsets) {
                 line.push(Pos2::new(x, (view.price_to_y)(vwap + k * sigma)));
             }
             last_vwap = Some(vwap);
@@ -87,15 +94,32 @@ impl Drawing {
             return;
         };
 
-        // Bands (the 2σ ones fainter), then the VWAP line, each labelled at
-        // the last drawn bar
+        // Fill between the inner bands, in quads so each piece stays convex.
+        if let Some(fill) = config.band_fill {
+            let fill = Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
+            for (up, low) in lines[1].windows(2).zip(lines[2].windows(2)) {
+                painter.add(Shape::convex_polygon(
+                    vec![up[0], up[1], low[1], low[0]],
+                    fill,
+                    Stroke::NONE,
+                ));
+            }
+        }
+        // Bands (the outer ones fainter), then the VWAP line, each labelled at the last bar.
         let font = egui::FontId::proportional(typography::XS);
-        let band_color =
+        let faint =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150);
+        let rgba = |c: [u8; 4]| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
+        let upper = config.upper_color.map_or(faint, rgba);
+        let lower = config.lower_color.map_or(faint, rgba);
         let [vwap_line, bands @ ..] = lines;
-        for (i, (band, name)) in bands.into_iter().zip(NAMES).enumerate() {
-            let label_at = band.last().map(|p| Pos2::new(p.x - 20.0, p.y));
+        for (i, (band, name)) in bands.into_iter().zip(names).enumerate() {
+            if i >= 2 && !config.show_outer {
+                break;
+            }
+            let band_color = if i % 2 == 0 { upper } else { lower };
             let alpha = if i < 2 { 1.0 } else { 0.5 };
+            let label_at = band.last().map(|p| Pos2::new(p.x - 20.0, p.y));
             painter.add(Shape::line(
                 band,
                 Stroke::new(stroke::HAIRLINE, band_color.gamma_multiply(alpha)),
@@ -114,16 +138,20 @@ impl Drawing {
             vwap_line,
             Stroke::new(self.stroke_width.max(2.0), color),
         ));
-
-        let vwap_bg =
-            Rect::from_center_size(Pos2::new(end.x - 60.0, end.y), egui::vec2(80.0, 16.0));
-        painter.rect_filled(vwap_bg, DESIGN_TOKENS.rounding.sm, color);
-        painter.text(
-            vwap_bg.center(),
-            egui::Align2::CENTER_CENTER,
-            format!("VWAP {vwap:.2}"),
-            font,
+        let precision = view
+            .instrument
+            .and_then(crate::scales::instrument_price_precision)
+            .map_or_else(|| crate::scales::price_decimals(vwap), usize::from);
+        crate::drawings::rendering::measurements::boxed_label(
+            painter,
+            egui::Align2::RIGHT_CENTER,
+            Pos2::new(end.x - 20.0, end.y),
+            format!(
+                "VWAP {}",
+                crate::scales::DefaultPriceFormatter::with_precision(precision).format(vwap)
+            ),
             Color32::WHITE,
+            color,
         );
     }
 
@@ -332,6 +360,7 @@ fn span_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::Rect;
     use crate::drawings::domain::DrawingToolType;
     use crate::drawings::rendering::sample_bars;
 

@@ -1251,6 +1251,126 @@ impl Default for PositionSize {
     }
 }
 
+/// Bands of an anchored VWAP.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VwapConfig {
+    /// Standard deviations from the VWAP to the inner bands; the outer bands are twice as far.
+    pub multiplier: f64,
+    /// Whether the outer bands are drawn.
+    pub show_outer: bool,
+    /// Upper band colour as RGBA; `None` uses the line colour, fainter.
+    pub upper_color: Option<[u8; 4]>,
+    /// Lower band colour as RGBA; `None` uses the line colour, fainter.
+    pub lower_color: Option<[u8; 4]>,
+    /// Fill between the inner bands as RGBA; `None` leaves it clear.
+    pub band_fill: Option<[u8; 4]>,
+}
+
+impl Default for VwapConfig {
+    fn default() -> Self {
+        Self {
+            multiplier: 1.0,
+            show_outer: true,
+            upper_color: None,
+            lower_color: None,
+            band_fill: None,
+        }
+    }
+}
+
+/// Which readouts the measure and range tools show.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MeasureConfig {
+    /// The price change, its percent and tick or pip count.
+    pub show_price: bool,
+    /// The bars and time between the anchors.
+    pub show_time: bool,
+    /// The volume traded over the bars.
+    pub show_volume: bool,
+}
+
+impl Default for MeasureConfig {
+    fn default() -> Self {
+        Self {
+            show_price: true,
+            show_time: true,
+            show_volume: true,
+        }
+    }
+}
+
+/// Account a position is sized against when it saved no account.
+pub const DEFAULT_ACCOUNT_BALANCE: f64 = 10_000.0;
+
+impl PositionSize {
+    /// The account balance and the percent of it risked at the stop. A size saved as a fixed
+    /// quantity or risk amount is read against [`DEFAULT_ACCOUNT_BALANCE`], so the position
+    /// keeps its size; a quantity needs the stop away from the entry, else 1% is risked.
+    pub fn account_risk(&self, entry: f64, stop: f64) -> (f64, f64) {
+        let balance = DEFAULT_ACCOUNT_BALANCE;
+        let percent = |amount: f64| amount / balance * 100.0;
+        match *self {
+            Self::RiskPercent {
+                account_size,
+                percent,
+            } => (account_size, percent),
+            Self::RiskAmount(amount) => (balance, percent(amount)),
+            Self::Quantity(quantity) => {
+                let distance = (entry - stop).abs();
+                let risk = percent(quantity * distance);
+                (
+                    balance,
+                    if risk.is_finite() && risk > 0.0 {
+                        risk
+                    } else {
+                        1.0
+                    },
+                )
+            }
+        }
+    }
+}
+
+/// What a long or short position shows, and its zone colours.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PositionDisplay {
+    /// Master switch for every label.
+    pub show_text: bool,
+    /// The direction and risk to reward line above the box.
+    pub show_header: bool,
+    /// The amount lost at the stop and the position size, above the box.
+    pub show_loss_size: bool,
+    /// The target's percent inside the reward zone.
+    pub show_target_label: bool,
+    /// The stop's percent inside the risk zone.
+    pub show_stop_label: bool,
+    /// The level prices beside the target and stop percents.
+    pub show_prices: bool,
+    /// Fill and line colour of the reward zone, as RGBA.
+    pub profit_color: [u8; 4],
+    /// Fill and line colour of the risk zone, as RGBA.
+    pub loss_color: [u8; 4],
+}
+
+impl Default for PositionDisplay {
+    fn default() -> Self {
+        let tokens = &crate::tokens::DESIGN_TOKENS.semantic.extended;
+        Self {
+            show_text: true,
+            show_header: true,
+            show_loss_size: true,
+            show_target_label: true,
+            show_stop_label: true,
+            show_prices: false,
+            profit_color: tokens.bullish.to_srgba_unmultiplied(),
+            loss_color: tokens.bearish.to_srgba_unmultiplied(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

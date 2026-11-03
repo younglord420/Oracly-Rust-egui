@@ -237,6 +237,9 @@ impl DrawingProps {
                 drawing.ghost_feed = settings.ghost_feed;
                 drawing.position_size = settings.position_size;
                 drawing.position_sizing = settings.position_sizing;
+                drawing.position_display = settings.position_display;
+                drawing.measure = settings.measure;
+                drawing.vwap = settings.vwap;
                 drawing.volume_profile = settings.volume_profile;
                 drawing.regression_trend = settings.regression_trend;
                 drawing.channel_midline = settings.channel_midline;

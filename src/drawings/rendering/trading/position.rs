@@ -3,104 +3,98 @@
 use crate::drawings::domain::Drawing;
 use crate::drawings::rendering::utils::draw_dashed_line;
 use crate::drawings::rendering::{ChartView, bars_between};
-use crate::model::{Bar, percent_change};
-use crate::styles::{stroke, typography};
+use crate::model::Bar;
+use crate::scales::{
+    DefaultPriceFormatter, PriceFormatter, instrument_price_precision, price_decimals,
+};
+use crate::styles::stroke;
 use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Stroke};
+use egui::{Align2, Color32, Pos2, Rect, Stroke};
+
+/// Opacity of the reward and risk zones.
+const ZONE_ALPHA: f32 = 0.13;
+/// Opacity of the part of a zone the trade has covered so far.
+const COVERED_ALPHA: f32 = 0.12;
+/// Gap between the box and the labels above and below it.
+const LABEL_GAP: f32 = 9.0;
+
+fn rgba(color: [u8; 4]) -> Color32 {
+    Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3])
+}
+
+/// A money amount: whole when it is, else two decimals.
+fn money_text(amount: f64) -> String {
+    if !amount.is_finite() {
+        return "0".to_owned();
+    }
+    let rounded = (amount * 100.0).round() / 100.0;
+    if rounded.fract() == 0.0 {
+        format!("{rounded:.0}")
+    } else {
+        format!("{rounded:.2}")
+    }
+}
+
+/// A position size: two decimals from 100, up to four from 1, four significant digits below.
+fn size_text(size: f64) -> String {
+    if !size.is_finite() || size == 0.0 {
+        return "0".to_owned();
+    }
+    let text = if size >= 100.0 {
+        return format!("{size:.2}");
+    } else if size >= 1.0 {
+        format!("{size:.4}")
+    } else {
+        let decimals = (3 - size.log10().floor() as i32).clamp(0, 12) as usize;
+        format!("{size:.decimals$}")
+    };
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// Paints `text` aligned at `pos`, moved inside the painter's clip; returns its rect.
+fn text_inside(
+    painter: &egui::Painter,
+    pos: Pos2,
+    align: Align2,
+    text: String,
+    font: egui::FontId,
+    color: Color32,
+) -> Rect {
+    let galley = painter.layout_no_wrap(text, font, color);
+    let rect = align.anchor_size(pos, galley.size());
+    let clip = painter.clip_rect();
+    let shift = egui::vec2(
+        (clip.right() - rect.right()).min(0.0) + (clip.left() - rect.left()).max(0.0),
+        (clip.bottom() - rect.bottom()).min(0.0) + (clip.top() - rect.top()).max(0.0),
+    );
+    let rect = rect.translate(shift);
+    painter.galley(rect.min, galley, color);
+    rect
+}
 
 impl Drawing {
-    /// Renders a long or short position: entry, target and stop zones, and the
-    /// result of replaying the bars after the entry bar up to the right edge.
-    pub(crate) fn render_pos_tool(
-        &self,
-        painter: &egui::Painter,
-        view: &ChartView,
-        is_long: bool,
-        selected: bool,
-    ) {
-        let (&[entry, target, ..], &[entry_at, target_at, ..]) =
-            (self.points.as_slice(), self.chart_points.as_slice())
+    /// Renders a long or short position: the reward and risk zones, the target, stop and entry
+    /// lines, its direction, risk to reward, loss and size above the box, the target and stop
+    /// percents inside their zones, and the result of replaying the bars after the entry.
+    pub(crate) fn render_pos_tool(&self, painter: &egui::Painter, view: &ChartView) {
+        let (&[entry, target, ..], Some((entry_price, target_price, stop_price))) =
+            (self.points.as_slice(), self.position_prices())
         else {
             if let Some(&point) = self.points.first() {
                 crate::drawings::rendering::style::placed_anchor(painter, point, self.color32());
             }
             return;
         };
-
-        let theme = painter.ctx().active_theme();
-        let muted = |color: Color32| color.lerp_to_gamma(Color32::from_gray(128), 0.35);
-        let profit_color = muted(DESIGN_TOKENS.semantic.extended.bullish);
-        let loss_color = muted(DESIGN_TOKENS.semantic.extended.bearish);
-        // Opaque, deeper label fills keep white text legible on a light chart too.
-        let label_color = |color: Color32| {
-            color.lerp_to_gamma(Color32::BLACK, if theme.dark { 0.08 } else { 0.18 })
-        };
-        let entry_color = theme.chart.axis_text_secondary;
-        let zone_alpha = if theme.dark { 0.20 } else { 0.12 };
-        let covered_alpha = if theme.dark { 0.14 } else { 0.10 };
-        let line_width = 1.0 / painter.pixels_per_point();
-
-        let (entry_price, target_price) = (entry_at.price, target_at.price);
-        // The stop anchor is added when the tool is placed; until then (while
-        // it is dragged out) the stop mirrors the target around the entry.
-        let stop_price = self
-            .chart_points
-            .get(2)
-            .map_or(2.0 * entry_price - target_price, |stop| stop.price);
-        let stop_y = (view.price_to_y)(stop_price);
-
-        // Returns are signed in the position's direction, so a level on the
-        // losing side of the entry reads as negative.
+        let display = self.position_display();
+        let is_long = target_price >= entry_price;
         let side = if is_long { 1.0 } else { -1.0 };
-        let pct = |price: f64| side * percent_change(entry_price, price);
-
-        // The tool spans from the entry bar to the right edge.
-        let entry_bar = entry_at.bar_idx.round();
-        let span = (target_at.bar_idx - entry_at.bar_idx).abs().round();
-        let (first_after, after_entry) = if span >= 1.0 {
-            bars_between(view.bars, entry_bar + 1.0, entry_bar + span).unwrap_or((0, &[]))
-        } else {
-            (0, &[][..])
-        };
-        let exit = position_exit(after_entry, entry_price, target_price, stop_price, is_long);
-        let qty = self.position_size.unwrap_or_default().quantity_with_sizing(
-            entry_price,
-            stop_price,
-            &self.position_sizing,
-        );
-        let qty_text = qty.map_or_else(
-            || "n/a".to_owned(),
-            |qty| {
-                if self.position_sizing.quantity_step > 0.0 {
-                    let step = self.position_sizing.quantity_step.to_string();
-                    let decimals = step
-                        .split_once('.')
-                        .map_or(0, |(_, fraction)| fraction.len());
-                    return if decimals <= 19 && qty < 1e15 {
-                        format!("{qty:.decimals$}")
-                    } else {
-                        format!("{qty:e}")
-                    };
-                }
-                // Four decimals, or four significant digits below 0.1, where that
-                // rounding is exact; an exponent beyond it.
-                let scale = 10f64.powi(3 - qty.log10().floor() as i32).max(1e4);
-                if scale <= 1e22 && qty < 1e15 {
-                    ((qty * scale).round() / scale).to_string()
-                } else {
-                    format!("{qty:e}")
-                }
-            },
-        );
-        // Money for a price move of `points`, at the position's quantity.
-        let money = |points: f64| {
-            qty.map(|qty| {
-                points * qty * self.position_sizing.point_value * self.position_sizing.lot_size
-            })
-            .filter(|amount| amount.is_finite())
-        };
-
+        let theme = painter.ctx().active_theme();
+        let (profit, loss) = (rgba(display.profit_color), rgba(display.loss_color));
+        let stop_y = self
+            .points
+            .get(2)
+            .map_or_else(|| (view.price_to_y)(stop_price), |stop| stop.y);
         let right = Self::position_right(entry, target);
 
         self.draw_zone(
@@ -108,17 +102,27 @@ impl Drawing {
             entry,
             target.y,
             right,
-            profit_color.gamma_multiply(zone_alpha),
+            profit.gamma_multiply(ZONE_ALPHA),
         );
         self.draw_zone(
             painter,
             entry,
             stop_y,
             right,
-            loss_color.gamma_multiply(zone_alpha),
+            loss.gamma_multiply(ZONE_ALPHA),
         );
 
-        // The trade's path from the entry to its exit, over the part of the zone it covered.
+        // The trade's path from the entry to its exit, over the part of the box it covered.
+        let entry_bar = self.chart_points[0].bar_idx.round();
+        let span = (self.chart_points[1].bar_idx - self.chart_points[0].bar_idx)
+            .abs()
+            .round();
+        let (first_after, after_entry) = if span >= 1.0 {
+            bars_between(view.bars, entry_bar + 1.0, entry_bar + span).unwrap_or((0, &[]))
+        } else {
+            (0, &[][..])
+        };
+        let exit = position_exit(after_entry, entry_price, target_price, stop_price, is_long);
         if let Some((exit_price, _, exit_bar)) = exit {
             let exit_x = exit_bar.map_or(entry.x, |bar| {
                 (view.bar_to_x)((first_after + bar) as f32).clamp(entry.x, right)
@@ -130,111 +134,140 @@ impl Drawing {
                 entry,
                 exit_at.y,
                 exit_x,
-                (if won { profit_color } else { loss_color }).gamma_multiply(covered_alpha),
+                (if won { profit } else { loss }).gamma_multiply(COVERED_ALPHA),
             );
             draw_dashed_line(
                 painter,
                 entry,
                 exit_at,
-                Stroke::new(line_width, entry_color.gamma_multiply(0.45)),
+                Stroke::new(
+                    stroke::HAIRLINE,
+                    theme.chart.axis_text_secondary.gamma_multiply(0.6),
+                ),
                 4.0,
                 5.0,
             );
         }
 
-        painter.hline(
-            entry.x..=right,
-            entry.y,
-            Stroke::new(line_width, entry_color.gamma_multiply(0.65)),
-        );
-
-        let qty_part = format!("Qty: {qty_text}");
-        let (summary, summary_fill, summary_text) = match exit {
-            Some((exit_price, closed, _)) => {
-                let change = side * (exit_price - entry_price);
-                let pnl = money(change).map_or_else(|| "n/a".to_owned(), |pnl| format!("{pnl:.2}"));
-                let risk_reward = (target_price - entry_price) / (entry_price - stop_price);
-                let summary = format!(
-                    "{} P&L: {pnl} ({:.2}%), {qty_part}\nRisk/Reward: {risk_reward:.2}",
-                    if closed { "Closed" } else { "Open" },
-                    pct(exit_price),
-                );
-                let fill = if change >= 0.0 {
-                    profit_color
-                } else {
-                    loss_color
-                };
-                (summary, label_color(fill), Color32::WHITE)
-            }
-            None => (
-                format!("P&L: n/a, {qty_part}\nRisk/Reward: n/a"),
-                theme.chart.bg_axis,
-                entry_color,
-            ),
-        };
-        let capital = qty
-            .and_then(|qty| self.position_sizing.required_capital(entry_price, qty))
-            .map_or_else(|| "n/a".to_owned(), |capital| format!("{capital:.2}"));
-        let summary = format!("{summary}, Capital: {capital}");
-        let amount = |price: f64| {
-            money((price - entry_price).abs())
-                .map_or_else(String::new, |amount| format!(", Amount: {amount:.2}"))
-        };
-        let target_label = format!(
-            "Target: {target_price:.2} ({:.2}%){}",
-            pct(target_price),
-            amount(target_price)
-        );
-        let stop_label = format!(
-            "Stop: {stop_price:.2} ({:.2}%){}",
-            pct(stop_price),
-            amount(stop_price)
-        );
-
-        // Labels sit on the box's centre line: the stats beside the entry on the stop
-        // side, the target and stop levels outside their zones, beyond the stats.
-        let center_x = (entry.x + right) / 2.0;
-        let stop_below = stop_y > entry.y;
-        let stats = draw_pill(
-            painter,
-            summary,
-            summary_fill,
-            summary_text,
-            center_x,
-            entry.y,
-            stop_below,
-        );
-        if selected && let Some(stats) = stats {
-            painter.rect_stroke(
-                stats,
-                3.0,
-                Stroke::new(stroke::HAIRLINE, Color32::WHITE.gamma_multiply(0.8)),
-                egui::StrokeKind::Inside,
+        let width = self.stroke_width.max(stroke::HAIRLINE);
+        for (y, color) in [
+            (target.y, profit),
+            (stop_y, loss),
+            (entry.y, self.color32()),
+        ] {
+            painter.line_segment(
+                [Pos2::new(entry.x, y), Pos2::new(right, y)],
+                Stroke::new(width, color),
             );
         }
-        let stop_edge = match stats {
-            Some(stats) if stop_below => stop_y.max(stats.bottom()),
-            Some(stats) => stop_y.min(stats.top()),
-            None => stop_y,
+
+        if !display.show_text {
+            return;
+        }
+        let precision = view
+            .instrument
+            .and_then(instrument_price_precision)
+            .map_or_else(|| price_decimals(entry_price), usize::from);
+        let price_text =
+            |price: f64| DefaultPriceFormatter::with_precision(precision).format(price);
+        let percent = |price: f64| {
+            if entry_price == 0.0 {
+                0.0
+            } else {
+                (price - entry_price).abs() / entry_price.abs() * 100.0
+            }
         };
-        draw_pill(
-            painter,
-            target_label,
-            label_color(profit_color),
-            Color32::WHITE,
-            center_x,
-            target.y,
-            target.y > entry.y,
-        );
-        draw_pill(
-            painter,
-            stop_label,
-            label_color(loss_color),
-            Color32::WHITE,
-            center_x,
-            stop_edge,
-            stop_below,
-        );
+        let risk = (entry_price - stop_price).abs();
+        let ratio = if risk < 1e-12 {
+            0.0
+        } else {
+            (target_price - entry_price).abs() / risk
+        };
+        let (loss_amount, size) = self.position_loss_and_size();
+        let text_color = self.text_color.map_or(theme.chart.axis_text, |c| rgba(c));
+        let font = self.annotation_font();
+        let small = egui::FontId::proportional((font.size - 1.0).max(10.0));
+        let center_x = (entry.x + right) / 2.0;
+        let top = entry.y.min(target.y).min(stop_y) - LABEL_GAP;
+        let bottom = entry.y.max(target.y).max(stop_y) + LABEL_GAP;
+
+        let mut above = Vec::new();
+        if display.show_header {
+            above.push((
+                format!(
+                    "{}  \u{b7}  R:R {ratio:.2}",
+                    if is_long { "LONG" } else { "SHORT" }
+                ),
+                font.clone(),
+            ));
+        }
+        if display.show_loss_size {
+            above.push((
+                format!(
+                    "Loss {}  \u{b7}  Size {}",
+                    money_text(loss_amount),
+                    size_text(size)
+                ),
+                small.clone(),
+            ));
+        }
+        let mut y = top;
+        for (text, font) in above.into_iter().rev() {
+            let rect = text_inside(
+                painter,
+                Pos2::new(center_x, y),
+                Align2::CENTER_BOTTOM,
+                text,
+                font,
+                text_color,
+            );
+            y = rect.top() - 2.0;
+        }
+        let level = |label: &str, sign: char, price: f64| {
+            let mut text = format!("{label} {sign}{:.2}%", percent(price));
+            if display.show_prices {
+                text.push_str(&format!("  @ {}", price_text(price)));
+            }
+            text
+        };
+        if display.show_target_label {
+            text_inside(
+                painter,
+                Pos2::new(center_x, (entry.y + target.y) / 2.0),
+                Align2::CENTER_CENTER,
+                level("Target", '+', target_price),
+                small.clone(),
+                text_color,
+            );
+        }
+        if display.show_stop_label {
+            text_inside(
+                painter,
+                Pos2::new(center_x, (entry.y + stop_y) / 2.0),
+                Align2::CENTER_CENTER,
+                level("Stop", '\u{2212}', stop_price),
+                small.clone(),
+                text_color,
+            );
+        }
+        if let Some((exit_price, closed, _)) = exit {
+            let change = side * (exit_price - entry_price);
+            let pnl = change * size;
+            let sign = if pnl >= 0.0 { "+" } else { "\u{2212}" };
+            text_inside(
+                painter,
+                Pos2::new(center_x, bottom),
+                Align2::CENTER_TOP,
+                format!(
+                    "{} P&L {sign}{} ({sign}{:.2}%)",
+                    if closed { "Closed" } else { "Open" },
+                    money_text(pnl.abs()),
+                    percent(exit_price),
+                ),
+                small,
+                if change >= 0.0 { profit } else { loss },
+            );
+        }
     }
 
     /// Screen x of the right edge of a position's box: as far right of the entry as the target
@@ -262,55 +295,6 @@ impl Drawing {
         }
         painter.rect_filled(zone, 0.0, color);
     }
-}
-
-/// Paints `text`, centred on `center_x`, in a pill filled with `fill` whose near edge sits a
-/// small gap beyond `edge_y`: below it when `below`, otherwise above. A pill partly outside the
-/// plot is moved inside it; one wholly outside is not painted. Returns the painted pill.
-fn draw_pill(
-    painter: &egui::Painter,
-    text: String,
-    fill: Color32,
-    text_color: Color32,
-    center_x: f32,
-    edge_y: f32,
-    below: bool,
-) -> Option<Rect> {
-    let clip = painter.clip_rect();
-    if !clip.is_positive() {
-        return None;
-    }
-    let padding = egui::vec2(DESIGN_TOKENS.spacing.sm, DESIGN_TOKENS.spacing.xs);
-    let gap = DESIGN_TOKENS.spacing.lg;
-    let mut job = egui::text::LayoutJob::simple(
-        text,
-        egui::FontId::proportional(typography::SM),
-        text_color,
-        (clip.width() - 2.0 * padding.x).max(1.0),
-    );
-    job.halign = egui::Align::Center;
-    let galley = painter.layout_job(job);
-    let size = galley.size() + 2.0 * padding;
-    let top = if below {
-        edge_y + gap
-    } else {
-        edge_y - gap - size.y
-    };
-    let pill = Rect::from_min_size(Pos2::new(center_x - size.x / 2.0, top), size);
-    if !clip.intersects(pill) {
-        return None;
-    }
-    let pill = pill.translate(egui::vec2(
-        (clip.right() - pill.right()).min(0.0) + (clip.left() - pill.left()).max(0.0),
-        (clip.bottom() - pill.bottom()).min(0.0) + (clip.top() - pill.top()).max(0.0),
-    ));
-    painter.rect_filled(pill, 3.0, fill);
-    painter.galley(
-        Pos2::new(pill.center().x, pill.top() + padding.y),
-        galley,
-        text_color,
-    );
-    Some(pill)
 }
 
 /// Price the position exits at, whether it has closed, and the index in `bars` of the bar it
@@ -358,143 +342,103 @@ mod tests {
     use super::*;
     use crate::drawings::rendering::sample_bars;
 
-    /// Risk 230 / (2.5 points * 50 per point * 10 units) = 0.184 lots, rounded
-    /// down to 0.18. A five-point gain pays 450; capital is 100 * 50 * 10 * 0.18 / 5 = 1800.
+    /// The header names the direction from the levels with the reward ratio, the account risk
+    /// gives the loss and size, the zones carry their percents, and the replayed bars report
+    /// the closed result; every label stays inside the plot.
     #[test]
-    fn position_labels_use_lot_economics_and_leveraged_capital() {
+    fn position_labels_follow_levels_account_and_replay() {
         use crate::drawings::{ChartPoint, DrawingToolType, PositionSize};
         use crate::widget::test_frames::chart;
-        for (tool, target, stop, low, high) in [
-            (DrawingToolType::LongPos, 105.0, 97.5, 99.0, 106.0),
-            (DrawingToolType::ShortPos, 95.0, 102.5, 94.0, 101.0),
+        for (tool, target, stop, low, high, header, pnl) in [
+            (
+                DrawingToolType::LongPos,
+                105.0,
+                97.5,
+                99.0,
+                106.0,
+                "LONG  \u{b7}  R:R 2.00",
+                "Closed P&L +600",
+            ),
+            (
+                DrawingToolType::ShortPos,
+                95.0,
+                102.5,
+                94.0,
+                101.0,
+                "SHORT  \u{b7}  R:R 2.00",
+                "Closed P&L +600",
+            ),
+            // A long placed with the short tool reads as long.
+            (
+                DrawingToolType::ShortPos,
+                105.0,
+                97.5,
+                99.0,
+                106.0,
+                "LONG  \u{b7}  R:R 2.00",
+                "Closed P&L +600",
+            ),
         ] {
-            for (size, step, labels) in [
-                (
-                    PositionSize::RiskAmount(230.0),
-                    0.01,
-                    ["Qty: 0.18", "Closed P&L: 450.00", "Capital: 1800.00"],
-                ),
-                (
-                    PositionSize::RiskAmount(230.40125),
-                    0.000001,
-                    ["Qty: 0.184321", "Closed P&L: 460.80", "Capital: 1843.21"],
-                ),
-                (
-                    PositionSize::Quantity(1e20),
-                    0.01,
-                    ["Qty: 1e20", "Closed P&L:", "Capital:"],
-                ),
-                (
-                    PositionSize::Quantity(1e-25),
-                    1e-27,
-                    ["Qty: 1e-25", "Closed P&L:", "Capital:"],
-                ),
-            ] {
-                let mut drawing = Drawing::new(1, tool);
-                drawing.position_sizing = crate::drawings::PositionSizing {
-                    point_value: 50.0,
-                    lot_size: 10.0,
-                    quantity_step: step,
-                    leverage: 5.0,
-                };
-                drawing.position_size = Some(size);
-                drawing.chart_points = vec![
-                    ChartPoint::new(30.0, 100.0),
-                    ChartPoint::new(50.0, target),
-                    ChartPoint::new(50.0, stop),
-                ];
-                drawing.completed = true;
-                for (dark, width) in [(false, 800.0), (true, 800.0), (false, 320.0), (true, 320.0)]
-                {
-                    let ctx = egui::Context::default();
-                    let mut chart = chart(&[low], &[high]);
-                    chart.set_theme(
-                        &ctx,
-                        &if dark {
-                            crate::theme::Theme::dark()
-                        } else {
-                            crate::theme::Theme::light()
-                        },
-                    );
-                    let render = |chart: &mut crate::Chart| {
-                        ctx.run_ui(
-                            egui::RawInput {
-                                screen_rect: Some(Rect::from_min_size(
-                                    Pos2::ZERO,
-                                    egui::vec2(width, 600.0),
-                                )),
-                                ..Default::default()
-                            },
-                            |ui| {
-                                chart.show(ui);
-                            },
-                        )
-                    };
-                    render(&mut chart).drop_without_applying_deltas();
-                    chart.set_visible_logical_range(crate::model::LogicalRange {
-                        left: 10.0,
-                        right: 70.0,
-                    });
-                    chart.drawings_mut().drawings.push(drawing.clone());
-                    let output = render(&mut chart);
-                    let summary = output
-                        .shapes
-                        .iter()
-                        .find_map(|s| match &s.shape {
-                            egui::Shape::Text(t) if t.galley.job.text.contains("Qty:") => Some(t),
-                            _ => None,
-                        })
-                        .expect("position summary");
-                    for label in labels {
-                        assert!(
-                            summary.galley.job.text.contains(label),
-                            "{tool:?}: missing {label}: {}",
-                            summary.galley.job.text
-                        );
+            let mut drawing = Drawing::new(1, tool);
+            drawing.position_size = Some(PositionSize::RiskPercent {
+                account_size: 10_000.0,
+                percent: 3.0,
+            });
+            drawing.chart_points = vec![
+                ChartPoint::new(30.0, 100.0),
+                ChartPoint::new(50.0, target),
+                ChartPoint::new(50.0, stop),
+            ];
+            drawing.completed = true;
+            let ctx = egui::Context::default();
+            let mut chart = chart(&[low], &[high]);
+            let render = |chart: &mut crate::Chart| {
+                ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            egui::vec2(800.0, 600.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        chart.show(ui);
+                    },
+                )
+            };
+            render(&mut chart).drop_without_applying_deltas();
+            chart.set_visible_logical_range(crate::model::LogicalRange {
+                left: 10.0,
+                right: 70.0,
+            });
+            chart.drawings_mut().drawings.push(drawing.clone());
+            let output = render(&mut chart);
+            let texts: Vec<_> = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(t) => {
+                        Some((t.galley.job.text.clone(), t.visual_bounding_rect()))
                     }
-                    assert!(
-                        chart
-                            .get_rendered_price_rect()
-                            .contains_rect(summary.visual_bounding_rect()),
-                        "{tool:?}, width {width}: {:?}",
-                        summary.visual_bounding_rect()
-                    );
-                    output.drop_without_applying_deltas();
-                    // The tool ends at the plot's right edge: its target label stays inside.
-                    chart.set_visible_logical_range(crate::model::LogicalRange {
-                        left: 20.0,
-                        right: 52.0,
-                    });
-                    let output = render(&mut chart);
-                    let label = output
-                        .shapes
-                        .iter()
-                        .find_map(|s| match &s.shape {
-                            egui::Shape::Text(t) if t.galley.job.text.starts_with("Target:") => {
-                                Some(t)
-                            }
-                            _ => None,
-                        })
-                        .expect("target label");
-                    assert!(
-                        chart
-                            .get_rendered_price_rect()
-                            .contains_rect(label.visual_bounding_rect()),
-                        "{tool:?}, width {width}: {:?}",
-                        label.visual_bounding_rect()
-                    );
-                    output.drop_without_applying_deltas();
-                    chart.set_visible_logical_range(crate::model::LogicalRange {
-                        left: 90.0,
-                        right: 130.0,
-                    });
-                    let output = render(&mut chart);
-                    assert!(
-                        !output.shapes.iter().any(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text.contains("Qty:"))),
-                        "{tool:?}, width {width}: offscreen summary"
-                    );
-                    output.drop_without_applying_deltas();
-                }
+                    _ => None,
+                })
+                .collect();
+            output.drop_without_applying_deltas();
+            for label in [
+                header,
+                "Loss 300  \u{b7}  Size 120",
+                "Target +5.00%",
+                "Stop \u{2212}2.50%",
+                pnl,
+            ] {
+                let (_, rect) = texts
+                    .iter()
+                    .find(|(text, _)| text.starts_with(label))
+                    .unwrap_or_else(|| panic!("{tool:?}: missing {label} in {texts:?}"));
+                assert!(
+                    chart.get_rendered_price_rect().contains_rect(*rect),
+                    "{tool:?}: {label} at {rect:?}"
+                );
             }
         }
     }

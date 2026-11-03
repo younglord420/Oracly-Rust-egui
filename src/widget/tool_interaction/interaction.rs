@@ -145,6 +145,11 @@ pub fn handle_active_tool<F1, F2>(
                         .data(|d| d.get_temp::<bool>(first_press).unwrap_or(false));
                 if response.drag_stopped_by(egui::PointerButton::Primary) || second_click {
                     // The preview is already snapped and constrained; keep it as the endpoint.
+                    if let Some(drawing) = &mut drawing_manager.curr_drawing
+                        && drawing.is_position()
+                    {
+                        drawing.lay_out_position(x_to_bar, y_to_price);
+                    }
                     drawing_manager.complete_drag_drawing();
                 }
             }

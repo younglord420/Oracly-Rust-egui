@@ -2,8 +2,7 @@
 
 use crate::drawings::{
     Drawing, DrawingToolType as Tool, FibPreset, FibonacciLevel, GannFanDirection, GannLevel,
-    PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource, TextHorizontalAlign,
-    TextVerticalAlign,
+    PitchforkConfig, PitchforkLevel, RegressionSource, TextHorizontalAlign, TextVerticalAlign,
 };
 
 use crate::data::{ProfileDisplay, VolumeProfileConfig};
@@ -68,6 +67,10 @@ impl InputsTab {
                 | Tool::Supersonic
                 | Tool::GoldenSonic
                 | Tool::GoldenSupersonic
+                | Tool::Measure
+                | Tool::DateRange
+                | Tool::DateAndPriceRange
+                | Tool::AnchoredVWAP
         )
     }
 
@@ -103,6 +106,62 @@ impl InputsTab {
             | Tool::ElliottDoubleCombo
             | Tool::ElliottTripleCombo
             | Tool::CyclicLines => pattern_inputs(ui, drawing),
+            Tool::AnchoredVWAP => {
+                let mut config = drawing.vwap.unwrap_or_default();
+                let original = config;
+
+                choice_row(
+                    ui,
+                    "Band multiplier",
+                    &mut config.multiplier,
+                    &[0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+                    |m| m.to_string(),
+                );
+                pattern_toggle(ui, &mut config.show_outer, "Outer bands");
+                pickers.resize_with(3, ColorPickerState::default);
+                let faint = {
+                    let [r, g, b, _] = drawing.color;
+                    [r, g, b, 150]
+                };
+                for (i, (label, slot)) in [
+                    ("Upper band", &mut config.upper_color),
+                    ("Lower band", &mut config.lower_color),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let mut color = slot.unwrap_or(faint);
+                    color_row(ui, label, &mut color, &mut pickers[i]);
+                    if color != slot.unwrap_or(faint) {
+                        *slot = Some(color);
+                    }
+                }
+                let mut filled = config.band_fill.is_some();
+                pattern_toggle(ui, &mut filled, "Band fill");
+                if filled {
+                    let [r, g, b, _] = drawing.color;
+                    let mut fill = config.band_fill.unwrap_or([r, g, b, 26]);
+                    color_row(ui, "Band fill colour", &mut fill, &mut pickers[2]);
+                    config.band_fill = Some(fill);
+                } else {
+                    config.band_fill = None;
+                }
+                if config != original {
+                    drawing.vwap = Some(config);
+                }
+            }
+            Tool::Measure | Tool::DateRange | Tool::DateAndPriceRange => {
+                let mut config = drawing.measure.unwrap_or_default();
+                let original = config;
+                if drawing.tool_type != Tool::DateRange {
+                    pattern_toggle(ui, &mut config.show_price, "Show price change");
+                }
+                pattern_toggle(ui, &mut config.show_time, "Show bars & time");
+                pattern_toggle(ui, &mut config.show_volume, "Show volume");
+                if config != original {
+                    drawing.measure = Some(config);
+                }
+            }
             Tool::FairValueGap | Tool::OrderBlock | Tool::Liquidity => {
                 price_action_inputs(ui, drawing, pickers);
             }
@@ -127,95 +186,7 @@ impl InputsTab {
                     drawing.ghost_feed = Some(config);
                 }
             }
-            Tool::LongPos | Tool::ShortPos => {
-                let mut size = drawing.position_size.unwrap_or_default();
-                let original = size;
-                let mut mode = match size {
-                    PositionSize::Quantity(_) => 0,
-                    PositionSize::RiskAmount(_) => 1,
-                    PositionSize::RiskPercent { .. } => 2,
-                };
-                FormGrid::new("position_inputs").show(ui, |ui| {
-                    let label = form_label(ui, "Size by");
-                    ui.label_inputs_by(label.id, |ui| {
-                        ui.combo_select_width(
-                            "position_size_mode",
-                            &mut mode,
-                            [0, 1, 2],
-                            |v| ["Quantity", "Risk amount", "Risk percent"][*v].into(),
-                            form_control_width_for(ui),
-                        );
-                    });
-                    ui.end_row();
-                    if mode
-                        != match size {
-                            PositionSize::Quantity(_) => 0,
-                            PositionSize::RiskAmount(_) => 1,
-                            PositionSize::RiskPercent { .. } => 2,
-                        }
-                    {
-                        size = match mode {
-                            0 => PositionSize::Quantity(1.0),
-                            1 => PositionSize::RiskAmount(100.0),
-                            _ => PositionSize::RiskPercent {
-                                account_size: 10_000.0,
-                                percent: 1.0,
-                            },
-                        };
-                    }
-                    match &mut size {
-                        PositionSize::Quantity(value) => {
-                            number(ui, "Quantity", value, f64::MIN_POSITIVE..=f64::MAX)
-                        }
-                        PositionSize::RiskAmount(value) => {
-                            number(ui, "Risk amount", value, f64::MIN_POSITIVE..=f64::MAX)
-                        }
-                        PositionSize::RiskPercent {
-                            account_size,
-                            percent,
-                        } => {
-                            number(
-                                ui,
-                                "Account size",
-                                account_size,
-                                f64::MIN_POSITIVE..=f64::MAX,
-                            );
-                            number(ui, "Risk (%)", percent, f64::MIN_POSITIVE..=100.0);
-                        }
-                    }
-                    let sizing = &mut drawing.position_sizing;
-                    number(
-                        ui,
-                        "Point value",
-                        &mut sizing.point_value,
-                        f64::MIN_POSITIVE..=f64::MAX,
-                    );
-                    number(
-                        ui,
-                        "Lot size",
-                        &mut sizing.lot_size,
-                        f64::MIN_POSITIVE..=f64::MAX,
-                    );
-                    let label = form_label(ui, "Quantity step");
-                    ui.add(
-                        egui::DragValue::new(&mut sizing.quantity_step)
-                            .range(0.0..=f64::MAX)
-                            .speed(0.001)
-                            .custom_formatter(|value, _| value.to_string()),
-                    )
-                    .labelled_by(label.id);
-                    ui.end_row();
-                    number(
-                        ui,
-                        "Leverage",
-                        &mut sizing.leverage,
-                        f64::MIN_POSITIVE..=f64::MAX,
-                    );
-                });
-                if size != original {
-                    drawing.position_size = Some(size);
-                }
-            }
+            Tool::LongPos | Tool::ShortPos => position_inputs(ui, drawing, pickers),
             Tool::FixedRangeVolumeProfile | Tool::AnchoredVolumeProfile => {
                 let original = drawing.volume_profile.unwrap_or_default();
                 let mut config = original;
@@ -293,6 +264,35 @@ impl InputsTab {
                         });
                         ui.end_row();
                     }
+                    let label = form_label(ui, "VAH / VAL lines");
+                    ui.label_inputs_by(label.id, |ui| {
+                        ui.checkbox(&mut config.show_value_area_lines, "");
+                    });
+                    ui.end_row();
+                    let mut custom = config.value_area_colors.is_some();
+                    let label = form_label(ui, "Value area colours");
+                    ui.label_inputs_by(label.id, |ui| {
+                        ui.checkbox(&mut custom, "");
+                    });
+                    ui.end_row();
+                    if custom {
+                        let mut colors = config
+                            .value_area_colors
+                            .unwrap_or([config.up_color, config.down_color]);
+                        pickers.resize_with(4, ColorPickerState::default);
+                        for (i, name) in
+                            ["Value area up", "Value area down"].into_iter().enumerate()
+                        {
+                            let label = form_label(ui, name);
+                            ui.label_inputs_by(label.id, |ui| {
+                                level_color(ui, &mut colors[i], &mut pickers[2 + i]);
+                            });
+                            ui.end_row();
+                        }
+                        config.value_area_colors = Some(colors);
+                    } else {
+                        config.value_area_colors = None;
+                    }
                 });
                 if let Some(mut updated) = VolumeProfileConfig::new(rows, percent / 100.0)
                     .and_then(|c| c.with_row_size(fixed.then_some(height)))
@@ -300,6 +300,8 @@ impl InputsTab {
                     updated.display = config.display;
                     updated.up_color = config.up_color;
                     updated.down_color = config.down_color;
+                    updated.value_area_colors = config.value_area_colors;
+                    updated.show_value_area_lines = config.show_value_area_lines;
                     if updated != original {
                         drawing.volume_profile = Some(updated);
                     }
@@ -1326,6 +1328,114 @@ fn color_row(ui: &mut Ui, label: &str, color: &mut [u8; 4], picker: &mut ColorPi
             ui.push_id(label, |ui| level_color(ui, color, picker));
         });
     });
+}
+
+/// A labelled number row; returns whether the value changed.
+fn value_row(ui: &mut Ui, label: &str, value: &mut f64, speed: f64) -> bool {
+    let theme = ui.active_theme();
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.set_min_height(super::style::control_row_height(ui));
+        let label = ui.label(
+            egui::RichText::new(l10n::text(ui.ctx(), label))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            changed = ui
+                .add_sized(
+                    [
+                        super::style::control_column_width(ui).min(ui.available_width()),
+                        super::style::control_row_height(ui),
+                    ],
+                    egui::DragValue::new(value).speed(speed).max_decimals(8),
+                )
+                .labelled_by(label.id)
+                .changed();
+        });
+    });
+    changed
+}
+
+/// The direction, sizing, levels, labels and zone colours of a long or short position.
+fn position_inputs(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let ctx = ui.ctx().clone();
+    let mut long = drawing.position_is_long();
+    choice_row(ui, "Direction", &mut long, &[true, false], |long| {
+        l10n::text(&ctx, if long { "Long" } else { "Short" })
+    });
+    if long != drawing.position_is_long() {
+        drawing.set_position_long(long);
+    }
+
+    let (mut balance, mut percent) = drawing.position_account();
+    let (_, mut size) = drawing.position_loss_and_size();
+    let mut account = value_row(ui, "Account balance", &mut balance, 10.0);
+    account |= value_row(ui, "Risk %", &mut percent, 0.05);
+    if value_row(ui, "Position size", &mut size, 0.01)
+        && let Some((entry, _, stop)) = drawing.position_prices()
+        && (entry - stop).abs() > 1e-12
+        && balance > 0.0
+    {
+        percent = size * (entry - stop).abs() / balance * 100.0;
+        account = true;
+    }
+    if account {
+        drawing.set_position_account(balance.max(0.0), percent.clamp(0.0, 100.0));
+    }
+
+    if drawing.chart_points.len() >= 3 {
+        let points_id = ui.make_persistent_id("position_levels_in_points");
+        let mut points = ui.data(|d| d.get_temp::<bool>(points_id).unwrap_or(false));
+        choice_row(ui, "Levels in", &mut points, &[false, true], |points| {
+            l10n::text(&ctx, if points { "Points" } else { "Price" })
+        });
+        ui.data_mut(|d| d.insert_temp(points_id, points));
+        let entry = drawing.chart_points[0].price;
+        let speed = (entry.abs() * 0.0005).max(1e-6);
+        let mut price = entry;
+        if value_row(ui, "Entry price", &mut price, speed) {
+            drawing.chart_points[0].price = price;
+            drawing.keep_position_sides(0);
+        }
+        for (level, label) in [(1, "Target"), (2, "Stop")] {
+            let entry = drawing.chart_points[0].price;
+            let current = drawing.chart_points[level].price;
+            let mut shown = if points {
+                (current - entry).abs()
+            } else {
+                current
+            };
+            let label = format!("{label} {}", if points { "points" } else { "price" });
+            if value_row(ui, &label, &mut shown, speed) {
+                drawing.chart_points[level].price = if points {
+                    let side = (current - entry).signum();
+                    entry + if side == 0.0 { 1.0 } else { side } * shown.abs()
+                } else {
+                    shown
+                };
+                drawing.keep_position_sides(level);
+            }
+        }
+    }
+
+    let mut display = drawing.position_display();
+    let original = display;
+    pattern_toggle(ui, &mut display.show_text, "Show text");
+    if display.show_text {
+        pattern_toggle(ui, &mut display.show_header, "Show direction & ratio");
+        pattern_toggle(ui, &mut display.show_loss_size, "Show loss & size");
+        pattern_toggle(ui, &mut display.show_target_label, "Show target label");
+        pattern_toggle(ui, &mut display.show_stop_label, "Show stop label");
+        pattern_toggle(ui, &mut display.show_prices, "Show level prices");
+    }
+    pickers.resize_with(2, ColorPickerState::default);
+    let (profit, loss) = pickers.split_at_mut(1);
+    color_row(ui, "Profit zone", &mut display.profit_color, &mut profit[0]);
+    color_row(ui, "Loss zone", &mut display.loss_color, &mut loss[0]);
+    if display != original {
+        drawing.position_display = Some(display);
+    }
 }
 
 /// How far a fair value gap, order block or liquidity level runs, and how a zone looks.

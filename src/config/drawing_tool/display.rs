@@ -142,7 +142,7 @@ impl FromStr for DrawingToolType {
             "sineline" | "sine" => Ok(Self::SineLine),
 
             // Projection
-            "longposition" | "long" => Ok(Self::LongPos),
+            "longposition" | "long" | "long position" | "position" => Ok(Self::LongPos),
             "shortposition" | "short" => Ok(Self::ShortPos),
             "barspattern" => Ok(Self::BarsPattern),
             "ghostfeed" => Ok(Self::GhostFeed),
@@ -297,7 +297,7 @@ impl DrawingToolType {
             Self::SineLine => "Sine Line",
 
             // Projection
-            Self::LongPos => "Long Position",
+            Self::LongPos => "Long/Short Position",
             Self::ShortPos => "Short Position",
             Self::Forecast => "Forecast",
             Self::BarsPattern => "Bars Pattern",

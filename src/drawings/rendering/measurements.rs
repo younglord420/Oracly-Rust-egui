@@ -151,7 +151,7 @@ impl Drawing {
                 .unwrap_or_default();
 
             // Draw info box at the top-left corner of rect
-            let font = egui::FontId::proportional(typography::SM);
+            let font = self.annotation_font();
             let galley = painter.layout_no_wrap(info.clone(), font.clone(), Color32::WHITE);
             let text_size = galley.size();
 
@@ -177,170 +177,109 @@ impl Drawing {
         }
     }
 
+    /// The line stroke of a range tool: its colour at its own width.
+    fn range_stroke(&self) -> Stroke {
+        Stroke::new(self.stroke_width.max(stroke::HAIRLINE), self.color32())
+    }
+
+    /// The band a range tool shades: its fill, or its line colour faintly.
+    fn range_fill(&self) -> Color32 {
+        self.fill_color32().unwrap_or_else(|| {
+            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 20)
+        })
+    }
+
+    /// Price range: the band between two prices across the pane, its edge lines, a connector
+    /// and the price change beside it.
     pub(crate) fn render_price_range(
         &self,
         painter: &egui::Painter,
         chart_rect: Rect,
         view: &ChartView,
     ) {
-        if self.points.len() < 2 {
-            if !self.points.is_empty() {
-                super::style::placed_anchor(
-                    painter,
-                    self.points[0],
-                    Color32::from_rgba_unmultiplied(
-                        self.color[0],
-                        self.color[1],
-                        self.color[2],
-                        self.color[3],
-                    ),
-                );
+        let &[p1, p2, ..] = self.points.as_slice() else {
+            if let Some(&point) = self.points.first() {
+                super::style::placed_anchor(painter, point, self.color32());
             }
             return;
+        };
+        let band = Rect::from_x_y_ranges(chart_rect.x_range(), p1.y.min(p2.y)..=p1.y.max(p2.y));
+        painter.rect_filled(band, 0.0, self.range_fill());
+        let line = self.range_stroke();
+        for y in [p1.y, p2.y] {
+            painter.line_segment(
+                [
+                    Pos2::new(chart_rect.left(), y),
+                    Pos2::new(chart_rect.right(), y),
+                ],
+                line,
+            );
         }
-
-        let p1 = self.points[0];
-        let p2 = self.points[1];
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Horizontal lines at both price levels
-        painter.hline(
-            chart_rect.x_range(),
-            p1.y,
-            Stroke::new(stroke::HAIRLINE, color),
-        );
-        painter.hline(
-            chart_rect.x_range(),
-            p2.y,
-            Stroke::new(stroke::HAIRLINE, color),
-        );
-
-        // Vertical connector
         let mid_x = (p1.x + p2.x) / 2.0;
-        painter.vline(
-            mid_x,
-            p1.y.min(p2.y)..=p1.y.max(p2.y),
-            Stroke::new(stroke::HAIRLINE, color),
-        );
-
+        painter.line_segment([Pos2::new(mid_x, p1.y), Pos2::new(mid_x, p2.y)], line);
         let info = self
             .measurement_label(&[], view.instrument, view.time_axis)
             .unwrap_or_default();
-
         painter.text(
             Pos2::new(mid_x + 10.0, (p1.y + p2.y) / 2.0),
             egui::Align2::LEFT_CENTER,
             info,
-            egui::FontId::proportional(typography::SM),
-            color,
+            self.annotation_font(),
+            self.text_color32(),
         );
     }
 
+    /// Date range: the band between two times down the pane, its edge lines, a connector and
+    /// the bars, time and volume above it.
     pub(crate) fn render_date_range(
         &self,
         painter: &egui::Painter,
         chart_rect: Rect,
         view: &ChartView,
     ) {
-        if self.points.len() < 2 {
-            if !self.points.is_empty() {
-                super::style::placed_anchor(
-                    painter,
-                    self.points[0],
-                    Color32::from_rgba_unmultiplied(
-                        self.color[0],
-                        self.color[1],
-                        self.color[2],
-                        self.color[3],
-                    ),
-                );
+        let &[p1, p2, ..] = self.points.as_slice() else {
+            if let Some(&point) = self.points.first() {
+                super::style::placed_anchor(painter, point, self.color32());
             }
             return;
+        };
+        let band = Rect::from_x_y_ranges(p1.x.min(p2.x)..=p1.x.max(p2.x), chart_rect.y_range());
+        painter.rect_filled(band, 0.0, self.range_fill());
+        let line = self.range_stroke();
+        for x in [p1.x, p2.x] {
+            painter.line_segment(
+                [
+                    Pos2::new(x, chart_rect.top()),
+                    Pos2::new(x, chart_rect.bottom()),
+                ],
+                line,
+            );
         }
-
-        let p1 = self.points[0];
-        let p2 = self.points[1];
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Vertical lines at both time points
-        painter.vline(
-            p1.x,
-            chart_rect.y_range(),
-            Stroke::new(stroke::HAIRLINE, color),
-        );
-        painter.vline(
-            p2.x,
-            chart_rect.y_range(),
-            Stroke::new(stroke::HAIRLINE, color),
-        );
-
-        // Horizontal connector
         let mid_y = (p1.y + p2.y) / 2.0;
-        painter.hline(
-            p1.x.min(p2.x)..=p1.x.max(p2.x),
-            mid_y,
-            Stroke::new(stroke::HAIRLINE, color),
-        );
-
+        painter.line_segment([Pos2::new(p1.x, mid_y), Pos2::new(p2.x, mid_y)], line);
         let info = self
             .measurement_label(view.bars, view.instrument, view.time_axis)
             .unwrap_or_default();
-
         painter.text(
             Pos2::new((p1.x + p2.x) / 2.0, mid_y - 10.0),
             egui::Align2::CENTER_BOTTOM,
             info,
-            egui::FontId::proportional(typography::SM),
-            color,
+            self.annotation_font(),
+            self.text_color32(),
         );
-
-        // Fill the range area
-        let fill_color = self.fill_color32().unwrap_or_else(|| {
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 20)
-        });
-        let range_rect =
-            Rect::from_x_y_ranges(p1.x.min(p2.x)..=p1.x.max(p2.x), chart_rect.y_range());
-        painter.rect_filled(range_rect, 0.0, fill_color);
     }
 
-    // === NEW TOOL RENDER FUNCTIONS ===
-
+    /// Date and price range: the box the anchors span and its readout in the middle.
     pub(crate) fn render_date_and_price_range(&self, painter: &egui::Painter, view: &ChartView) {
-        if self.points.len() < 2 {
+        let &[p1, p2, ..] = self.points.as_slice() else {
             return;
-        }
-        let p1 = self.points[0];
-        let p2 = self.points[1];
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Draw rect covering both ranges
+        };
         let rect = Rect::from_two_pos(p1, p2);
         let fill = self.fill_color32().unwrap_or_else(|| {
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 30)
         });
         painter.rect_filled(rect, 0.0, fill);
-        painter.rect_stroke(
-            rect,
-            0.0,
-            Stroke::new(stroke::HAIRLINE, color),
-            StrokeKind::Outside,
-        );
-
+        painter.rect_stroke(rect, 0.0, self.range_stroke(), StrokeKind::Outside);
         let info = self
             .measurement_label(view.bars, view.instrument, view.time_axis)
             .unwrap_or_default();
@@ -348,8 +287,8 @@ impl Drawing {
             rect.center(),
             egui::Align2::CENTER_CENTER,
             info,
-            egui::FontId::proportional(typography::XS),
-            color,
+            self.annotation_font(),
+            self.text_color32(),
         );
     }
 
@@ -572,12 +511,27 @@ impl Drawing {
                 format!("\nVol {}", VolumeFormatter::default().format(volume))
             })
             .unwrap_or_default();
-        Some(match self.tool_type {
-            DrawingToolType::Measure | DrawingToolType::DateAndPriceRange => {
-                format!("{change}\n{span}{volume}")
+        let shown = self.measure.unwrap_or_default();
+        let lines = |price: bool, time: bool| {
+            let mut text = String::new();
+            for (show, part) in [
+                (price && shown.show_price, change.as_str()),
+                (time && shown.show_time, span.as_str()),
+                (time && shown.show_volume, volume.trim_start()),
+            ] {
+                if show && !part.is_empty() {
+                    if !text.is_empty() {
+                        text.push('\n');
+                    }
+                    text.push_str(part);
+                }
             }
-            DrawingToolType::PriceRange => change,
-            DrawingToolType::DateRange => format!("{span}{volume}"),
+            text
+        };
+        Some(match self.tool_type {
+            DrawingToolType::Measure | DrawingToolType::DateAndPriceRange => lines(true, true),
+            DrawingToolType::PriceRange => lines(true, false),
+            DrawingToolType::DateRange => lines(false, true),
             DrawingToolType::InfoLine => {
                 let [start, end, ..] = self.points[..] else {
                     return None;

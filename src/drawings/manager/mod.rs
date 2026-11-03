@@ -1200,9 +1200,9 @@ mod tests {
         assert_eq!(manager.snap_point(pointer, &manager.drawings), pointer);
     }
 
-    /// A position's stop is an anchor of its own: it starts mirrored around
-    /// the entry and moves without dragging the target along. The target and
-    /// stop handles change price only; the width handle moves both to its x.
+    /// A position's stop is an anchor of its own: it starts opposite the target at half its
+    /// distance and moves without dragging the target along. The target and stop handles
+    /// change price only; the width handle moves both to its x.
     #[test]
     fn position_stop_moves_independently_of_target() {
         let mut manager = DrawingManager::new();
@@ -1214,9 +1214,11 @@ mod tests {
             x_to_bar,
             y_to_price,
         );
+        manager.add_point_with_coords(Pos2::new(110.0, 50.0), x_to_bar, y_to_price);
         assert!(manager.curr_drawing.is_none());
         let id = manager.drawings[0].id;
-        assert_eq!(manager.drawings[0].chart_points[2].price, 50.0);
+        assert_eq!(manager.drawings[0].chart_points[1].price, 150.0);
+        assert_eq!(manager.drawings[0].chart_points[2].price, 75.0);
 
         manager.start_drag_handle(id, HandlePos::Point(2));
         manager.update_drag_handle(

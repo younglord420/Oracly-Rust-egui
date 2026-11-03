@@ -530,25 +530,6 @@ impl DrawingManager {
         drawing.z_order = self.top_z_order();
         self.preview_point = false;
         drawing.add_point_with_chart_coords(point, &x_to_bar, &y_to_price);
-        if matches!(
-            tool_type,
-            DrawingToolType::LongPos | DrawingToolType::ShortPos
-        ) {
-            let side = if tool_type == DrawingToolType::LongPos {
-                -1.0
-            } else {
-                1.0
-            };
-            let target = point + egui::vec2(100.0, side * 50.0);
-            let target_price = y_to_price(target.y);
-            let entry_price = drawing.chart_points[0].price;
-            let stop = Pos2::new(target.x, point.y - side * 50.0);
-            drawing.points.extend([target, stop]);
-            drawing.chart_points.extend([
-                ChartPoint::new(x_to_bar(target.x), target_price),
-                ChartPoint::new(x_to_bar(target.x), 2.0 * entry_price - target_price),
-            ]);
-        }
 
         if let Some(tool) = drawing
             .custom_tool
@@ -654,6 +635,9 @@ impl DrawingManager {
             {
                 return;
             }
+            if drawing.is_position() {
+                drawing.add_position_stop();
+            }
             drawing.update_pane_coords(self.pane_rect);
             let icon = matches!(
                 drawing.tool_type,
@@ -692,24 +676,6 @@ impl DrawingManager {
     pub fn complete_drag_drawing(&mut self) {
         // The pointer preview is where the drag ended: the drawing's last anchor.
         self.preview_point = false;
-        // A position's stop starts mirrored around the entry, as an anchor of
-        // its own so it can be moved without moving the target.
-        if let Some(drawing) = &mut self.curr_drawing
-            && matches!(
-                drawing.tool_type,
-                DrawingToolType::LongPos | DrawingToolType::ShortPos
-            )
-            && let (&[entry, target], &[entry_at, target_at]) =
-                (drawing.chart_points.as_slice(), drawing.points.as_slice())
-        {
-            let stop = 2.0 * entry.price - target.price;
-            drawing
-                .chart_points
-                .push(ChartPoint::new(target.bar_idx, stop));
-            drawing
-                .points
-                .push(Pos2::new(target_at.x, 2.0 * entry_at.y - target_at.y));
-        }
         self.complete_curr_drawing();
     }
 

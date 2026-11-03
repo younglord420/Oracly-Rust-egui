@@ -173,12 +173,7 @@ impl DrawingManager {
                 tool.implementation.render(drawing, painter, rect, view);
             }
         } else {
-            drawing.render_with_selection(
-                painter,
-                rect,
-                view,
-                self.selection.is_selected(drawing.id),
-            );
+            drawing.render_with_selection(painter, rect, view);
         }
     }
 

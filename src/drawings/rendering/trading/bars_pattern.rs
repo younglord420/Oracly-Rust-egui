@@ -1,11 +1,11 @@
 //! Bars pattern rendering
 
 use crate::drawings::domain::{ChartPoint, Drawing};
+use crate::drawings::rendering::measurements::boxed_label;
 use crate::drawings::rendering::utils::draw_dashed_line;
 use crate::drawings::rendering::{ChartView, bars_between};
 use crate::model::Bar;
-use crate::styles::{stroke, typography};
-use crate::tokens::DESIGN_TOKENS;
+use crate::styles::stroke;
 use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind};
 
 impl Drawing {
@@ -44,23 +44,16 @@ impl Drawing {
         painter.rect_stroke(
             source_rect,
             0.0,
-            Stroke::new(stroke::HAIRLINE, color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
             StrokeKind::Outside,
         );
-
-        // Source label
-        let font = egui::FontId::proportional(typography::XS);
-        let source_label_bg = Rect::from_center_size(
-            Pos2::new(source_rect.center().x, source_rect.min.y - 12.0),
-            egui::vec2(60.0, 16.0),
-        );
-        painter.rect_filled(source_label_bg, DESIGN_TOKENS.rounding.sm, color);
-        painter.text(
-            source_label_bg.center(),
-            egui::Align2::CENTER_CENTER,
-            "SOURCE",
-            font,
+        boxed_label(
+            painter,
+            egui::Align2::CENTER_BOTTOM,
+            Pos2::new(source_rect.center().x, source_rect.min.y - 4.0),
+            "SOURCE".to_owned(),
             Color32::WHITE,
+            color,
         );
     }
 
@@ -72,7 +65,6 @@ impl Drawing {
         start: f32,
         projected: &[Bar],
     ) {
-        let font = egui::FontId::proportional(typography::XS);
         let proj_rect = bars_rect(view, start, projected);
 
         // Projected region (more transparent)
@@ -84,7 +76,7 @@ impl Drawing {
         // Projected bars as OHLC bars: open tick left, close tick right
         let bar_color =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150);
-        let bar_stroke = Stroke::new(stroke::MEDIUM, bar_color);
+        let bar_stroke = Stroke::new(self.stroke_width.max(stroke::HAIRLINE), bar_color);
         let tick = ((view.bar_to_x)(1.0) - (view.bar_to_x)(0.0)).abs() * 0.3;
         for (i, bar) in projected.iter().enumerate() {
             let x = (view.bar_to_x)(start + i as f32);
@@ -112,17 +104,13 @@ impl Drawing {
         self.draw_dashed_rect(painter, proj_rect, proj_color);
 
         // Projection label
-        let proj_label_bg = Rect::from_center_size(
-            Pos2::new(proj_rect.center().x, proj_rect.min.y - 12.0),
-            egui::vec2(80.0, 16.0),
-        );
-        painter.rect_filled(proj_label_bg, DESIGN_TOKENS.rounding.sm, proj_color);
-        painter.text(
-            proj_label_bg.center(),
-            egui::Align2::CENTER_CENTER,
-            "PROJECTION",
-            font,
+        boxed_label(
+            painter,
+            egui::Align2::CENTER_BOTTOM,
+            Pos2::new(proj_rect.center().x, proj_rect.min.y - 4.0),
+            "PROJECTION".to_owned(),
             Color32::WHITE,
+            proj_color,
         );
 
         // Connection arrow from source to projection
