@@ -520,7 +520,8 @@ impl FloatingSelectionToolbar {
             .id(open_id)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .align(RectAlign::BOTTOM_START)
-            .align_alternatives(&[])
+            // Opening upward when the bar sits low keeps the palette off the bar's own swatches.
+            .align_alternatives(&[RectAlign::TOP_START])
             .frame(crate::ui_kit::glass_menu(ui))
             .gap(theme.spacing.xs)
             .show(|ui| {

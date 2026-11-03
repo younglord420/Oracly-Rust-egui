@@ -677,12 +677,123 @@ impl Drawing {
             for level in &mut config.levels {
                 level.color = color;
             }
+            config.trend_line_color = color;
         }
         if self.tool_type == DrawingToolType::Pitchfan
             && let Some(config) = &mut self.pitchfork
         {
             config.recolor_pitchfan(color);
+        } else if let Some(config) = &mut self.pitchfork {
+            for level in &mut config.levels {
+                level.color = color;
+            }
         }
+        // Per-level colours keep their own opacity; only the hue follows the pick.
+        let tint = |target: &mut [u8; 4]| target[..3].copy_from_slice(&color[..3]);
+        if let Some(config) = self.gann_levels_mut() {
+            for level in config
+                .levels
+                .iter_mut()
+                .chain(&mut config.fan_lines)
+                .chain(&mut config.arcs)
+                .chain(&mut config.fan_angles)
+            {
+                tint(&mut level.color);
+            }
+        }
+        if let Some(config) = self.regression_mut() {
+            for target in [
+                &mut config.midline_color,
+                &mut config.up_color,
+                &mut config.down_color,
+            ] {
+                tint(target);
+            }
+        }
+    }
+
+    /// Set the stroke width of every line the drawing paints, including Fibonacci levels and
+    /// pitchfork levels that carried their own width.
+    pub fn apply_line_width(&mut self, width: f32) {
+        self.stroke_width = width;
+        if let Some(config) = &mut self.fib_config {
+            config.levels_line_width = width;
+            config.trend_line_width = width;
+        }
+        if self.tool_type != DrawingToolType::Pitchfan
+            && let Some(config) = &mut self.pitchfork
+        {
+            for level in &mut config.levels {
+                level.width = None;
+            }
+        }
+    }
+
+    /// Set the dash pattern of every line the drawing paints, including Fibonacci, pitchfork
+    /// and regression lines that carry their own style.
+    pub fn apply_line_style(&mut self, style: LineStyle) {
+        self.line_style = style;
+        if let Some(config) = &mut self.fib_config {
+            config.levels_line_style = style;
+            config.trend_line_style = style;
+        }
+        if let Some(config) = self.pitchfork_levels_mut() {
+            for level in &mut config.levels {
+                level.line_style = style;
+            }
+        }
+        if let Some(config) = self.regression_mut() {
+            config.midline_style = style;
+            config.upper_style = style;
+            config.lower_style = style;
+        }
+    }
+
+    /// The Gann levels to edit, created from the tool's defaults when not yet saved.
+    fn gann_levels_mut(&mut self) -> Option<&mut GannConfig> {
+        matches!(
+            self.tool_type,
+            DrawingToolType::GannBox
+                | DrawingToolType::GannSquare
+                | DrawingToolType::GannFixed
+                | DrawingToolType::GannFan
+        )
+        .then(|| {
+            let tool = self.tool_type;
+            self.gann.get_or_insert_with(|| GannConfig::for_tool(tool))
+        })
+    }
+
+    /// The regression settings to edit, created from the defaults when not yet saved.
+    fn regression_mut(&mut self) -> Option<&mut RegressionTrendConfig> {
+        (self.tool_type == DrawingToolType::RegressionTrend)
+            .then(|| self.regression_trend.get_or_insert_with(Default::default))
+    }
+
+    /// The pitchfork levels to edit. A pitchfork without saved levels paints every default
+    /// level in its line colour, which the created levels keep.
+    fn pitchfork_levels_mut(&mut self) -> Option<&mut PitchforkConfig> {
+        if !matches!(
+            self.tool_type,
+            DrawingToolType::Pitchfork
+                | DrawingToolType::SchiffPitchfork
+                | DrawingToolType::ModifiedSchiffPitchfork
+                | DrawingToolType::InsidePitchfork
+                | DrawingToolType::Pitchfan
+        ) {
+            return None;
+        }
+        if self.tool_type == DrawingToolType::Pitchfan {
+            return Some(self.pitchfork.get_or_insert_with(PitchforkConfig::pitchfan));
+        }
+        let color = self.color;
+        Some(self.pitchfork.get_or_insert_with(|| {
+            let mut config = PitchforkConfig::default();
+            for level in &mut config.levels {
+                level.color = color;
+            }
+            config
+        }))
     }
 
     /// Get the fill color as Color32, if set
@@ -1001,6 +1112,71 @@ mod tests {
         let mut other = line.clone();
         other.stored_id = Some("a".into());
         assert_ne!(line.alert_source(0), other.alert_source(1));
+    }
+
+    /// Toolbar line picks reach the lines each tool family paints from its own settings, and
+    /// leave the fill alone.
+    #[test]
+    fn line_color_width_and_style_reach_per_level_lines() {
+        use DrawingToolType as T;
+        let red = [200, 10, 20, 255];
+        for tool in [
+            T::FibonacciRetracement,
+            T::Pitchfork,
+            T::Pitchfan,
+            T::GannBox,
+            T::GannFan,
+            T::RegressionTrend,
+            T::ParallelChannel,
+        ] {
+            let mut drawing = Drawing::new(1, tool);
+            let fill = drawing.fill_color;
+            drawing.apply_line_color(red);
+            drawing.apply_line_width(3.0);
+            drawing.apply_line_style(LineStyle::Dashed);
+            assert_eq!(drawing.color, red, "{tool:?}");
+            assert_eq!(drawing.fill_color, fill, "{tool:?} fill");
+            assert_eq!(
+                (drawing.stroke_width, drawing.line_style),
+                (3.0, LineStyle::Dashed)
+            );
+            if let Some(config) = &drawing.fib_config {
+                assert!(config.levels.iter().all(|l| l.color == red));
+                assert_eq!(config.trend_line_color, red);
+                assert_eq!(config.levels_line_width, 3.0);
+                assert_eq!(config.levels_line_style, LineStyle::Dashed);
+            }
+            if let Some(config) = &drawing.pitchfork {
+                assert!(config.levels.iter().all(|l| l.color[..3] == red[..3]));
+                assert!(
+                    config
+                        .levels
+                        .iter()
+                        .all(|l| l.line_style == LineStyle::Dashed)
+                );
+            }
+            if let Some(config) = &drawing.gann {
+                assert!(
+                    config
+                        .levels
+                        .iter()
+                        .chain(&config.fan_angles)
+                        .all(|l| l.color[..3] == red[..3])
+                );
+            }
+            if let Some(config) = &drawing.regression_trend {
+                assert_eq!(config.midline_color[..3], red[..3]);
+                assert_eq!(config.upper_style, LineStyle::Dashed);
+            }
+            let family = match tool {
+                T::FibonacciRetracement => drawing.fib_config.is_some(),
+                T::Pitchfork | T::Pitchfan => drawing.pitchfork.is_some(),
+                T::GannBox | T::GannFan => drawing.gann.is_some(),
+                T::RegressionTrend => drawing.regression_trend.is_some(),
+                _ => true,
+            };
+            assert!(family, "{tool:?} settings to edit");
+        }
     }
 
     #[test]

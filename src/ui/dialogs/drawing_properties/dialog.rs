@@ -36,6 +36,9 @@ pub struct DrawingPropertiesDialog {
     /// Named templates, kept in memory unless the host attaches its storage service.
     pub templates: TemplateStore<DrawingTemplate>,
     preview: Option<(String, DrawingId, Vec<PreviewDrawing>)>,
+    /// The edited drawing's settings as this dialog last left them, to notice edits made
+    /// elsewhere (floating toolbar, object tree) while it is open.
+    seen: Option<serde_json::Value>,
     template_name: String,
     saving_template: bool,
     default_template: Option<DrawingTemplate>,
@@ -67,6 +70,7 @@ impl DrawingPropertiesDialog {
             error: None,
             templates: TemplateStore::new(StoreKind::DrawingTemplates),
             preview: None,
+            seen: None,
             template_name: String::new(),
             saving_template: false,
             default_template: None,
@@ -79,6 +83,7 @@ impl DrawingPropertiesDialog {
     pub fn open(&mut self, id: DrawingId, name: String, props: DrawingProps) {
         self.is_open = true;
         self.drawing_id = Some(id);
+        self.seen = None;
         self.drawing_name = name;
         self.coordinates = props.coordinates.clone();
         self.error = None;
@@ -113,6 +118,49 @@ impl DrawingPropertiesDialog {
     /// the original properties. Apply is a notification the host must not apply a second time.
     /// Call every frame, including after closing externally, to restore an unfinished preview.
     pub fn show_and_apply(
+        &mut self,
+        ctx: &Context,
+        chart: &mut crate::widget::Chart,
+    ) -> DrawingPropertiesAction {
+        self.adopt_outside_edits(chart);
+        let action = self.preview_and_apply(ctx, chart);
+        self.seen = self
+            .is_open
+            .then_some(self.drawing_id)
+            .flatten()
+            .and_then(|id| Self::settings_of(chart, id));
+        action
+    }
+
+    fn settings_of(chart: &crate::widget::Chart, id: DrawingId) -> Option<serde_json::Value> {
+        let drawing = chart.drawings().drawings.iter().find(|d| d.id == id.0)?;
+        serde_json::to_value(DrawingTemplate::from_drawing(drawing)).ok()
+    }
+
+    /// Reload the form when the drawing changed outside the dialog, so the live preview does
+    /// not write the old settings back over that edit. The changed drawing becomes the state
+    /// Cancel returns to.
+    fn adopt_outside_edits(&mut self, chart: &crate::widget::Chart) {
+        let Some(id) = self.drawing_id.filter(|_| self.is_open) else {
+            return;
+        };
+        let Some(seen) = &self.seen else {
+            return;
+        };
+        if Self::settings_of(chart, id).is_none_or(|current| current == *seen) {
+            return;
+        }
+        let Some(drawing) = chart.drawings().drawings.iter().find(|d| d.id == id.0) else {
+            return;
+        };
+        self.preview = None;
+        let coordinates = self.coordinates.clone();
+        self.props = DrawingProps::from_drawing(drawing, chart);
+        self.props.coordinates = coordinates.clone();
+        self.coordinates = coordinates;
+    }
+
+    fn preview_and_apply(
         &mut self,
         ctx: &Context,
         chart: &mut crate::widget::Chart,
@@ -839,6 +887,30 @@ mod tests {
                 }],
             );
         }
+    }
+
+    /// A colour picked elsewhere while the dialog is open stays: the form takes it up instead of
+    /// previewing its old colour over it, and Cancel keeps it.
+    #[test]
+    fn outside_edits_survive_the_open_dialog() {
+        let ctx = Context::default();
+        let mut chart = Chart::new(BarData::new());
+        let mut dialog = DrawingPropertiesDialog::new();
+        chart.drawings_mut().drawings = vec![Drawing::new(7, Tool::ParallelChannel)];
+        dialog.open_for_chart(&chart, DrawingId(7));
+        frame(&mut dialog, &mut chart, &ctx, vec![]);
+        let red = [200, 10, 20, 255];
+        chart
+            .drawings_mut()
+            .edit_drawing(7, |d| d.apply_line_color(red));
+        for _ in 0..2 {
+            frame(&mut dialog, &mut chart, &ctx, vec![]);
+        }
+        assert_eq!(chart.drawings().drawings[0].color, red);
+        assert_eq!(dialog.props.color.to_srgba_unmultiplied(), red);
+        dialog.close();
+        frame(&mut dialog, &mut chart, &ctx, vec![]);
+        assert_eq!(chart.drawings().drawings[0].color, red);
     }
 
     /// Unsupported settings never appear, including when reusing the dialog after a text tool.

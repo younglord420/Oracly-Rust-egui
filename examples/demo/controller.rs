@@ -1083,12 +1083,23 @@ impl DemoApp {
                     } else {
                         chart_rect
                     };
+                    // An unfilled tool offers its line colour at 20% as the fill to start from.
+                    let fill = d.tool_type.supports_fill().then(|| {
+                        d.fill_color32().unwrap_or_else(|| {
+                            let [r, g, b, _] = d.color;
+                            egui::Color32::from_rgba_unmultiplied(r, g, b, 51)
+                        })
+                    });
+                    let (width, style) = d.fib_config.as_ref().map_or(
+                        (d.stroke_width, d.line_style),
+                        |config| (config.levels_line_width, config.levels_line_style),
+                    );
                     (
                         d.id,
                         d.color32(),
-                        d.fill_color32().filter(|_| d.tool_type.supports_fill()),
-                        d.stroke_width,
-                        d.line_style,
+                        fill,
+                        width,
+                        style,
                         d.locked,
                         d.visible,
                         !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
@@ -1161,14 +1172,14 @@ impl DemoApp {
                 self.chart.user_action(|chart| {
                     chart
                         .drawings_mut()
-                        .edit_drawing(id, |d| d.stroke_width = width)
+                        .edit_drawing(id, |d| d.apply_line_width(width))
                 });
             }
             FloatingToolbarAction::SetLineStyle(style) => {
                 self.chart.user_action(|chart| {
                     chart
                         .drawings_mut()
-                        .edit_drawing(id, |d| d.line_style = style)
+                        .edit_drawing(id, |d| d.apply_line_style(style))
                 });
             }
             FloatingToolbarAction::ChangeColor(0, color) => {
