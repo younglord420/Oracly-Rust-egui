@@ -51,8 +51,8 @@ fn shows_generic_line_row(tool: DrawingToolType) -> bool {
     !has_fib_style_controls(tool) && tool != DrawingToolType::Pitchfan
 }
 
-/// Fibonacci tools whose lines take their colours from their levels: the Line row offers
-/// width and style only.
+/// Fibonacci and Gann tools whose lines take their colours from their levels: the Line row
+/// offers width and style only.
 fn colours_from_levels(tool: DrawingToolType) -> bool {
     matches!(
         tool,
@@ -62,6 +62,10 @@ fn colours_from_levels(tool: DrawingToolType) -> bool {
             | DrawingToolType::FibonacciCircles
             | DrawingToolType::FibonacciSpeedResistanceArcs
             | DrawingToolType::FibonacciWedge
+            | DrawingToolType::GannFan
+            | DrawingToolType::GannBox
+            | DrawingToolType::GannSquare
+            | DrawingToolType::GannFixed
     )
 }
 
@@ -1270,6 +1274,8 @@ mod tests {
         assert!(!shows_generic_line_row(DrawingToolType::Pitchfan));
         // Level tools take their colours from the levels; the spiral has none of its own.
         assert!(colours_from_levels(DrawingToolType::FibonacciCircles));
+        assert!(colours_from_levels(DrawingToolType::GannFan));
+        assert!(colours_from_levels(DrawingToolType::GannSquare));
         assert!(!colours_from_levels(DrawingToolType::FibonacciSpiral));
         assert!(!colours_from_levels(DrawingToolType::TrendLine));
     }

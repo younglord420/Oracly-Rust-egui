@@ -289,31 +289,21 @@ impl DrawingProps {
             }) {
                 return Err("Pitchfork widths must be above 0 and at most 100");
             }
-            if settings.gann.as_ref().is_some_and(|c| {
-                c.price_levels
-                    .iter()
-                    .chain(&c.time_levels)
-                    .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
-            }) {
+            if settings
+                .gann
+                .as_ref()
+                .is_some_and(|c| c.levels.iter().any(|l| !(0.0..=1.0).contains(&l.ratio)))
+            {
                 return Err("Gann divisions must be between 0 and 1");
             }
             if settings.gann.as_ref().is_some_and(|c| {
-                c.fan_ratios
+                c.fan_lines
                     .iter()
-                    .chain(&c.arc_ratios)
-                    .any(|v| !v.is_finite() || *v <= 0.0)
+                    .chain(&c.arcs)
+                    .chain(&c.fan_angles)
+                    .any(|l| !l.ratio.is_finite() || l.ratio <= 0.0)
             }) {
-                return Err("Gann fan and arc ratios must be positive and finite");
-            }
-            if settings.gann.as_ref().is_some_and(|c| {
-                c.fan_angles.iter().any(|angle| {
-                    !angle.ratio.is_finite()
-                        || angle.ratio <= 0.0
-                        || !angle.line_width.is_finite()
-                        || !(angle.line_width > 0.0 && angle.line_width <= MAX_STROKE_WIDTH)
-                })
-            }) {
-                return Err("Gann fan angles require positive ratios and widths up to 100");
+                return Err("Gann fan, arc and angle ratios must be positive and finite");
             }
             if settings.ghost_feed.is_some_and(|c| !c.is_valid()) {
                 return Err(
@@ -417,7 +407,7 @@ mod tests {
 
         use crate::data::VolumeProfileConfig;
         use crate::drawings::{
-            FibonacciConfig, GannConfig, PitchforkConfig, PositionSize, PositionSizing,
+            FibonacciConfig, GannConfig, GannLevel, PitchforkConfig, PositionSize, PositionSizing,
             RegressionTrendConfig,
         };
         for tool in [
@@ -500,8 +490,7 @@ mod tests {
                 ..Default::default()
             });
             settings.gann = Some(GannConfig {
-                price_levels: vec![0.0, 0.5, 1.0],
-                time_levels: vec![0.25, 0.75],
+                levels: vec![GannLevel::new(0.25, [1, 2, 3, 255])],
                 ..Default::default()
             });
             settings.position_size = Some(PositionSize::RiskPercent {
@@ -525,7 +514,10 @@ mod tests {
             let saved = &chart.drawings().drawings[0];
             assert_eq!(format!("{:?}", saved.fib_config), expected);
             assert_eq!(saved.pitchfork.as_ref().unwrap().background_opacity, 75);
-            assert_eq!(saved.gann.as_ref().unwrap().time_levels, [0.25, 0.75]);
+            assert_eq!(
+                saved.gann.as_ref().unwrap().levels,
+                [GannLevel::new(0.25, [1, 2, 3, 255])]
+            );
             assert_eq!(
                 saved.position_size.unwrap().quantity(100.0, 98.0),
                 Some(50.0)
@@ -574,8 +566,9 @@ mod tests {
                 .value = f32::NAN;
             props.line_width = 9.0;
             assert!(props.apply_to_chart(DrawingId(7), &mut chart).is_err());
-            assert_eq!(chart.drawings().drawings[0].stroke_width, 2.0);
-            assert_eq!(chart.drawings().drawings[1].stroke_width, 2.0);
+            let width = Drawing::new(7, tool).stroke_width;
+            assert_eq!(chart.drawings().drawings[0].stroke_width, width);
+            assert_eq!(chart.drawings().drawings[1].stroke_width, width);
         }
     }
 }

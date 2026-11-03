@@ -227,45 +227,31 @@ impl StoredDrawing {
                     .collect(),
             ),
             (
-                "gann.price_levels",
+                "gann.levels",
                 d.gann
                     .iter()
-                    .flat_map(|c| c.price_levels.iter().copied())
+                    .flat_map(|c| c.levels.iter().map(|l| l.ratio))
                     .collect(),
             ),
             (
-                "gann.time_levels",
+                "gann.fan_lines",
                 d.gann
                     .iter()
-                    .flat_map(|c| c.time_levels.iter().copied())
+                    .flat_map(|c| c.fan_lines.iter().map(|l| l.ratio))
                     .collect(),
             ),
             (
-                "gann.fan_ratios",
+                "gann.arcs",
                 d.gann
                     .iter()
-                    .flat_map(|c| c.fan_ratios.iter().copied())
-                    .collect(),
-            ),
-            (
-                "gann.arc_ratios",
-                d.gann
-                    .iter()
-                    .flat_map(|c| c.arc_ratios.iter().copied())
+                    .flat_map(|c| c.arcs.iter().map(|l| l.ratio))
                     .collect(),
             ),
             (
                 "gann.fan_angles",
                 d.gann
                     .iter()
-                    .flat_map(|c| c.fan_angles.iter().map(|angle| angle.ratio))
-                    .collect(),
-            ),
-            (
-                "gann.fan_angle_widths",
-                d.gann
-                    .iter()
-                    .flat_map(|c| c.fan_angles.iter().map(|angle| angle.line_width))
+                    .flat_map(|c| c.fan_angles.iter().map(|l| l.ratio))
                     .collect(),
             ),
         ] {
@@ -276,7 +262,9 @@ impl StoredDrawing {
                 f32::MAX
             };
             if let Some(i) = values.iter().position(|v| !(-limit..=limit).contains(v)) {
-                let suffix = if name.ends_with(".levels") {
+                let suffix = if name.starts_with("gann.") {
+                    ".ratio"
+                } else if name.ends_with(".levels") {
                     ".value"
                 } else {
                     ""
@@ -975,21 +963,18 @@ mod tests {
                 drawing.chart_points.truncate(anchors);
                 drawing.update_screen_coords(bar_to_x, price_to_y);
             }
+            let level = |ratio| crate::drawings::GannLevel::new(ratio, [10, 20, 30, 40]);
             drawing.gann = Some(crate::drawings::GannConfig {
-                price_levels: vec![0.25, 0.75],
-                time_levels: vec![0.5],
+                levels: vec![level(0.25), level(0.75)],
                 show_grid: false,
                 show_fan: false,
-                fan_ratios: vec![0.5, 2.0],
+                fan_lines: vec![level(0.5), level(2.0)],
                 fan_direction: crate::drawings::GannFanDirection::Reverse,
                 show_arcs: false,
-                arc_ratios: vec![0.75],
-                fan_angles: vec![crate::drawings::GannFanAngle {
+                arcs: vec![level(0.75)],
+                fan_angles: vec![crate::drawings::GannLevel {
                     enabled: false,
-                    ratio: 2.5,
-                    color: [10, 20, 30, 40],
-                    line_width: 3.0,
-                    line_style: LineStyle::Dashed,
+                    ..level(2.5)
                 }],
             });
             drawing.ghost_feed = Some(crate::drawings::GhostFeedConfig {
@@ -1579,9 +1564,10 @@ mod tests {
                         .drawing
                         .gann
                         .get_or_insert_with(Default::default)
-                        .price_levels[0] = f32::INFINITY
+                        .levels[0]
+                        .ratio = f32::INFINITY
                 },
-                "invalid gann.price_levels[0]",
+                "invalid gann.levels[0].ratio",
             ),
             (
                 |s| {
@@ -1589,9 +1575,10 @@ mod tests {
                         .drawing
                         .gann
                         .get_or_insert_with(Default::default)
-                        .time_levels[0] = f32::NAN
+                        .fan_angles[0]
+                        .ratio = f32::NAN
                 },
-                "invalid gann.time_levels[0]",
+                "invalid gann.fan_angles[0].ratio",
             ),
             (
                 |s| {

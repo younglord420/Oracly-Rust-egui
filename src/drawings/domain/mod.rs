@@ -15,7 +15,10 @@ mod template;
 pub use crate::config::{DrawingInteractionMode, DrawingToolType, ParseToolTypeError};
 pub use coordinates::ChartPoint;
 pub use drawing::Drawing;
-pub use gann::{GannConfig, GannFanAngle, GannFanDirection, gann_square_corner};
+pub use gann::{
+    GannConfig, GannFanDirection, GannLevel, gann_fan_label, gann_square_fan_label,
+    parse_gann_ratio,
+};
 pub use ghost_feed::{GhostCandle, GhostFeedConfig, MAX_GHOST_CANDLES};
 pub(crate) use options::fib_ratio_color;
 pub use options::{

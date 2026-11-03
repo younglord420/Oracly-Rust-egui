@@ -4,7 +4,8 @@
 //! combining text color, size (`Small`, `Normal`, `Large`, `Huge`), `Bold`, `Italic`, and
 //! (for line/shape labels) vertical (`Top`, `Middle`, `Bottom`; channels also `Inside`) and
 //! horizontal (`Left`, `Center`, `Right`) placement. Tools whose text is generated automatically
-//! still expose the formatting row.
+//! still expose the formatting row, except Fibonacci tools, whose section formats their level
+//! labels instead.
 
 use crate::config::FontWeight;
 use crate::drawings::{TextHorizontalAlign, TextVerticalAlign};
@@ -38,6 +39,12 @@ pub struct TextTab;
 
 impl TextTab {
     pub fn show(ui: &mut Ui, props: &mut DrawingProps, text_picker: &mut ColorPickerState) {
+        if let Some(template) = &mut props.tool_settings
+            && super::inputs::has_fibonacci_labels(template.settings.tool_type)
+        {
+            super::inputs::fibonacci_labels(ui, &mut template.settings);
+            return;
+        }
         let theme = ui.active_theme().clone();
         let control_h = super::style::control_row_height(ui);
         ui.spacing_mut().interact_size.y = control_h;

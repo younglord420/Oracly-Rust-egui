@@ -26,7 +26,7 @@ pub(crate) mod utils {
 
 pub use traits::DrawingRenderer;
 
-use crate::drawings::domain::{Drawing, DrawingToolType, GannConfig};
+use crate::drawings::domain::{Drawing, DrawingToolType};
 use crate::model::{Bar, SpanCache};
 use egui::{Pos2, Rect};
 use std::rc::Rc;
@@ -210,13 +210,8 @@ impl Drawing {
                     outline.areas.push(vec![a, b, c]);
                 }
             }
-            T::Measure | T::DateAndPriceRange | T::GannBox => {
+            T::Measure | T::DateAndPriceRange | T::GannBox | T::GannSquare | T::GannFixed => {
                 boxed(&mut outline, Rect::from_two_pos(first, second));
-            }
-            T::GannFixed => boxed(&mut outline, Rect::from_two_pos(first, second)),
-            T::GannSquare => {
-                let corner = crate::drawings::gann_square_corner(first, second);
-                boxed(&mut outline, Rect::from_two_pos(first, corner));
             }
             T::RotatedRect => {
                 let corners = self.rotated_rect_corners()?;
@@ -287,9 +282,10 @@ impl Drawing {
             }
             T::Pitchfan => outline.lines = pitchfork::pitchfan_lines(self, rect),
             T::GannFan => {
-                let default = GannConfig::default();
-                let config = self.gann.as_ref().unwrap_or(&default);
-                outline.lines = gann::gann_fan_lines(first, second, rect, config);
+                outline.lines = gann::gann_fan_rays(first, second, rect, &self.gann_config())
+                    .into_iter()
+                    .map(|(_, ray)| ray)
+                    .collect();
             }
             T::FlatTopBottom | T::DisjointChannel => return self.wedge_channel_outline(rect),
             T::ParallelChannel => return self.parallel_channel_outline(rect),

@@ -862,7 +862,10 @@ mod tests {
                     let (is_main, stroke) = match shape {
                         Shape::LineSegment { points, stroke } => (
                             drawing.points.windows(2).any(|p| p == points)
-                                || tool == CyclicLines
+                                || matches!(
+                                    tool,
+                                    CyclicLines | GannFan | GannBox | GannSquare | GannFixed
+                                )
                                 || (tool == HeadAndShoulders && stroke.color.a() == 200),
                             *stroke,
                         ),
@@ -909,12 +912,7 @@ mod tests {
                 assert!(main > 0, "{tool:?} missing main line");
                 if matches!(
                     tool,
-                    XABCDPattern
-                        | GannBox
-                        | GannSquare
-                        | ElliottTriangle
-                        | ElliottDoubleCombo
-                        | ElliottTripleCombo
+                    XABCDPattern | ElliottTriangle | ElliottDoubleCombo | ElliottTripleCombo
                 ) {
                     assert!(details > 0, "{tool:?} missing details");
                 }
@@ -940,14 +938,17 @@ mod tests {
             GannFixed,
         ] {
             let mut drawing = pattern(tool);
-            if tool != ElliottImpulse {
+            let gann = matches!(tool, GannBox | GannSquare | GannFixed);
+            if gann {
+                assert!(drawing.fill_color.is_none(), "{tool:?} starts unfilled");
+            } else if tool != ElliottImpulse {
                 assert!(
                     drawing.fill_color.is_some(),
                     "{tool:?} lost its default tint"
                 );
             }
             let coloured = Drawing::with_color(1, tool, [67, 89, 123, 255]);
-            if tool != ElliottCorrection {
+            if !gann && tool != ElliottCorrection {
                 assert_eq!(
                     &coloured.fill_color.unwrap()[..3],
                     &[67, 89, 123],

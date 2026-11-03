@@ -586,9 +586,9 @@ impl Default for FibonacciConfig {
             show_prices: Some(true),
             show_levels: Some(true),
             levels_as_percent: false,
-            labels_on_left: true,
-            label_h_align: Some(TextHorizontalAlign::Left),
-            label_v_align: TextVerticalAlign::Top,
+            labels_on_left: false,
+            label_h_align: Some(TextHorizontalAlign::Right),
+            label_v_align: TextVerticalAlign::Middle,
             label_font_size: default_fib_label_font_size(),
             show_trend_line: true,
             trend_line_color: default_trend_line_color(),
@@ -601,6 +601,16 @@ impl Default for FibonacciConfig {
 }
 
 impl FibonacciConfig {
+    /// Labels above the left end of each level, where drawings saved without a config put them.
+    pub(crate) fn with_legacy_labels(self) -> Self {
+        Self {
+            labels_on_left: true,
+            label_h_align: Some(TextHorizontalAlign::Left),
+            label_v_align: TextVerticalAlign::Top,
+            ..self
+        }
+    }
+
     /// Extension levels (beyond 100%)
     pub fn extension_default() -> Self {
         let mut levels = ladder(
@@ -694,6 +704,7 @@ impl FibonacciConfig {
             levels_as_percent: false,
             labels_on_left: false,
             label_h_align: Some(TextHorizontalAlign::Right),
+            label_v_align: TextVerticalAlign::Top,
             ..Self::default()
         }
     }
@@ -1418,8 +1429,22 @@ mod tests {
             [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
         );
         assert_eq!(FibPreset::matching(&retracement), Some(FibPreset::Classic));
-        assert_eq!(retracement.effective_h_align(), TextHorizontalAlign::Left);
+        assert_eq!(retracement.effective_h_align(), TextHorizontalAlign::Right);
+        assert_eq!(retracement.label_v_align, TextVerticalAlign::Middle);
         assert!(retracement.show_background);
+        // Drawings saved without a config keep their labels above the left end.
+        let legacy = crate::drawings::Drawing::new(0, T::FibonacciRetracement);
+        let legacy = crate::drawings::Drawing {
+            fib_config: None,
+            ..legacy
+        };
+        let legacy = legacy.fibonacci_config();
+        assert_eq!(legacy.effective_h_align(), TextHorizontalAlign::Left);
+        assert_eq!(legacy.label_v_align, TextVerticalAlign::Top);
+        assert_eq!(
+            FibonacciConfig::for_tool(T::FibonacciChannel).label_v_align,
+            TextVerticalAlign::Top
+        );
 
         let (levels, reverse) = FibPreset::Extension.levels();
         assert!(reverse);

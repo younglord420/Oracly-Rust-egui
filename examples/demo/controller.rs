@@ -6342,7 +6342,7 @@ mod tests {
         assert!(!app.drawing_toolbar.state.lock_all);
         use egui_charts::data::VolumeProfileConfig;
         use egui_charts::drawings::{
-            FibonacciConfig, GannConfig, PitchforkConfig, PositionSize, PositionSizing,
+            FibonacciConfig, GannConfig, GannLevel, PitchforkConfig, PositionSize, PositionSizing,
             RegressionTrendConfig,
         };
         for tool in [
@@ -6377,8 +6377,7 @@ mod tests {
                 ..Default::default()
             });
             settings.gann = Some(GannConfig {
-                price_levels: vec![0.0, 0.5, 1.0],
-                time_levels: vec![0.25, 0.75],
+                levels: vec![GannLevel::new(0.25, [1, 2, 3, 255])],
                 ..Default::default()
             });
             settings.position_size = Some(PositionSize::RiskPercent {
@@ -6400,7 +6399,10 @@ mod tests {
             let saved = &app.chart.drawings().drawings[0];
             assert_eq!(format!("{:?}", saved.fib_config), expected);
             assert_eq!(saved.pitchfork.as_ref().unwrap().background_opacity, 75);
-            assert_eq!(saved.gann.as_ref().unwrap().time_levels, [0.25, 0.75]);
+            assert_eq!(
+                saved.gann.as_ref().unwrap().levels,
+                [GannLevel::new(0.25, [1, 2, 3, 255])]
+            );
             assert_eq!(
                 saved.position_size.unwrap().quantity(100.0, 98.0),
                 Some(50.0)

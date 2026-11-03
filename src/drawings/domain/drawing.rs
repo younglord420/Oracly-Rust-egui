@@ -209,7 +209,17 @@ impl Drawing {
             screen_anchor: None,
             pane: None,
             color: [255, 255, 255, 255], // Dark-theme default; prefer `with_color` + theme
-            stroke_width: 2.0,
+            stroke_width: if matches!(
+                tool_type,
+                DrawingToolType::GannFan
+                    | DrawingToolType::GannBox
+                    | DrawingToolType::GannSquare
+                    | DrawingToolType::GannFixed
+            ) {
+                1.0
+            } else {
+                2.0
+            },
             completed: false,
             text: (tool_type == DrawingToolType::Sticker).then(|| "sticker:bull".into()),
             // Styling defaults
@@ -231,8 +241,6 @@ impl Drawing {
                         .gamma_multiply(20.0 / 255.0)
                         .to_srgba_unmultiplied(),
                 ),
-                DrawingToolType::GannSquare => Some([242, 54, 69, 12]),
-                DrawingToolType::GannBox | DrawingToolType::GannFixed => Some([242, 54, 69, 15]),
                 DrawingToolType::ParallelChannel
                 | DrawingToolType::FlatTopBottom
                 | DrawingToolType::DisjointChannel => Some([255, 255, 255, 51]),
@@ -718,17 +726,6 @@ impl Drawing {
             min_y = min_y.min(p.y);
             max_x = max_x.max(p.x);
             max_y = max_y.max(p.y);
-        }
-
-        // Painted square can extend past the drag anchor when |Δx| ≠ |Δy|.
-        if self.tool_type == DrawingToolType::GannSquare
-            && let (Some(&start), Some(&end)) = (self.points.first(), self.points.get(1))
-        {
-            let corner = super::gann_square_corner(start, end);
-            min_x = min_x.min(corner.x);
-            min_y = min_y.min(corner.y);
-            max_x = max_x.max(corner.x);
-            max_y = max_y.max(corner.y);
         }
 
         Some(egui::Rect::from_min_max(

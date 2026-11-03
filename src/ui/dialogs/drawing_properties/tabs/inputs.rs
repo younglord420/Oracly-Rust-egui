@@ -1,9 +1,9 @@
 //! Inputs that correspond to the selected tool's saved drawing configuration.
 
 use crate::drawings::{
-    Drawing, DrawingToolType as Tool, FibPreset, FibonacciLevel, GannConfig, GannFanAngle,
-    GannFanDirection, PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource,
-    TextHorizontalAlign, TextVerticalAlign,
+    Drawing, DrawingToolType as Tool, FibPreset, FibonacciLevel, GannFanDirection, GannLevel,
+    PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource, TextHorizontalAlign,
+    TextVerticalAlign,
 };
 
 use crate::data::{ProfileDisplay, VolumeProfileConfig};
@@ -66,95 +66,7 @@ impl InputsTab {
             | Tool::InsidePitchfork => pitchfork(ui, drawing, pickers),
             Tool::Pitchfan => pitchfan(ui, drawing, pickers),
             Tool::GannFan => gann_fan(ui, drawing, pickers),
-            Tool::GannBox | Tool::GannSquare | Tool::GannFixed => {
-                let mut config = drawing.gann.clone().unwrap_or_else(|| {
-                    if drawing.tool_type == Tool::GannFixed {
-                        GannConfig {
-                            price_levels: vec![0.0, 0.25, 0.5, 0.75, 1.0],
-                            time_levels: vec![0.0, 0.25, 0.5, 0.75, 1.0],
-                            ..GannConfig::default()
-                        }
-                    } else {
-                        GannConfig::default()
-                    }
-                });
-                let original = config.clone();
-                let square = drawing.tool_type == Tool::GannSquare;
-                let control_h = super::style::control_row_height(ui);
-                let col_w = super::style::control_column_width(ui);
-                if square {
-                    ui.horizontal(|ui| {
-                        ui.set_min_height(control_h);
-                        ui.checkbox(&mut config.show_grid, l10n::text(ui.ctx(), "Show grid"));
-                    });
-                }
-                if !square || config.show_grid {
-                    fractions(
-                        ui,
-                        "Price divisions",
-                        &mut config.price_levels,
-                        0.0..=1.0,
-                        0.5,
-                    );
-                    fractions(
-                        ui,
-                        "Time divisions",
-                        &mut config.time_levels,
-                        0.0..=1.0,
-                        0.5,
-                    );
-                }
-                if square {
-                    ui.horizontal(|ui| {
-                        ui.set_min_height(control_h);
-                        ui.checkbox(&mut config.show_fan, l10n::text(ui.ctx(), "Show fan"));
-                        if config.show_fan {
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    let ctx = ui.ctx().clone();
-                                    super::style::text_combo_popup(
-                                        ui,
-                                        "gann_fan_direction",
-                                        "Fan direction",
-                                        &mut config.fan_direction,
-                                        &[
-                                            GannFanDirection::Forward,
-                                            GannFanDirection::Reverse,
-                                            GannFanDirection::Both,
-                                        ],
-                                        |v| {
-                                            l10n::text(
-                                                &ctx,
-                                                match v {
-                                                    GannFanDirection::Forward => "Forward",
-                                                    GannFanDirection::Reverse => "Reverse",
-                                                    GannFanDirection::Both => "Both",
-                                                },
-                                            )
-                                        },
-                                        col_w.min(ui.available_width()).max(96.0),
-                                        control_h,
-                                    );
-                                },
-                            );
-                        }
-                    });
-                    if config.show_fan {
-                        fractions(ui, "Fan ratios", &mut config.fan_ratios, 0.01..=100.0, 1.0);
-                    }
-                    ui.horizontal(|ui| {
-                        ui.set_min_height(control_h);
-                        ui.checkbox(&mut config.show_arcs, l10n::text(ui.ctx(), "Show arcs"));
-                    });
-                    if config.show_arcs {
-                        fractions(ui, "Arc ratios", &mut config.arc_ratios, 0.01..=1.41, 0.5);
-                    }
-                }
-                if config != original {
-                    drawing.gann = Some(config);
-                }
-            }
+            Tool::GannBox | Tool::GannSquare | Tool::GannFixed => gann_grid(ui, drawing, pickers),
             Tool::GhostFeed => {
                 let mut config = drawing.ghost_feed.unwrap_or_default();
                 let original = config;
@@ -501,6 +413,42 @@ struct LevelRow<'a> {
     line_style: Option<&'a mut LineStyle>,
     width: Option<(&'a mut Option<f32>, f32)>,
     range: std::ops::RangeInclusive<f32>,
+    text: RatioText,
+}
+
+/// How a level's ratio is shown and typed.
+#[derive(Clone, Copy)]
+enum RatioText {
+    Number,
+    /// Price over time, as `8/1` or `1/3`.
+    PricePerTime,
+    /// Time by price, as `3x1` or `1x2`.
+    TimeByPrice,
+}
+
+fn ratio_value(ui: &mut Ui, width: f32, fields: &mut LevelRow<'_>, name: String) -> egui::Response {
+    let height = super::style::control_row_height(ui);
+    let mut drag = egui::DragValue::new(&mut *fields.value)
+        .range(fields.range.clone())
+        .speed(0.001)
+        .max_decimals(6);
+    let label: Option<fn(f32) -> String> = match fields.text {
+        RatioText::Number => None,
+        RatioText::PricePerTime => Some(crate::drawings::gann_fan_label),
+        RatioText::TimeByPrice => Some(crate::drawings::gann_square_fan_label),
+    };
+    if let Some(label) = label {
+        drag = drag
+            .custom_formatter(move |value, _| label(value as f32))
+            .custom_parser(|text| crate::drawings::parse_gann_ratio(text).map(f64::from));
+    }
+    let response = ui.add_sized([width, height], drag).accessible_name(name);
+    if response.changed()
+        && let Some(label) = fields.legacy_label.as_deref_mut()
+    {
+        label.clear();
+    }
+    response
 }
 
 fn level_grid<T>(
@@ -539,26 +487,14 @@ fn level_grid<T>(
                 .show(ui, |ui| {
                     for (i, level) in levels.iter_mut().enumerate() {
                         ui.push_id(i, |ui| {
-                            let fields = row(level);
+                            let mut fields = row(level);
                             let name = |ui: &Ui, property| {
                                 l10n::format_text(ui.ctx(), property, &[("0", (i + 1).to_string())])
                             };
-                            ui.checkbox(fields.visible, "")
+                            ui.checkbox(&mut *fields.visible, "")
                                 .accessible_name(name(ui, "Level {0} visible"));
-                            if ui
-                                .add_sized(
-                                    [ratio_w, control_h],
-                                    egui::DragValue::new(fields.value)
-                                        .range(fields.range)
-                                        .speed(0.001)
-                                        .max_decimals(6),
-                                )
-                                .accessible_name(name(ui, "Level {0} ratio"))
-                                .changed()
-                                && let Some(label) = fields.legacy_label
-                            {
-                                label.clear();
-                            }
+                            let ratio_name = name(ui, "Level {0} ratio");
+                            ratio_value(ui, ratio_w, &mut fields, ratio_name);
                             level_color(ui, fields.color, &mut pickers[i + 1]);
                             if Button::icon(&crate::icons::icons::TRASH)
                                 .ghost()
@@ -586,26 +522,14 @@ fn level_grid<T>(
                 .show(ui, |ui| {
                     for (i, level) in levels.iter_mut().enumerate() {
                         ui.push_id(i, |ui| {
-                            let fields = row(level);
+                            let mut fields = row(level);
                             let name = |ui: &Ui, property| {
                                 l10n::format_text(ui.ctx(), property, &[("0", (i + 1).to_string())])
                             };
-                            ui.checkbox(fields.visible, "")
+                            ui.checkbox(&mut *fields.visible, "")
                                 .accessible_name(name(ui, "Level {0} visible"));
-                            if ui
-                                .add_sized(
-                                    [ratio_w, control_h],
-                                    egui::DragValue::new(fields.value)
-                                        .range(fields.range)
-                                        .speed(0.001)
-                                        .max_decimals(6),
-                                )
-                                .accessible_name(name(ui, "Level {0} ratio"))
-                                .changed()
-                                && let Some(label) = fields.legacy_label
-                            {
-                                label.clear();
-                            }
+                            let ratio_name = name(ui, "Level {0} ratio");
+                            ratio_value(ui, ratio_w, &mut fields, ratio_name);
                             level_color(ui, fields.color, &mut pickers[i + 1]);
                             if Button::icon(&crate::icons::icons::TRASH)
                                 .ghost()
@@ -633,26 +557,14 @@ fn level_grid<T>(
             .show(ui, |ui| {
                 for (i, level) in levels.iter_mut().enumerate() {
                     ui.push_id(i, |ui| {
-                        let fields = row(level);
+                        let mut fields = row(level);
                         let name = |ui: &Ui, property| {
                             l10n::format_text(ui.ctx(), property, &[("0", (i + 1).to_string())])
                         };
-                        ui.checkbox(fields.visible, "")
+                        ui.checkbox(&mut *fields.visible, "")
                             .accessible_name(name(ui, "Level {0} visible"));
-                        if ui
-                            .add_sized(
-                                [ratio_w, control_h],
-                                egui::DragValue::new(fields.value)
-                                    .range(fields.range)
-                                    .speed(0.001)
-                                    .max_decimals(6),
-                            )
-                            .accessible_name(name(ui, "Level {0} ratio"))
-                            .changed()
-                            && let Some(label) = fields.legacy_label
-                        {
-                            label.clear();
-                        }
+                        let ratio_name = name(ui, "Level {0} ratio");
+                        ratio_value(ui, ratio_w, &mut fields, ratio_name);
                         level_color(ui, fields.color, &mut pickers[i + 1]);
                         if let Some(style) = fields.line_style {
                             super::style::line_style_combo(
@@ -715,7 +627,6 @@ const FIB_LABEL_FONT_SIZES: &[f32] = &[10.0, 12.0, 14.0, 16.0, 20.0, 24.0];
 fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
     let mut config = drawing.fibonacci_config().into_owned();
     let original = config.clone();
-    let theme = ui.active_theme();
     let control_h = super::style::control_row_height(ui);
     ui.spacing_mut().interact_size.y = control_h;
 
@@ -770,6 +681,7 @@ fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
             } else {
                 -f32::MAX
             }..=f32::MAX,
+            text: RatioText::Number,
         },
     );
 
@@ -779,29 +691,70 @@ fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
         &mut config.background_opacity,
     );
 
-    let has_prices = matches!(
-        drawing.tool_type,
-        Tool::FibonacciRetracement | Tool::FibonacciExtension | Tool::FibonacciChannel
-    );
-
-    // Row: Reverse | Prices
-    if drawing.tool_type == Tool::FibonacciRetracement || has_prices {
+    if drawing.tool_type == Tool::FibonacciRetracement {
         ui.horizontal(|ui| {
             ui.set_min_height(control_h);
-            ui.spacing_mut().item_spacing.x = theme.spacing.lg;
-            if drawing.tool_type == Tool::FibonacciRetracement {
-                ui.checkbox(&mut config.reverse, l10n::text(ui.ctx(), "Reverse"));
-            }
-            if has_prices {
-                let mut prices = config
-                    .show_prices
-                    .unwrap_or(drawing.tool_type != Tool::FibonacciChannel);
-                if ui
-                    .checkbox(&mut prices, l10n::text(ui.ctx(), "Prices"))
-                    .changed()
-                {
-                    config.show_prices = Some(prices);
-                }
+            ui.checkbox(&mut config.reverse, l10n::text(ui.ctx(), "Reverse"));
+        });
+    }
+
+    // Row: Fib levels based on log scale
+    if matches!(
+        drawing.tool_type,
+        Tool::FibonacciRetracement | Tool::FibonacciExtension
+    ) {
+        ui.horizontal(|ui| {
+            ui.set_min_height(control_h);
+            ui.checkbox(
+                &mut config.logarithmic,
+                l10n::text(ui.ctx(), "Fib levels based on log scale"),
+            );
+        });
+    }
+
+    if config != original {
+        drawing.fib_config = Some(config);
+    }
+}
+
+/// Tools whose level labels the Label section formats in place of free text.
+pub(super) fn has_fibonacci_labels(tool: Tool) -> bool {
+    matches!(
+        tool,
+        Tool::FibonacciRetracement
+            | Tool::FibonacciExtension
+            | Tool::FibonacciChannel
+            | Tool::FibonacciWedge
+            | Tool::FibonacciTimeZones
+            | Tool::FibonacciSpeedFan
+            | Tool::TrendBasedFibTime
+            | Tool::FibonacciCircles
+            | Tool::FibonacciSpeedResistanceArcs
+    )
+}
+
+/// What the level labels of a Fibonacci tool show, and where and how large they are.
+pub(super) fn fibonacci_labels(ui: &mut Ui, drawing: &mut Drawing) {
+    let mut config = drawing.fibonacci_config().into_owned();
+    let original = config.clone();
+    let theme = ui.active_theme();
+    let control_h = super::style::control_row_height(ui);
+    ui.spacing_mut().interact_size.y = control_h;
+
+    if matches!(
+        drawing.tool_type,
+        Tool::FibonacciRetracement | Tool::FibonacciExtension | Tool::FibonacciChannel
+    ) {
+        ui.horizontal(|ui| {
+            ui.set_min_height(control_h);
+            let mut prices = config
+                .show_prices
+                .unwrap_or(drawing.tool_type != Tool::FibonacciChannel);
+            if ui
+                .checkbox(&mut prices, l10n::text(ui.ctx(), "Prices"))
+                .changed()
+            {
+                config.show_prices = Some(prices);
             }
         });
     }
@@ -931,20 +884,6 @@ fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
         });
     }
 
-    // Row: Fib levels based on log scale
-    if matches!(
-        drawing.tool_type,
-        Tool::FibonacciRetracement | Tool::FibonacciExtension
-    ) {
-        ui.horizontal(|ui| {
-            ui.set_min_height(control_h);
-            ui.checkbox(
-                &mut config.logarithmic,
-                l10n::text(ui.ctx(), "Fib levels based on log scale"),
-            );
-        });
-    }
-
     if config != original {
         drawing.fib_config = Some(config);
     }
@@ -990,6 +929,7 @@ fn pitchfork(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
             line_style: Some(&mut level.line_style),
             width: Some((&mut level.width, drawing.stroke_width)),
             range: 0.0..=crate::drawings::validation::MAX_PITCHFORK_LEVEL,
+            text: RatioText::Number,
         },
     );
     background(
@@ -1022,6 +962,7 @@ fn pitchfan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSta
             line_style: Some(&mut level.line_style),
             width: Some((&mut level.width, drawing.stroke_width)),
             range: 0.0..=crate::drawings::validation::MAX_PITCHFORK_LEVEL,
+            text: RatioText::Number,
         },
     );
     background(
@@ -1034,144 +975,169 @@ fn pitchfan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSta
     }
 }
 
-fn gann_fan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
-    let mut config = drawing.gann.clone().unwrap_or_default();
-    let original = config.clone();
-    let theme = ui.active_theme();
-    let control_h = super::style::control_row_height(ui);
-    let compact = ui.available_width() < 300.0;
-    let ratio_w = if compact { 50.0 } else { 62.0 };
-    let style_w = if compact { 54.0 } else { 72.0 };
-    let width_w = if compact { 48.0 } else { 62.0 };
-    let mut remove = None;
-
-    pickers.resize_with(config.fan_angles.len(), ColorPickerState::default);
-    ui.strong(l10n::text(ui.ctx(), "Fan angles"));
-    egui::Grid::new(ui.scope_id().with("gann_fan_angles"))
-        .num_columns(6)
-        .spacing([theme.spacing.xs, theme.spacing.xs])
-        .show(ui, |ui| {
-            for (index, angle) in config.fan_angles.iter_mut().enumerate() {
-                ui.push_id(index, |ui| {
-                    let name = |ui: &Ui, property| {
-                        l10n::format_text(ui.ctx(), property, &[("0", (index + 1).to_string())])
-                    };
-                    ui.checkbox(&mut angle.enabled, "")
-                        .accessible_name(name(ui, "Angle {0} visible"));
-                    ui.add_sized(
-                        [ratio_w, control_h],
-                        egui::DragValue::new(&mut angle.ratio)
-                            .range(f32::MIN_POSITIVE..=f32::MAX)
-                            .speed(0.01)
-                            .max_decimals(6),
-                    )
-                    .accessible_name(name(ui, "Angle {0} ratio"));
-                    level_color(ui, &mut angle.color, &mut pickers[index]);
-                    super::style::line_width_combo_with_id(
-                        ui,
-                        ("gann_fan_angle_width", index),
-                        &name(ui, "Angle {0} width"),
-                        &mut angle.line_width,
-                        width_w,
-                        control_h,
-                    );
-                    super::style::line_style_combo(
-                        ui,
-                        ("gann_fan_angle_style", index),
-                        &name(ui, "Angle {0} line style"),
-                        &mut angle.line_style,
-                        style_w,
-                        control_h,
-                    );
-                    if Button::icon(&crate::icons::icons::TRASH)
-                        .ghost()
-                        .small()
-                        .tooltip("Remove")
-                        .show(ui)
-                        .clicked()
-                    {
-                        remove = Some(index);
-                    }
-                });
-                ui.end_row();
-            }
+/// A table of Gann levels: visibility, ratio and colour of each, with its own picker states.
+fn gann_levels(
+    ui: &mut Ui,
+    id: &str,
+    levels: &mut Vec<GannLevel>,
+    pickers: &mut Vec<ColorPickerState>,
+    range: std::ops::RangeInclusive<f32>,
+    text: RatioText,
+    new_ratio: f32,
+) {
+    let new_level = GannLevel::new(
+        new_ratio,
+        crate::drawings::domain::fib_ratio_color(new_ratio, levels.len()),
+    );
+    ui.push_id(id, |ui| {
+        level_grid(ui, levels, pickers, new_level, |level| LevelRow {
+            visible: &mut level.enabled,
+            value: &mut level.ratio,
+            legacy_label: None,
+            color: &mut level.color,
+            line_style: None,
+            width: None,
+            range: range.clone(),
+            text,
         });
-    if let Some(index) = remove {
-        config.fan_angles.remove(index);
-        pickers.remove(index);
-    }
-    if Button::new("Add angle")
-        .secondary()
-        .small()
-        .show(ui)
-        .clicked()
-    {
-        config
-            .fan_angles
-            .push(GannFanAngle::new(1.0, drawing.color, drawing.stroke_width));
-    }
+    });
+}
+
+/// A section's show checkbox in the place of its title.
+fn section_toggle(ui: &mut Ui, show: &mut bool, title: &str) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(super::style::control_row_height(ui));
+        ui.checkbox(
+            show,
+            egui::RichText::new(l10n::text(ui.ctx(), title)).strong(),
+        );
+    });
+}
+
+fn gann_fan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let mut config = drawing.gann_config();
+    let original = config.clone();
+    ui.strong(l10n::text(ui.ctx(), "Fan angles"));
+    gann_levels(
+        ui,
+        "gann_fan_angles",
+        &mut config.fan_angles,
+        pickers,
+        0.001..=1000.0,
+        RatioText::PricePerTime,
+        1.0,
+    );
     if config != original {
         drawing.gann = Some(config);
     }
 }
 
-fn fractions(
-    ui: &mut Ui,
-    title: &str,
-    levels: &mut Vec<f32>,
-    range: std::ops::RangeInclusive<f32>,
-    new: f32,
-) {
-    let theme = ui.active_theme();
-    ui.strong(l10n::text(ui.ctx(), title));
-    let mut remove = None;
-    let columns = ((ui.available_width() / 96.0) as usize).clamp(1, 3);
-    egui::Grid::new(title)
-        .num_columns(columns * 2)
-        .spacing([theme.spacing.xs, theme.spacing.xs])
-        .show(ui, |ui| {
-            for (i, value) in levels.iter_mut().enumerate() {
-                let speed = (range.end() - range.start()) / 1000.0;
-                ui.add_sized(
-                    [58.0, ui.spacing().interact_size.y],
-                    egui::DragValue::new(value)
-                        .range(range.clone())
-                        .speed(speed),
-                )
-                .accessible_name(l10n::format_text(
-                    ui.ctx(),
-                    "{title} {index}",
-                    &[
-                        ("title", l10n::text(ui.ctx(), title)),
-                        ("index", (i + 1).to_string()),
-                    ],
-                ));
-                if Button::icon(&crate::icons::icons::TRASH)
-                    .ghost()
-                    .small()
-                    .tooltip("Remove division")
-                    .show(ui)
-                    .clicked()
-                {
-                    remove = Some(i);
-                }
-                if (i + 1) % columns == 0 {
-                    ui.end_row();
-                }
+/// Gann box, square and fixed square: the grid levels, and the fan and arcs of a square.
+fn gann_grid(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let mut config = drawing.gann_config();
+    let original = config.clone();
+    if drawing.tool_type != Tool::GannSquare {
+        ui.strong(l10n::text(ui.ctx(), "Levels"));
+        gann_levels(
+            ui,
+            "gann_grid_levels",
+            &mut config.levels,
+            pickers,
+            0.0..=1.0,
+            RatioText::Number,
+            0.5,
+        );
+    } else {
+        // Each table keeps its own picker states, in order after those of the tables above it.
+        let grid = config.levels.len() + 1;
+        let fan = config.fan_lines.len() + 1;
+        pickers.resize_with(
+            grid + fan + config.arcs.len() + 1,
+            ColorPickerState::default,
+        );
+        let mut arc_pickers = pickers.split_off(grid + fan);
+        let mut fan_pickers = pickers.split_off(grid);
+
+        section_toggle(ui, &mut config.show_grid, "Grid");
+        if config.show_grid {
+            gann_levels(
+                ui,
+                "gann_grid_levels",
+                &mut config.levels,
+                pickers,
+                0.0..=1.0,
+                RatioText::Number,
+                0.5,
+            );
+        }
+
+        let control_h = super::style::control_row_height(ui);
+        let col_w = super::style::control_column_width(ui);
+        ui.horizontal(|ui| {
+            ui.set_min_height(control_h);
+            ui.checkbox(
+                &mut config.show_fan,
+                egui::RichText::new(l10n::text(ui.ctx(), "Fan")).strong(),
+            );
+            if config.show_fan {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let ctx = ui.ctx().clone();
+                    super::style::text_combo_popup(
+                        ui,
+                        "gann_fan_direction",
+                        "Fan direction",
+                        &mut config.fan_direction,
+                        &[
+                            GannFanDirection::Forward,
+                            GannFanDirection::Reverse,
+                            GannFanDirection::Both,
+                        ],
+                        |v| {
+                            l10n::text(
+                                &ctx,
+                                match v {
+                                    GannFanDirection::Forward => "Forward",
+                                    GannFanDirection::Reverse => "Reverse",
+                                    GannFanDirection::Both => "Both",
+                                },
+                            )
+                        },
+                        col_w.min(ui.available_width()).max(96.0),
+                        control_h,
+                    );
+                });
             }
         });
-    if let Some(i) = remove {
-        levels.remove(i);
+        if config.show_fan {
+            gann_levels(
+                ui,
+                "gann_square_fan",
+                &mut config.fan_lines,
+                &mut fan_pickers,
+                0.001..=1000.0,
+                RatioText::TimeByPrice,
+                1.0,
+            );
+        }
+
+        section_toggle(ui, &mut config.show_arcs, "Arcs");
+        if config.show_arcs {
+            gann_levels(
+                ui,
+                "gann_square_arcs",
+                &mut config.arcs,
+                &mut arc_pickers,
+                0.01..=1.41,
+                RatioText::Number,
+                0.5,
+            );
+        }
+        pickers.append(&mut fan_pickers);
+        pickers.append(&mut arc_pickers);
     }
-    if Button::new(format!("Add {}", title.to_lowercase()))
-        .secondary()
-        .small()
-        .show(ui)
-        .clicked()
-    {
-        levels.push(new);
+    if config != original {
+        drawing.gann = Some(config);
     }
-    ui.space_sm();
 }
 
 fn level_color(ui: &mut Ui, color: &mut [u8; 4], state: &mut ColorPickerState) -> bool {
@@ -1209,5 +1175,35 @@ mod tests {
             assert!(InputsTab::available(tool), "{tool:?}");
         }
         assert!(!InputsTab::available(Tool::FibonacciSpiral));
+    }
+
+    /// Label settings of a Fibonacci tool live in the Label section, not among its Inputs.
+    #[test]
+    fn fibonacci_label_settings_leave_the_inputs() {
+        let texts = |show: &dyn Fn(&mut Ui, &mut Drawing)| {
+            let mut drawing = Drawing::new(0, Tool::FibonacciRetracement);
+            let output = egui::Context::default()
+                .run_ui(egui::RawInput::default(), |ui| show(ui, &mut drawing));
+            let found: Vec<String> = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+                    _ => None,
+                })
+                .collect();
+            output.drop_without_applying_deltas();
+            found
+        };
+        let inputs = texts(&|ui, d| InputsTab::show(ui, d, &mut Vec::new()));
+        let labels = texts(&|ui, d| fibonacci_labels(ui, d));
+        for label in ["Prices", "Levels", "Right", "Middle"] {
+            assert!(!inputs.contains(&label.to_owned()), "{label} in Inputs");
+            assert!(
+                labels.contains(&label.to_owned()),
+                "{label} missing: {labels:?}"
+            );
+        }
+        assert!(inputs.contains(&"Reverse".to_owned()));
     }
 }

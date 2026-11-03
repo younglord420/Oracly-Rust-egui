@@ -11,7 +11,7 @@
 //! - **Rendering** -- [`HandleService::render_handles`] draws round handles
 //!   with selection highlighting.
 
-use crate::drawings::domain::{Drawing, DrawingToolType, HandlePos, gann_square_corner};
+use crate::drawings::domain::{Drawing, DrawingToolType, HandlePos};
 use crate::styles::typography::font_size;
 use crate::theme::ThemeExt;
 use egui::{Color32, Pos2};
@@ -114,7 +114,8 @@ impl HandleService {
             // Fibonacci and similar two-point tools
             DrawingToolType::FibonacciRetracement
             | DrawingToolType::GannFan
-            | DrawingToolType::GannBox => {
+            | DrawingToolType::GannBox
+            | DrawingToolType::GannSquare => {
                 if !drawing.points.is_empty() {
                     handles.push((HandlePos::Start, drawing.points[0]));
                 }
@@ -125,19 +126,6 @@ impl HandleService {
                         (drawing.points[0].y + drawing.points[1].y) / 2.0,
                     );
                     handles.push((HandlePos::Middle, mid));
-                }
-            }
-            // End sits on the painted square corner; middle at the square centre.
-            DrawingToolType::GannSquare => {
-                if !drawing.points.is_empty() {
-                    handles.push((HandlePos::Start, drawing.points[0]));
-                }
-                if drawing.points.len() >= 2 {
-                    let start = drawing.points[0];
-                    let corner = gann_square_corner(start, drawing.points[1]);
-                    handles.push((HandlePos::End, corner));
-                    let square = egui::Rect::from_two_pos(start, corner);
-                    handles.push((HandlePos::Middle, square.center()));
                 }
             }
             // A position: the entry and the width on the entry line, the target and the stop
@@ -905,10 +893,6 @@ mod tests {
                     .collect();
                 let drawing = create_test_drawing(tool, points.clone());
                 let handles = HandleService::get_handles(&drawing);
-                // GannSquare's End handle sits on the painted corner, not the drag anchor.
-                if tool == DrawingToolType::GannSquare {
-                    continue;
-                }
                 for point in points {
                     assert!(
                         handles.iter().any(|(_, p)| *p == point),
@@ -919,24 +903,21 @@ mod tests {
         }
     }
 
-    /// End handle tracks the painted square corner; middle is the square centre.
+    /// A Gann square spans its two anchors as freely as a box, without squaring itself.
     #[test]
-    fn gann_square_handles_follow_painted_square() {
+    fn gann_square_handles_sit_on_its_anchors() {
         use HandlePos::*;
         let start = pos2(0.0, 0.0);
         let end = pos2(100.0, 40.0);
-        let corner = gann_square_corner(start, end);
-        assert_eq!(corner, pos2(100.0, 100.0));
         let drawing = create_test_drawing(DrawingToolType::GannSquare, vec![start, end]);
         assert_eq!(
             HandleService::get_handles(&drawing),
-            vec![(Start, start), (End, corner), (Middle, pos2(50.0, 50.0)),]
+            vec![(Start, start), (End, end), (Middle, pos2(50.0, 20.0)),]
         );
         assert_eq!(
             drawing.bounding_rect(),
-            Some(egui::Rect::from_two_pos(start, corner))
+            Some(egui::Rect::from_two_pos(start, end))
         );
-        // Dragging End to a new corner updates the drag anchor so the corner follows.
         let mut dragged = drawing;
         HandleService::update_handle(
             &mut dragged,

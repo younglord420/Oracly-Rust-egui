@@ -199,13 +199,13 @@ impl Drawing {
             Tool::FibonacciSpeedResistanceArcs => &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0],
             Tool::FibonacciExtension => return Cow::Owned(FibonacciConfig::extension_default()),
             Tool::FibonacciWedge => {
-                let mut config = FibonacciConfig::default();
+                let mut config = FibonacciConfig::default().with_legacy_labels();
                 for level in &mut config.levels {
                     level.color = self.color;
                 }
                 return Cow::Owned(config);
             }
-            _ => return Cow::Owned(FibonacciConfig::default()),
+            _ => return Cow::Owned(FibonacciConfig::default().with_legacy_labels()),
         };
         let mut config = FibonacciConfig {
             levels: values
@@ -222,7 +222,7 @@ impl Drawing {
                 10
             },
             levels_as_percent: self.tool_type != Tool::FibonacciTimeZones,
-            ..FibonacciConfig::default()
+            ..FibonacciConfig::default().with_legacy_labels()
         };
         if self.tool_type == Tool::FibonacciSpeedFan {
             let tokens = &DESIGN_TOKENS.semantic;
