@@ -7,10 +7,12 @@
 mod coordinates;
 mod drawing;
 mod gann;
+mod geometry;
 mod ghost_feed;
 mod options;
 mod pattern;
 mod pitchfork;
+mod price_action;
 mod template;
 
 pub use crate::config::{DrawingInteractionMode, DrawingToolType, ParseToolTypeError};
@@ -19,6 +21,10 @@ pub use drawing::Drawing;
 pub use gann::{
     GannConfig, GannFanDirection, GannLevel, gann_fan_label, gann_square_fan_label,
     parse_gann_ratio,
+};
+pub use geometry::{
+    DEDEKIND_CURVATURES, DedekindGeodesic, GeometryConfig, MachCircle, MachFigure,
+    dedekind_geodesics, is_dedekind_center, mach_figure,
 };
 pub use ghost_feed::{GhostCandle, GhostFeedConfig, MAX_GHOST_CANDLES};
 pub(crate) use options::fib_ratio_color;
@@ -31,4 +37,8 @@ pub use pattern::{
     HarmonicRule, PatternConfig, RatioBand, Wave, WaveDegree, WaveLabel, harmonic_rules,
 };
 pub use pitchfork::{PitchforkConfig, PitchforkLevel};
+pub use price_action::{
+    BlockState, GapState, LiquidityState, PriceActionConfig, ZoneEnd, ZoneFormation, block_state,
+    gap_state, liquidity_state,
+};
 pub use template::DrawingTemplate;

@@ -11,7 +11,7 @@ impl DrawingToolType {
     /// Returns all tools belonging to the given category (case-insensitive).
     ///
     /// Valid category names: `"cursors"`, `"lines"`, `"channels"`, `"pitchforks"`,
-    /// `"fibonacci"`, `"gann"`, `"patterns"`, `"elliott"`, `"cycles"`,
+    /// `"fibonacci"`, `"gann"`, `"price action"`, `"geometry"`, `"patterns"`, `"elliott"`, `"cycles"`,
     /// `"projection"`, `"volume"`, `"measurers"`, `"brushes"`, `"arrows"`,
     /// `"shapes"`, `"annotations"`, `"content"`, `"icons"`.
     ///
@@ -65,6 +65,14 @@ impl DrawingToolType {
                 Self::GannSquare,
                 Self::GannFixed,
                 Self::GannFan,
+            ],
+            "price action" => vec![Self::FairValueGap, Self::OrderBlock, Self::Liquidity],
+            "geometry" => vec![
+                Self::DedekindTessellation,
+                Self::Sonic,
+                Self::Supersonic,
+                Self::GoldenSonic,
+                Self::GoldenSupersonic,
             ],
             "patterns" => vec![
                 Self::XABCDPattern,
@@ -147,7 +155,7 @@ impl DrawingToolType {
         }
     }
 
-    /// Returns the names of all 18 tool categories in display order.
+    /// Returns the names of all 20 tool categories in display order.
     ///
     /// These are the finer command-list groups, not the toolbar menu groups
     /// defined by `drawings::categories`.
@@ -159,6 +167,8 @@ impl DrawingToolType {
             "Pitchforks",
             "Fibonacci",
             "Gann",
+            "Price Action",
+            "Geometry",
             "Patterns",
             "Elliott",
             "Cycles",
@@ -223,6 +233,16 @@ impl DrawingToolType {
             Self::GannSquare,
             Self::GannFixed,
             Self::GannFan,
+            // Price action (3)
+            Self::FairValueGap,
+            Self::OrderBlock,
+            Self::Liquidity,
+            // Geometry (5)
+            Self::DedekindTessellation,
+            Self::Sonic,
+            Self::Supersonic,
+            Self::GoldenSonic,
+            Self::GoldenSupersonic,
             // Patterns (11)
             Self::XABCDPattern,
             Self::CypherPattern,
@@ -350,6 +370,14 @@ impl DrawingToolType {
             Self::GannSquare => "assets/icons/drawing/gann-square.svg",
             Self::GannFixed => "assets/icons/drawing/gann-fixed.svg",
             Self::GannFan => "assets/icons/drawing/gann-fan.svg",
+            Self::FairValueGap => "assets/icons/price-action/fair-value-gap.svg",
+            Self::OrderBlock => "assets/icons/price-action/order-block.svg",
+            Self::Liquidity => "assets/icons/price-action/liquidity.svg",
+            Self::DedekindTessellation => "assets/icons/geometry/dedekind.svg",
+            Self::Sonic => "assets/icons/geometry/sonic.svg",
+            Self::Supersonic => "assets/icons/geometry/supersonic.svg",
+            Self::GoldenSonic => "assets/icons/geometry/golden-sonic.svg",
+            Self::GoldenSupersonic => "assets/icons/geometry/golden-supersonic.svg",
             Self::XABCDPattern => "assets/icons/drawing/xabcd-pattern.svg",
             Self::CypherPattern => "assets/icons/drawing/cypher-pattern.svg",
             Self::GartleyPattern

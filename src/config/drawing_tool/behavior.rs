@@ -35,6 +35,14 @@ impl DrawingToolType {
                 | Self::ElliottDoubleCombo
                 | Self::ElliottTripleCombo
                 | Self::GannFan
+                | Self::FairValueGap
+                | Self::OrderBlock
+                | Self::Liquidity
+                | Self::DedekindTessellation
+                | Self::Sonic
+                | Self::Supersonic
+                | Self::GoldenSonic
+                | Self::GoldenSupersonic
                 | Self::Ray
                 | Self::ExtendedLine
                 | Self::HorizontalLine
@@ -160,9 +168,19 @@ impl DrawingToolType {
     ///
     /// Returns `true` for the non-cursor drawing tools that paint text, so users can configure
     /// text formatting even on tools whose labels are generated automatically (Fibonacci,
-    /// Elliott waves, patterns, measurements, positions). Time cycles and sine lines paint none.
+    /// Elliott waves, patterns, measurements, positions). Time cycles, sine lines, the price
+    /// action tools and the Dedekind tessellation paint none.
     pub fn supports_text_style(&self) -> bool {
-        !self.is_cursor() && !matches!(self, Self::TimeCycles | Self::SineLine)
+        !self.is_cursor()
+            && !matches!(
+                self,
+                Self::TimeCycles
+                    | Self::SineLine
+                    | Self::FairValueGap
+                    | Self::OrderBlock
+                    | Self::Liquidity
+                    | Self::DedekindTessellation
+            )
     }
 
     /// Returns the [`DrawingInteractionMode`] that governs how mouse input is
@@ -202,7 +220,10 @@ impl DrawingToolType {
             | Self::FontIcon
             | Self::Image
             | Self::Tweet
-            | Self::Idea => DrawingInteractionMode::SingleClick,
+            | Self::Idea
+            | Self::FairValueGap
+            | Self::OrderBlock
+            | Self::Liquidity => DrawingInteractionMode::SingleClick,
 
             // Drag-to-draw tools also accept two successive clicks.
             Self::Rect
@@ -229,7 +250,12 @@ impl DrawingToolType {
             | Self::TimeCycles
             | Self::SineLine
             | Self::Callout
-            | Self::Arrow => DrawingInteractionMode::DragToDraw,
+            | Self::Arrow
+            | Self::DedekindTessellation
+            | Self::Sonic
+            | Self::Supersonic
+            | Self::GoldenSonic
+            | Self::GoldenSupersonic => DrawingInteractionMode::DragToDraw,
 
             // Continuous drawing tools
             Self::Brush | Self::Highlighter => DrawingInteractionMode::ContinuousDraw,

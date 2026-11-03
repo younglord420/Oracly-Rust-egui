@@ -232,6 +232,8 @@ impl DrawingProps {
                 drawing.pitchfork = settings.pitchfork.clone();
                 drawing.gann = settings.gann.clone();
                 drawing.pattern = settings.pattern;
+                drawing.price_action = settings.price_action;
+                drawing.geometry = settings.geometry.clone();
                 drawing.ghost_feed = settings.ghost_feed;
                 drawing.position_size = settings.position_size;
                 drawing.position_sizing = settings.position_sizing;

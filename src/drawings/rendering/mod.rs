@@ -10,11 +10,13 @@ mod cycles;
 mod elliott;
 mod fibonacci;
 mod gann;
+mod geometry;
 mod lines;
 mod measurements;
 mod media;
 mod patterns;
 mod pitchfork;
+mod price_action;
 mod shapes;
 mod style;
 mod trading;
@@ -386,6 +388,18 @@ impl Drawing {
             DrawingToolType::GannSquare => self.render_gann_square(painter),
             DrawingToolType::GannBox => self.render_gann_box(painter),
             DrawingToolType::GannFixed => self.render_gann_fixed(painter),
+
+            // Price action (3 tools)
+            DrawingToolType::FairValueGap
+            | DrawingToolType::OrderBlock
+            | DrawingToolType::Liquidity => self.render_price_action(painter, rect, view),
+
+            // Geometry (5 tools)
+            DrawingToolType::DedekindTessellation
+            | DrawingToolType::Sonic
+            | DrawingToolType::Supersonic
+            | DrawingToolType::GoldenSonic
+            | DrawingToolType::GoldenSupersonic => self.render_geometry(painter),
 
             // Pitchforks (4 tools)
             DrawingToolType::Pitchfork => self.render_pitchfork(painter, rect),

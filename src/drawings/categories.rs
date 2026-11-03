@@ -103,12 +103,30 @@ pub fn get_category_sections(category: &str) -> Vec<(&'static str, Vec<DrawingTo
                 ],
             ),
             (
+                "PRICE ACTION",
+                vec![
+                    DrawingToolType::FairValueGap,
+                    DrawingToolType::OrderBlock,
+                    DrawingToolType::Liquidity,
+                ],
+            ),
+            (
                 "GANN",
                 vec![
                     DrawingToolType::GannBox,
                     DrawingToolType::GannSquare,
                     DrawingToolType::GannFixed,
                     DrawingToolType::GannFan,
+                ],
+            ),
+            (
+                "GEOMETRY",
+                vec![
+                    DrawingToolType::DedekindTessellation,
+                    DrawingToolType::Sonic,
+                    DrawingToolType::Supersonic,
+                    DrawingToolType::GoldenSonic,
+                    DrawingToolType::GoldenSupersonic,
                 ],
             ),
         ],

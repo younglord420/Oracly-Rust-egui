@@ -108,6 +108,26 @@ pub mod icons {
     /// Gann fan SVG icon.
     pub const GANN_FAN: Icon = crate::icon_from_path!("pitchforks-gann/gann-fan.svg");
 
+    // Price action
+    /// Fair value gap SVG icon.
+    pub const FAIR_VALUE_GAP: Icon = crate::icon_from_path!("price-action/fair-value-gap.svg");
+    /// Order block SVG icon.
+    pub const ORDER_BLOCK: Icon = crate::icon_from_path!("price-action/order-block.svg");
+    /// Liquidity level SVG icon.
+    pub const LIQUIDITY_LEVEL: Icon = crate::icon_from_path!("price-action/liquidity.svg");
+
+    // Geometry
+    /// Dedekind tessellation SVG icon.
+    pub const DEDEKIND: Icon = crate::icon_from_path!("geometry/dedekind.svg");
+    /// Sonic SVG icon.
+    pub const SONIC: Icon = crate::icon_from_path!("geometry/sonic.svg");
+    /// Supersonic SVG icon.
+    pub const SUPERSONIC: Icon = crate::icon_from_path!("geometry/supersonic.svg");
+    /// Golden sonic SVG icon.
+    pub const GOLDEN_SONIC: Icon = crate::icon_from_path!("geometry/golden-sonic.svg");
+    /// Golden supersonic SVG icon.
+    pub const GOLDEN_SUPERSONIC: Icon = crate::icon_from_path!("geometry/golden-supersonic.svg");
+
     // Fibonacci
     /// Fibonacci retracement SVG icon.
     pub const FIB_RETRACEMENT: Icon = crate::icon_from_path!("fibonacci/fib-retracement.svg");

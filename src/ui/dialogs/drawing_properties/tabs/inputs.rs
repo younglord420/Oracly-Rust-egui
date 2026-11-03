@@ -60,6 +60,14 @@ impl InputsTab {
                 | Tool::ElliottDoubleCombo
                 | Tool::ElliottTripleCombo
                 | Tool::CyclicLines
+                | Tool::FairValueGap
+                | Tool::OrderBlock
+                | Tool::Liquidity
+                | Tool::DedekindTessellation
+                | Tool::Sonic
+                | Tool::Supersonic
+                | Tool::GoldenSonic
+                | Tool::GoldenSupersonic
         )
     }
 
@@ -95,6 +103,14 @@ impl InputsTab {
             | Tool::ElliottDoubleCombo
             | Tool::ElliottTripleCombo
             | Tool::CyclicLines => pattern_inputs(ui, drawing),
+            Tool::FairValueGap | Tool::OrderBlock | Tool::Liquidity => {
+                price_action_inputs(ui, drawing, pickers);
+            }
+            Tool::DedekindTessellation
+            | Tool::Sonic
+            | Tool::Supersonic
+            | Tool::GoldenSonic
+            | Tool::GoldenSupersonic => geometry_inputs(ui, drawing, pickers),
             Tool::GhostFeed => {
                 let mut config = drawing.ghost_feed.unwrap_or_default();
                 let original = config;
@@ -1259,6 +1275,150 @@ fn pattern_inputs(ui: &mut Ui, drawing: &mut Drawing) {
     }
     if config != original {
         drawing.pattern = Some(config);
+    }
+}
+
+/// A labelled row choosing one of `choices` from a dropdown.
+fn choice_row<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    label: &str,
+    current: &mut T,
+    choices: &[T],
+    name_of: impl Fn(T) -> String,
+) {
+    let control_h = super::style::control_row_height(ui);
+    let theme = ui.active_theme();
+    ui.horizontal(|ui| {
+        ui.set_min_height(control_h);
+        ui.label(
+            egui::RichText::new(l10n::text(ui.ctx(), label))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            super::style::text_combo_popup(
+                ui,
+                label,
+                label,
+                current,
+                choices,
+                name_of,
+                super::style::control_column_width(ui)
+                    .min(ui.available_width())
+                    .max(120.0),
+                control_h,
+            );
+        });
+    });
+}
+
+/// A labelled row with a colour well.
+fn color_row(ui: &mut Ui, label: &str, color: &mut [u8; 4], picker: &mut ColorPickerState) {
+    let theme = ui.active_theme();
+    ui.horizontal(|ui| {
+        ui.set_min_height(super::style::control_row_height(ui));
+        ui.label(
+            egui::RichText::new(l10n::text(ui.ctx(), label))
+                .size(theme.text.body)
+                .color(theme.ui.text_secondary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.push_id(label, |ui| level_color(ui, color, picker));
+        });
+    });
+}
+
+/// How far a fair value gap, order block or liquidity level runs, and how a zone looks.
+fn price_action_inputs(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let tool = drawing.tool_type;
+    let mut config = drawing.price_action_config();
+    let original = config;
+    let ctx = ui.ctx().clone();
+    choice_row(
+        ui,
+        "Extend right",
+        &mut config.extend,
+        crate::drawings::ZoneEnd::options(tool),
+        |end| l10n::text(&ctx, end.name()),
+    );
+    if tool == Tool::Liquidity {
+        pattern_toggle(ui, &mut config.mark_sweep, "Mark sweep");
+    } else {
+        if tool == Tool::OrderBlock {
+            choice_row(ui, "Zone", &mut config.full_range, &[false, true], |full| {
+                l10n::text(&ctx, if full { "Full range" } else { "Body" })
+            });
+        }
+        pickers.resize_with(2, ColorPickerState::default);
+        let (up, down) = pickers.split_at_mut(1);
+        color_row(ui, "Bullish", &mut config.up_color, &mut up[0]);
+        color_row(ui, "Bearish", &mut config.down_color, &mut down[0]);
+        pattern_toggle(ui, &mut config.midline, "Midline");
+        pattern_toggle(ui, &mut config.border, "Border");
+        if config.extend != crate::drawings::ZoneEnd::Always {
+            pattern_toggle(ui, &mut config.fade, "Fade at end");
+        }
+        match (tool, config.extend) {
+            (Tool::FairValueGap, crate::drawings::ZoneEnd::Filled) => {
+                pattern_toggle(ui, &mut config.flip, "Flip on close");
+            }
+            (Tool::OrderBlock, crate::drawings::ZoneEnd::Broken) => {
+                pattern_toggle(ui, &mut config.flip, "Breaker");
+            }
+            _ => {}
+        }
+    }
+    if config != original {
+        drawing.price_action = Some(config);
+    }
+}
+
+/// Density of a Dedekind tessellation, or the circles and Mach number of a Mach figure.
+fn geometry_inputs(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
+    let tool = drawing.tool_type;
+    let mut config = drawing.geometry_config();
+    let original = config.clone();
+    if tool == Tool::DedekindTessellation {
+        choice_row(
+            ui,
+            "Max curvature",
+            &mut config.max_curvature,
+            &crate::drawings::DEDEKIND_CURVATURES,
+            |n| n.to_string(),
+        );
+    } else {
+        if matches!(tool, Tool::Supersonic | Tool::GoldenSupersonic) {
+            choice_row(
+                ui,
+                "Mach number",
+                &mut config.mach,
+                &[1.5, 2.0, 2.5, 3.0, 4.0, 5.0],
+                |m| m.to_string(),
+            );
+        }
+        if matches!(tool, Tool::Sonic | Tool::Supersonic) {
+            let mut waves = config.waves();
+            let counts: Vec<usize> = (3..=config.levels.len().max(3)).collect();
+            choice_row(ui, "Waves", &mut waves, &counts, |n| n.to_string());
+            if waves != config.waves() {
+                config.set_waves(waves);
+            }
+        }
+        pattern_toggle(ui, &mut config.show_ratios, "Ratios");
+        ui.strong(l10n::text(ui.ctx(), "Circles"));
+        let next = config.levels.iter().map(|l| l.ratio).fold(0.0, f32::max) + 1.0;
+        gann_levels(
+            ui,
+            "mach_circles",
+            &mut config.levels,
+            pickers,
+            0.01..=100.0,
+            RatioText::Number,
+            next,
+        );
+    }
+    if config != original {
+        drawing.geometry = Some(config);
     }
 }
 

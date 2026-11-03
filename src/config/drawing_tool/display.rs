@@ -102,6 +102,16 @@ impl FromStr for DrawingToolType {
             "gannfixed" | "gann fixed" => Ok(Self::GannFixed),
             "gannfan" | "gann" => Ok(Self::GannFan),
 
+            // Price action
+            "fairvaluegap" | "fvg" | "imbalance" => Ok(Self::FairValueGap),
+            "orderblock" | "ob" => Ok(Self::OrderBlock),
+            "liquidity level" | "liquidity sweep" => Ok(Self::Liquidity),
+
+            // Geometry
+            "dedekind" | "dedekindtessellation" => Ok(Self::DedekindTessellation),
+            "goldensonic" => Ok(Self::GoldenSonic),
+            "goldensupersonic" => Ok(Self::GoldenSupersonic),
+
             // Patterns
             "xabcdpattern" | "xabcd" => Ok(Self::XABCDPattern),
             "cypherpattern" | "cypher" => Ok(Self::CypherPattern),
@@ -249,6 +259,18 @@ impl DrawingToolType {
             Self::GannFixed => "Gann Square Fixed",
             Self::GannFan => "Gann Fan",
 
+            // Price action
+            Self::FairValueGap => "Fair Value Gap",
+            Self::OrderBlock => "Order Block",
+            Self::Liquidity => "Liquidity",
+
+            // Geometry
+            Self::DedekindTessellation => "Dedekind Tessellation",
+            Self::Sonic => "Sonic",
+            Self::Supersonic => "Supersonic",
+            Self::GoldenSonic => "Golden Sonic",
+            Self::GoldenSupersonic => "Golden Supersonic",
+
             // Patterns
             Self::XABCDPattern => "XABCD Pattern",
             Self::CypherPattern => "Cypher Pattern",
@@ -385,6 +407,14 @@ impl DrawingToolType {
             Self::GannSquare => "LineToolGannComplex",
             Self::GannFixed => "LineToolGannFixed",
             Self::GannFan => "LineToolGannFan",
+            Self::FairValueGap => "LineToolFairValueGap",
+            Self::OrderBlock => "LineToolOrderBlock",
+            Self::Liquidity => "LineToolLiquidity",
+            Self::DedekindTessellation => "LineToolDedekindTessellation",
+            Self::Sonic => "LineToolSonic",
+            Self::Supersonic => "LineToolSupersonic",
+            Self::GoldenSonic => "LineToolGoldenSonic",
+            Self::GoldenSupersonic => "LineToolGoldenSupersonic",
             Self::XABCDPattern => "LineTool5PointsPattern",
             Self::CypherPattern => "LineToolCypherPattern",
             Self::GartleyPattern => "LineToolGartleyPattern",

@@ -10,8 +10,9 @@
 
 use super::{
     ArrowStyle, ChartPoint, DrawingToolType, FibonacciConfig, FontWeight, GannConfig,
-    GhostFeedConfig, PatternConfig, PitchforkConfig, PositionSize, PositionSizing,
-    RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility,
+    GeometryConfig, GhostFeedConfig, PatternConfig, PitchforkConfig, PositionSize, PositionSizing,
+    PriceActionConfig, RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign,
+    TimeframeVisibility,
 };
 
 use crate::data::VolumeProfileConfig;
@@ -179,6 +180,12 @@ pub struct Drawing {
     /// Level lines and band fill of the pitchfork tools.
     #[serde(default)]
     pub pitchfork: Option<PitchforkConfig>,
+    /// How far fair value gaps, order blocks and liquidity levels run, and how they look.
+    #[serde(default)]
+    pub price_action: Option<PriceActionConfig>,
+    /// Circles of the Mach figures and density of the Dedekind tessellation.
+    #[serde(default)]
+    pub geometry: Option<GeometryConfig>,
 
     // === Z-Order (rendering layer) ===
     /// Z-order for rendering priority (higher = drawn on top)
@@ -187,6 +194,17 @@ pub struct Drawing {
 
 fn enabled() -> bool {
     true
+}
+
+/// The Sonic and Supersonic figures and their golden variants.
+pub(crate) fn is_mach_figure(tool: DrawingToolType) -> bool {
+    matches!(
+        tool,
+        DrawingToolType::Sonic
+            | DrawingToolType::Supersonic
+            | DrawingToolType::GoldenSonic
+            | DrawingToolType::GoldenSupersonic
+    )
 }
 
 impl Drawing {
@@ -321,6 +339,8 @@ impl Drawing {
             ),
             gann: None,
             pattern: None,
+            price_action: None,
+            geometry: None,
             ghost_feed: None,
             // Z-order (default: 0, higher values render on top)
             z_order: 0,
@@ -710,6 +730,35 @@ impl Drawing {
                 tint(target);
             }
         }
+        if matches!(
+            self.tool_type,
+            DrawingToolType::FairValueGap | DrawingToolType::OrderBlock
+        ) {
+            let mut config = self.price_action_config();
+            tint(&mut config.up_color);
+            tint(&mut config.down_color);
+            self.price_action = Some(config);
+        }
+        if is_mach_figure(self.tool_type) {
+            let mut config = self.geometry_config();
+            for level in &mut config.levels {
+                tint(&mut level.color);
+            }
+            self.geometry = Some(config);
+        }
+    }
+
+    /// Saved price action options, or the tool's defaults.
+    pub fn price_action_config(&self) -> PriceActionConfig {
+        self.price_action
+            .unwrap_or_else(|| PriceActionConfig::for_tool(self.tool_type))
+    }
+
+    /// Saved geometry options, or the tool's defaults.
+    pub fn geometry_config(&self) -> GeometryConfig {
+        self.geometry
+            .clone()
+            .unwrap_or_else(|| GeometryConfig::for_tool(self.tool_type))
     }
 
     /// Set the stroke width of every line the drawing paints, including Fibonacci levels and

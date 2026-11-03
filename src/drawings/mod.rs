@@ -43,6 +43,11 @@ pub use domain::{
     TextVerticalAlign, TimeframeVisibility, Wave, WaveDegree, WaveLabel, gann_fan_label,
     gann_square_fan_label, harmonic_rules, parse_gann_ratio,
 };
+pub use domain::{
+    BlockState, DEDEKIND_CURVATURES, DedekindGeodesic, GapState, GeometryConfig, LiquidityState,
+    MachCircle, MachFigure, PriceActionConfig, ZoneEnd, ZoneFormation, block_state,
+    dedekind_geodesics, gap_state, is_dedekind_center, liquidity_state, mach_figure,
+};
 
 // Re-export manager types
 pub use manager::{DrawingManager, DrawingManagerOptions, DrawingState, default_drawing_color};

@@ -20,6 +20,8 @@ pub fn category_icon(category: &str) -> &'static Icon {
         // Legacy support
         "Channels" => &icons::PARALLEL_CHANNEL,
         "Gann" => &icons::GANN_FAN,
+        "Price Action" => &icons::FAIR_VALUE_GAP,
+        "Geometry" => &icons::SONIC,
         "Shapes" => &icons::RECT,
         "Brushes" => &icons::BRUSH,
         "Arrows" => &icons::ARROW_MARKER,
@@ -87,6 +89,18 @@ pub fn get_icon(tool: DrawingToolType) -> &'static Icon {
         DrawingToolType::GannSquare => &icons::GANN_COMPLEX,
         DrawingToolType::GannFixed => &icons::GANN_FIXED,
         DrawingToolType::GannFan => &icons::GANN_FAN,
+
+        // ============ PRICE ACTION (3 tools) ============
+        DrawingToolType::FairValueGap => &icons::FAIR_VALUE_GAP,
+        DrawingToolType::OrderBlock => &icons::ORDER_BLOCK,
+        DrawingToolType::Liquidity => &icons::LIQUIDITY_LEVEL,
+
+        // ============ GEOMETRY (5 tools) ============
+        DrawingToolType::DedekindTessellation => &icons::DEDEKIND,
+        DrawingToolType::Sonic => &icons::SONIC,
+        DrawingToolType::Supersonic => &icons::SUPERSONIC,
+        DrawingToolType::GoldenSonic => &icons::GOLDEN_SONIC,
+        DrawingToolType::GoldenSupersonic => &icons::GOLDEN_SUPERSONIC,
 
         // ============ PATTERNS (6 tools) ============
         DrawingToolType::XABCDPattern => &icons::XABCD_PATTERN,

@@ -458,7 +458,13 @@ impl Drawing {
                 *color = configured;
             }
         };
-        let dash = if custom_fork || self.tool_type == DrawingToolType::RegressionTrend {
+        let dash = if custom_fork
+            || matches!(
+                self.tool_type,
+                DrawingToolType::RegressionTrend
+                    | DrawingToolType::FairValueGap
+                    | DrawingToolType::OrderBlock
+            ) {
             None
         } else {
             self.line_style.dash_pattern()

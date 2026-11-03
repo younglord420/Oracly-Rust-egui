@@ -126,6 +126,29 @@ pub enum DrawingToolType {
     /// Gann Fan -- fan lines at standard Gann angles (1x1, 1x2, 2x1, etc.).
     GannFan,
 
+    // ============ PRICE ACTION (3 tools) ============
+    /// Fair value gap -- the imbalance three bars leave, placed on the middle bar; runs right
+    /// until price tests, half-fills or fills it.
+    FairValueGap,
+    /// Order block -- the last opposite bar before a move, placed on that bar; runs right until
+    /// price tests or breaks it, and can carry on as a breaker.
+    OrderBlock,
+    /// Liquidity -- a level beyond a bar's high or low, placed on the bar; runs right until
+    /// price sweeps or breaks it.
+    Liquidity,
+
+    // ============ GEOMETRY (5 tools) ============
+    /// Dedekind tessellation -- the modular tiling of the upper half-plane in a time and price box.
+    DedekindTessellation,
+    /// Sonic -- Huygens circles grown from a drawn diameter, meeting a shock wall (Mach 1).
+    Sonic,
+    /// Supersonic -- Huygens circles inside a Mach cone (Mach above 1).
+    Supersonic,
+    /// Golden Sonic -- a sonic figure with Fibonacci-spaced circles.
+    GoldenSonic,
+    /// Golden Supersonic -- a supersonic figure with Fibonacci-spaced circles.
+    GoldenSupersonic,
+
     // ============ PATTERNS (6 tools) ============
     /// XABCD harmonic pattern (5-point: Gartley, Butterfly, Bat, Crab, etc.).
     XABCDPattern,
