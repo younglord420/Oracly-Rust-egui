@@ -486,6 +486,7 @@ pub fn show_palette(ui: &mut Ui, color: &mut Color32) -> bool {
     // Ten swatches per row — keep opacity / recent on the same width.
     let palette_w = swatch * 10.0 + gap * 9.0;
     ui.set_width(palette_w);
+    let hex_id = ui.scope_id().with("color_picker_hex_edit");
     let mut changed = false;
 
     let paint_row = |ui: &mut Ui, colors: &[Color32], current: Color32| -> Option<Color32> {
@@ -606,7 +607,7 @@ pub fn show_palette(ui: &mut Ui, color: &mut Color32) -> bool {
         response.on_hover_text(l10n::text(ui.ctx(), "Add to favorites"));
 
         ui.add_space(theme.spacing.xs);
-        if hex_edit(ui, color) {
+        if hex_edit(ui, hex_id, color) {
             changed = true;
         }
     });
@@ -624,21 +625,16 @@ pub fn show_palette(ui: &mut Ui, color: &mut Color32) -> bool {
     if opacity_bar(ui, color, palette_w) {
         changed = true;
         // Opacity is drawn after the hex field — push the new AA into the draft for next frame.
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(hex_edit_id(), hex(*color)));
+        ui.ctx().data_mut(|d| d.insert_temp(hex_id, hex(*color)));
     }
 
     changed
 }
 
-fn hex_edit_id() -> Id {
-    Id::unique("color_picker_hex_edit")
-}
-
-/// Editable `#RRGGBB` / `#RRGGBBAA` field.
-fn hex_edit(ui: &mut Ui, color: &mut Color32) -> bool {
+/// Editable `#RRGGBB` / `#RRGGBBAA` field. `id` belongs to one palette, so open pickers
+/// never share a draft or its focus.
+fn hex_edit(ui: &mut Ui, id: Id, color: &mut Color32) -> bool {
     let theme = ui.active_theme();
-    let id = hex_edit_id();
     let current = hex(*color);
     let mut draft = ui.ctx().data_mut(|d| {
         d.get_temp_mut_or_insert_with(id, || current.clone())
@@ -666,7 +662,8 @@ fn hex_edit(ui: &mut Ui, color: &mut Color32) -> bool {
     if (output.response.lost_focus() || (output.response.has_focus() && enter))
         && let Some(parsed) = parse_hex(&draft)
     {
-        if parsed != *color {
+        // Compare as text: a translucent colour does not survive the premultiplied round trip.
+        if hex(parsed) != current {
             *color = parsed;
             changed = true;
         }

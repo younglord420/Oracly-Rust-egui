@@ -939,7 +939,6 @@ mod tests {
             ABCDPattern,
             TrianglePattern,
             ThreeDrivesPattern,
-            ElliottImpulse,
             ElliottCorrection,
             ElliottTriangle,
             GannBox,
@@ -950,7 +949,7 @@ mod tests {
             let gann = matches!(tool, GannBox | GannSquare | GannFixed);
             if gann {
                 assert!(drawing.fill_color.is_none(), "{tool:?} starts unfilled");
-            } else if tool != ElliottImpulse {
+            } else {
                 assert!(
                     drawing.fill_color.is_some(),
                     "{tool:?} lost its default tint"

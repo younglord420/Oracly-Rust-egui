@@ -1086,7 +1086,7 @@ impl DemoApp {
                     (
                         d.id,
                         d.color32(),
-                        d.fill_color32(),
+                        d.fill_color32().filter(|_| d.tool_type.supports_fill()),
                         d.stroke_width,
                         d.line_style,
                         d.locked,
@@ -1174,7 +1174,7 @@ impl DemoApp {
             FloatingToolbarAction::ChangeColor(0, color) => {
                 self.chart.user_action(|chart| {
                     chart.drawings_mut().edit_drawing(id, |d| {
-                        d.apply_primary_color(color.to_srgba_unmultiplied());
+                        d.apply_line_color(color.to_srgba_unmultiplied());
                     })
                 });
             }
@@ -2090,12 +2090,6 @@ impl DemoApp {
                 dm.options.strong_magnet = self.drawing_toolbar.state.magnet_type
                     != egui_charts::ui::drawing_toolbar::MagnetType::Weak;
                 dm.update_snap_options();
-                let mode = if dm.options.magnet_mode {
-                    egui_charts::config::CrosshairMode::Magnet
-                } else {
-                    egui_charts::config::CrosshairMode::Normal
-                };
-                self.chart.set_crosshair_mode(mode);
             }
             DrawingToolbarAction::SetSnapToIndicators(enabled) => {
                 dm.options.snap_to_indicators = enabled;
@@ -2105,8 +2099,6 @@ impl DemoApp {
                 dm.options.strong_magnet =
                     kind != egui_charts::ui::drawing_toolbar::MagnetType::Weak;
                 dm.update_snap_options();
-                self.chart
-                    .set_crosshair_mode(egui_charts::config::CrosshairMode::Magnet);
             }
             DrawingToolbarAction::ToggleEraserMode => {
                 let on = !dm.eraser_mode;

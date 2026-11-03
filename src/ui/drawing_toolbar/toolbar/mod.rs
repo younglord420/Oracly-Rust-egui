@@ -1016,7 +1016,7 @@ mod tests {
             ),
             (MagnetType::Strong, CursorType::Dot, false, None, false),
             (MagnetType::OHLC, CursorType::Arrow, true, None, false),
-            (MagnetType::Strong, CursorType::Arrow, false, None, true),
+            (MagnetType::Strong, CursorType::Cross, false, None, true),
         ] {
             let mut source = DrawingToolbar::new();
             source.state.magnet_mode = true;

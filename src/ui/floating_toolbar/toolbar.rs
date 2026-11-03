@@ -278,6 +278,7 @@ impl FloatingSelectionToolbar {
         let mut line_style = self.line_style;
         let mut color_changes: Vec<(usize, Color32)> = Vec::new();
         let mut temp_colors: Vec<Color32> = self.color_slots.iter().map(|s| s.color).collect();
+        let slot_labels: Vec<&'static str> = self.color_slots.iter().map(|s| s.label).collect();
 
         let area_response = egui::Area::new(egui::Id::unique("floating_selection_toolbar"))
             .fixed_pos(self.position)
@@ -308,7 +309,12 @@ impl FloatingSelectionToolbar {
                             for idx in 0..color_slots_len {
                                 if idx < temp_colors.len() {
                                     let mut color = temp_colors[idx];
-                                    if Self::render_pen_swatch(ui, idx, &mut color) {
+                                    if Self::render_pen_swatch(
+                                        ui,
+                                        idx,
+                                        slot_labels[idx],
+                                        &mut color,
+                                    ) {
                                         color_changes.push((idx, color));
                                         temp_colors[idx] = color;
                                     }
@@ -457,11 +463,11 @@ impl FloatingSelectionToolbar {
     }
 
     /// Circular colour well with a pencil badge; opens a glass colour picker.
-    fn render_pen_swatch(ui: &mut Ui, slot: usize, color: &mut Color32) -> bool {
+    fn render_pen_swatch(ui: &mut Ui, slot: usize, name: &str, color: &mut Color32) -> bool {
         let theme = ui.active_theme();
         let size = Vec2::splat(DESIGN_TOKENS.sizing.floating_toolbar.button_size);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        let label = l10n::text(ui.ctx(), "Color");
+        let label = l10n::text(ui.ctx(), &format!("{name} color"));
         response.widget_info(|| WidgetInfo::labeled(Role::ColorWell, ui.is_enabled(), &label));
 
         let open_id = ui.make_persistent_id(("floating_toolbar_color", slot));
@@ -484,14 +490,17 @@ impl FloatingSelectionToolbar {
         );
         ui.painter()
             .circle_filled(disc.center(), disc.width() * 0.5, *color);
-        ui.painter().circle_stroke(
-            disc.center(),
-            disc.width() * 0.5,
+        // A faint fill would vanish against the bar, so its hue also rings the disc.
+        let rim = if color.a() < 255 {
+            Stroke::new(DESIGN_TOKENS.stroke.thick, color.to_opaque())
+        } else {
             Stroke::new(
                 DESIGN_TOKENS.stroke.hairline,
                 theme.ui.border_control.gamma_multiply(0.85),
-            ),
-        );
+            )
+        };
+        ui.painter()
+            .circle_stroke(disc.center(), disc.width() * 0.5, rim);
 
         // Pencil badge
         let badge = Rect::from_center_size(
@@ -504,9 +513,7 @@ impl FloatingSelectionToolbar {
             .as_image_tinted(Vec2::splat(10.0), theme.ui.text_secondary)
             .paint_at(ui, badge);
 
-        response
-            .clone()
-            .on_hover_text(l10n::text(ui.ctx(), "Click to change color"));
+        response.clone().on_hover_text(label);
 
         let mut changed = false;
         egui::Popup::menu(&response)

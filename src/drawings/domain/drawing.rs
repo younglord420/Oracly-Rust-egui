@@ -239,7 +239,6 @@ impl Drawing {
                 | DrawingToolType::TrianglePattern => Some([242, 54, 69, 25]),
                 DrawingToolType::HeadAndShoulders
                 | DrawingToolType::ThreeDrivesPattern
-                | DrawingToolType::ElliottImpulse
                 | DrawingToolType::ElliottTriangle => Some([242, 54, 69, 20]),
                 DrawingToolType::ElliottCorrection => Some(
                     crate::tokens::DESIGN_TOKENS
@@ -659,15 +658,21 @@ impl Drawing {
 
     /// Set the primary stroke colour and, for Fibonacci tools, every level colour.
     ///
-    /// Floating toolbar / object-tree colour picks use this so a single swatch
-    /// drives the painted levels (same effect as Inputs → Use one color).
+    /// The object tree's single swatch uses this so one pick drives the painted levels
+    /// (same effect as Inputs → Use one color) and tints the fill to match.
     pub fn apply_primary_color(&mut self, color: [u8; 4]) {
-        self.color = color;
+        self.apply_line_color(color);
         if self.tool_type != DrawingToolType::ElliottCorrection
             && let Some(fill) = &mut self.fill_color
         {
             fill[..3].copy_from_slice(&color[..3]);
         }
+    }
+
+    /// Like [`Self::apply_primary_color`], but leaves the fill alone, for a picker that
+    /// shows the fill as its own swatch.
+    pub fn apply_line_color(&mut self, color: [u8; 4]) {
+        self.color = color;
         if let Some(config) = &mut self.fib_config {
             for level in &mut config.levels {
                 level.color = color;

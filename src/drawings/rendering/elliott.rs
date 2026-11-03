@@ -52,20 +52,6 @@ impl Drawing {
         let config = self.pattern_config();
 
         match self.tool_type {
-            DrawingToolType::ElliottImpulse => {
-                if self.points.len() >= 3
-                    && let Some(fill) = self.fill_color32()
-                {
-                    for leg in self.points.windows(2) {
-                        let mid = leg[0].lerp(leg[1], 0.5) + egui::vec2(0.0, 5.0);
-                        painter.add(egui::epaint::PathShape::convex_polygon(
-                            vec![leg[0], leg[1], mid],
-                            fill,
-                            Stroke::NONE,
-                        ));
-                    }
-                }
-            }
             DrawingToolType::ElliottCorrection if self.points.len() >= 3 => {
                 self.paint_pattern_fill(painter, self.points.clone());
             }

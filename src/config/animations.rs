@@ -33,7 +33,8 @@ pub struct ChartAnimations {
 
     /// Crosshair follow ease time-constant in milliseconds.
     ///
-    /// `None` or `Some(0)` tracks the pointer/snap target instantly. Default `Some(45)`.
+    /// `None` or `Some(0)` tracks the pointer/snap target instantly. Default `None`: the
+    /// lines sit on the hovered bar and the pointer, with labels that match them.
     pub crosshair_ms: Option<u32>,
 }
 
@@ -44,7 +45,7 @@ impl Default for ChartAnimations {
             autoscale_ms: Some(80),
             scroll_ms: Some(130),
             price_zoom_ms: Some(70),
-            crosshair_ms: Some(45),
+            crosshair_ms: None,
         }
     }
 }
@@ -108,7 +109,8 @@ mod tests {
         assert_eq!(a.autoscale_ms, Some(80));
         assert_eq!(a.scroll_ms, Some(130));
         assert_eq!(a.price_zoom_ms, Some(70));
-        assert_eq!(a.crosshair_ms, Some(45));
+        assert_eq!(a.crosshair_ms, None);
+        assert!(a.crosshair_tau_secs().is_none());
         assert!((a.zoom_tau_secs().unwrap() - 0.07).abs() < 1e-6);
         assert!((a.scroll_tau_secs().unwrap() - 0.13).abs() < 1e-6);
     }

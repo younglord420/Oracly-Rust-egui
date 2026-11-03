@@ -126,7 +126,8 @@ impl Default for ToolbarState {
             hide_orders: false,
             has_zoom_history: false,
             zoom_mode_active: false,
-            current_cursor_type: CursorType::Arrow, // Default: Arrow
+            // Matches the chart's default `CrosshairStyle::Full`.
+            current_cursor_type: CursorType::Cross,
             templates: Vec::new(),
             show_template_name_input: false,
             template_name_input: String::new(),
