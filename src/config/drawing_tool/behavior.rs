@@ -157,11 +157,11 @@ impl DrawingToolType {
     /// Whether the drawing properties dialog should show text styling controls
     /// (text color, font size, bold, italic).
     ///
-    /// Returns `true` for all non-cursor drawing tools so users can always configure
+    /// Returns `true` for the non-cursor drawing tools that paint text, so users can configure
     /// text formatting even on tools whose labels are generated automatically (Fibonacci,
-    /// Elliott waves, patterns, measurements, positions) or tools without free-form text input.
+    /// Elliott waves, patterns, measurements, positions). Time cycles and sine lines paint none.
     pub fn supports_text_style(&self) -> bool {
-        !self.is_cursor()
+        !self.is_cursor() && !matches!(self, Self::TimeCycles | Self::SineLine)
     }
 
     /// Returns the [`DrawingInteractionMode`] that governs how mouse input is
@@ -257,6 +257,11 @@ impl DrawingToolType {
             | Self::InsidePitchfork
             | Self::XABCDPattern
             | Self::CypherPattern
+            | Self::GartleyPattern
+            | Self::BatPattern
+            | Self::ButterflyPattern
+            | Self::CrabPattern
+            | Self::SharkPattern
             | Self::HeadAndShoulders
             | Self::ABCDPattern
             | Self::TrianglePattern
@@ -305,6 +310,11 @@ impl DrawingToolType {
             | Self::GhostFeed
             | Self::XABCDPattern
             | Self::CypherPattern
+            | Self::GartleyPattern
+            | Self::BatPattern
+            | Self::ButterflyPattern
+            | Self::CrabPattern
+            | Self::SharkPattern
             | Self::HeadAndShoulders
             | Self::ABCDPattern
             | Self::TrianglePattern
@@ -350,7 +360,6 @@ impl DrawingToolType {
                     | Self::DisjointChannel
                     | Self::FibonacciChannel
                     | Self::BarsPattern
-                    | Self::ElliottDoubleCombo
                     | Self::Triangle
                     | Self::ParallelChannel
                     | Self::Pitchfork
@@ -359,10 +368,19 @@ impl DrawingToolType {
                     | Self::InsidePitchfork => Some(3),
                     Self::ABCDPattern
                     | Self::ElliottCorrection
+                    | Self::ElliottDoubleCombo
                     | Self::TrianglePattern
                     | Self::DoubleCurve => Some(4),
-                    Self::XABCDPattern | Self::CypherPattern | Self::ElliottTripleCombo => Some(5),
-                    Self::ElliottImpulse | Self::ElliottTriangle => Some(6),
+                    Self::XABCDPattern
+                    | Self::CypherPattern
+                    | Self::GartleyPattern
+                    | Self::BatPattern
+                    | Self::ButterflyPattern
+                    | Self::CrabPattern
+                    | Self::SharkPattern => Some(5),
+                    Self::ElliottImpulse | Self::ElliottTriangle | Self::ElliottTripleCombo => {
+                        Some(6)
+                    }
                     Self::HeadAndShoulders | Self::ThreeDrivesPattern => Some(7),
                     // Polyline, Path and Ghost Feed have no fixed limit
                     _ => None,
@@ -400,9 +418,11 @@ mod tests {
             (DoubleCurve, DrawingInteractionMode::MultiPoint, 4),
             (TrianglePattern, DrawingInteractionMode::MultiPoint, 4),
             (ThreeDrivesPattern, DrawingInteractionMode::MultiPoint, 7),
-            (ElliottDoubleCombo, DrawingInteractionMode::MultiPoint, 3),
+            (ElliottDoubleCombo, DrawingInteractionMode::MultiPoint, 4),
             (ElliottTriangle, DrawingInteractionMode::MultiPoint, 6),
-            (ElliottTripleCombo, DrawingInteractionMode::MultiPoint, 5),
+            (ElliottTripleCombo, DrawingInteractionMode::MultiPoint, 6),
+            (GartleyPattern, DrawingInteractionMode::MultiPoint, 5),
+            (SharkPattern, DrawingInteractionMode::MultiPoint, 5),
             (PriceNote, DrawingInteractionMode::ClickClick, 2),
             (ArrowMarker, DrawingInteractionMode::ClickClick, 2),
             (LongPos, DrawingInteractionMode::SingleClick, 1),

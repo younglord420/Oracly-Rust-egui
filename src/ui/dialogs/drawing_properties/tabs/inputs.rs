@@ -46,6 +46,20 @@ impl InputsTab {
                 | Tool::FixedRangeVolumeProfile
                 | Tool::AnchoredVolumeProfile
                 | Tool::RegressionTrend
+                | Tool::GartleyPattern
+                | Tool::BatPattern
+                | Tool::ButterflyPattern
+                | Tool::CrabPattern
+                | Tool::SharkPattern
+                | Tool::CypherPattern
+                | Tool::HeadAndShoulders
+                | Tool::ThreeDrivesPattern
+                | Tool::ElliottImpulse
+                | Tool::ElliottCorrection
+                | Tool::ElliottTriangle
+                | Tool::ElliottDoubleCombo
+                | Tool::ElliottTripleCombo
+                | Tool::CyclicLines
         )
     }
 
@@ -67,6 +81,20 @@ impl InputsTab {
             Tool::Pitchfan => pitchfan(ui, drawing, pickers),
             Tool::GannFan => gann_fan(ui, drawing, pickers),
             Tool::GannBox | Tool::GannSquare | Tool::GannFixed => gann_grid(ui, drawing, pickers),
+            Tool::GartleyPattern
+            | Tool::BatPattern
+            | Tool::ButterflyPattern
+            | Tool::CrabPattern
+            | Tool::SharkPattern
+            | Tool::CypherPattern => harmonic_rules_table(ui, drawing.tool_type),
+            Tool::HeadAndShoulders
+            | Tool::ThreeDrivesPattern
+            | Tool::ElliottImpulse
+            | Tool::ElliottCorrection
+            | Tool::ElliottTriangle
+            | Tool::ElliottDoubleCombo
+            | Tool::ElliottTripleCombo
+            | Tool::CyclicLines => pattern_inputs(ui, drawing),
             Tool::GhostFeed => {
                 let mut config = drawing.ghost_feed.unwrap_or_default();
                 let original = config;
@@ -1140,6 +1168,156 @@ fn gann_grid(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
     }
 }
 
+/// The ratios a named harmonic pattern is judged by, for reference.
+fn harmonic_rules_table(ui: &mut Ui, tool: Tool) {
+    let Some(rules) = crate::drawings::harmonic_rules(tool) else {
+        return;
+    };
+    let theme = ui.active_theme();
+    ui.strong(l10n::text(ui.ctx(), "Ideal ratios"));
+    egui::Grid::new(ui.scope_id().with("harmonic_rules"))
+        .num_columns(2)
+        .spacing([theme.spacing.lg, theme.spacing.xs])
+        .show(ui, |ui| {
+            for rule in rules {
+                ui.label(
+                    egui::RichText::new(rule.name)
+                        .size(theme.text.body)
+                        .color(theme.ui.text_secondary),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{} – {}", rule.band.min, rule.band.max))
+                        .size(theme.text.body),
+                );
+                ui.end_row();
+            }
+        });
+}
+
+/// One option of a pattern tool as a checkbox row.
+fn pattern_toggle(ui: &mut Ui, value: &mut bool, label: &str) {
+    ui.horizontal(|ui| {
+        ui.set_min_height(super::style::control_row_height(ui));
+        ui.checkbox(value, l10n::text(ui.ctx(), label));
+    });
+}
+
+fn is_elliott(tool: Tool) -> bool {
+    matches!(
+        tool,
+        Tool::ElliottImpulse
+            | Tool::ElliottCorrection
+            | Tool::ElliottTriangle
+            | Tool::ElliottDoubleCombo
+            | Tool::ElliottTripleCombo
+    )
+}
+
+/// What a pattern, Elliott wave or cycle tool draws beyond its legs.
+fn pattern_inputs(ui: &mut Ui, drawing: &mut Drawing) {
+    let mut config = drawing.pattern_config();
+    let original = config;
+    let tool = drawing.tool_type;
+    if is_elliott(tool) {
+        let control_h = super::style::control_row_height(ui);
+        let theme = ui.active_theme();
+        ui.horizontal(|ui| {
+            ui.set_min_height(control_h);
+            ui.label(
+                egui::RichText::new(l10n::text(ui.ctx(), "Degree"))
+                    .size(theme.text.body)
+                    .color(theme.ui.text_secondary),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let ctx = ui.ctx().clone();
+                super::style::text_combo_popup(
+                    ui,
+                    "elliott_degree",
+                    "Degree",
+                    &mut config.degree,
+                    &crate::drawings::WaveDegree::ALL,
+                    |degree| l10n::text(&ctx, degree.name()),
+                    super::style::control_column_width(ui)
+                        .min(ui.available_width())
+                        .max(120.0),
+                    control_h,
+                );
+            });
+        });
+    }
+    match tool {
+        Tool::ElliottImpulse => pattern_toggle(ui, &mut config.show_target, "Wave 3 target"),
+        Tool::HeadAndShoulders => {
+            pattern_toggle(ui, &mut config.show_neckline, "Neckline");
+            pattern_toggle(ui, &mut config.show_target, "Target");
+        }
+        Tool::ThreeDrivesPattern => pattern_toggle(ui, &mut config.show_zone, "Reversal zone"),
+        Tool::CyclicLines => {
+            pattern_toggle(ui, &mut config.show_cycle_numbers, "Cycle numbers");
+        }
+        _ => {}
+    }
+    if config != original {
+        drawing.pattern = Some(config);
+    }
+}
+
+/// Tools whose generated labels the Label section can hide.
+pub(super) fn has_pattern_labels(tool: Tool) -> bool {
+    is_elliott(tool)
+        || matches!(
+            tool,
+            Tool::XABCDPattern
+                | Tool::CypherPattern
+                | Tool::GartleyPattern
+                | Tool::BatPattern
+                | Tool::ButterflyPattern
+                | Tool::CrabPattern
+                | Tool::SharkPattern
+                | Tool::HeadAndShoulders
+                | Tool::ABCDPattern
+                | Tool::TrianglePattern
+                | Tool::ThreeDrivesPattern
+        )
+}
+
+/// Which generated labels a pattern or Elliott wave shows.
+pub(super) fn pattern_labels(ui: &mut Ui, drawing: &mut Drawing) {
+    let mut config = drawing.pattern_config();
+    let original = config;
+    let tool = drawing.tool_type;
+    let theme = ui.active_theme();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = theme.spacing.lg;
+        let anchors = if is_elliott(tool) {
+            "Wave labels"
+        } else {
+            "Point labels"
+        };
+        ui.checkbox(&mut config.show_labels, l10n::text(ui.ctx(), anchors));
+        if matches!(
+            tool,
+            Tool::XABCDPattern
+                | Tool::CypherPattern
+                | Tool::GartleyPattern
+                | Tool::BatPattern
+                | Tool::ButterflyPattern
+                | Tool::CrabPattern
+                | Tool::SharkPattern
+                | Tool::ABCDPattern
+                | Tool::ThreeDrivesPattern
+        ) {
+            ui.checkbox(&mut config.show_ratios, l10n::text(ui.ctx(), "Ratios"));
+        }
+        if crate::drawings::harmonic_rules(tool).is_some() {
+            ui.checkbox(&mut config.show_validity, l10n::text(ui.ctx(), "Validity"));
+        }
+    });
+    if config != original {
+        drawing.pattern = Some(config);
+    }
+}
+
 fn level_color(ui: &mut Ui, color: &mut [u8; 4], state: &mut ColorPickerState) -> bool {
     state.sel_color = egui::Color32::from_rgba_unmultiplied(color[0], color[1], color[2], color[3]);
     if let Some(picked) = ColorPicker::new(state, ui.scope_id().with("level_color"))
@@ -1175,6 +1353,55 @@ mod tests {
             assert!(InputsTab::available(tool), "{tool:?}");
         }
         assert!(!InputsTab::available(Tool::FibonacciSpiral));
+    }
+
+    /// Pattern tools offer only the options their renderer reads: Elliott waves their degree,
+    /// named harmonics their ideal ratios and verdict, and label toggles in the Label section.
+    #[test]
+    fn pattern_settings_offer_what_each_tool_draws() {
+        let texts = |tool: Tool, show: &dyn Fn(&mut Ui, &mut Drawing)| {
+            let mut drawing = Drawing::new(0, tool);
+            let output = egui::Context::default()
+                .run_ui(egui::RawInput::default(), |ui| show(ui, &mut drawing));
+            let found: Vec<String> = output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(text) => Some(text.galley.job.text.clone()),
+                    _ => None,
+                })
+                .collect();
+            output.drop_without_applying_deltas();
+            found
+        };
+        let inputs = |tool| texts(tool, &|ui, d| InputsTab::show(ui, d, &mut Vec::new()));
+        let labels = |tool| texts(tool, &|ui, d| pattern_labels(ui, d));
+        let has = |found: &[String], text: &str| found.iter().any(|t| t == text);
+
+        let impulse = inputs(Tool::ElliottImpulse);
+        assert!(
+            has(&impulse, "Degree") && has(&impulse, "Minor") && has(&impulse, "Wave 3 target")
+        );
+        assert!(!has(&inputs(Tool::ElliottCorrection), "Wave 3 target"));
+        let gartley = inputs(Tool::GartleyPattern);
+        assert!(
+            has(&gartley, "AB/XA") && has(&gartley, "0.55 – 0.68"),
+            "{gartley:?}"
+        );
+        let shoulders = inputs(Tool::HeadAndShoulders);
+        assert!(has(&shoulders, "Neckline") && has(&shoulders, "Target"));
+        assert!(has(&inputs(Tool::CyclicLines), "Cycle numbers"));
+        assert!(!InputsTab::available(Tool::XABCDPattern));
+
+        let harmonic = labels(Tool::BatPattern);
+        for label in ["Point labels", "Ratios", "Validity"] {
+            assert!(has(&harmonic, label), "{label}: {harmonic:?}");
+        }
+        let xabcd = labels(Tool::XABCDPattern);
+        assert!(has(&xabcd, "Ratios") && !has(&xabcd, "Validity"));
+        let wave = labels(Tool::ElliottTriangle);
+        assert!(has(&wave, "Wave labels") && !has(&wave, "Ratios"));
+        assert!(!has_pattern_labels(Tool::CyclicLines));
     }
 
     /// Label settings of a Fibonacci tool live in the Label section, not among its Inputs.

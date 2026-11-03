@@ -13,6 +13,15 @@ use egui::{
 /// Placed label text plus optional line-cut geometry (anchor, unit direction, t0, t1).
 type LineLabelLayout = (TextShape, Option<(Pos2, egui::Vec2, f32, f32)>);
 
+/// Radius of the dot marking an anchor placed before the drawing has enough points to paint,
+/// no larger than a selection handle. Complete drawings mark no anchors; handles do.
+pub(super) const PLACED_ANCHOR_RADIUS: f32 = 3.0;
+
+/// Marks an anchor placed while the drawing still lacks the points it needs.
+pub(super) fn placed_anchor(painter: &Painter, pos: Pos2, color: Color32) {
+    painter.circle_filled(pos, PLACED_ANCHOR_RADIUS, color);
+}
+
 impl Drawing {
     /// Size annotations before laying out both the text and its surrounding box.
     pub(super) fn annotation_font(&self) -> egui::FontId {

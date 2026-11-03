@@ -5,7 +5,6 @@
 use crate::drawings::domain::{Drawing, DrawingToolType};
 use crate::drawings::validation::MAX_PITCHFORK_LEVEL;
 use crate::styles::{stroke, typography};
-use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke};
 
 impl Drawing {
@@ -22,7 +21,7 @@ impl Drawing {
         if self.points.len() < 3 {
             // Draw points we have so far
             for (i, &point) in self.points.iter().enumerate() {
-                painter.circle_filled(point, DESIGN_TOKENS.rounding.sm, color);
+                super::style::placed_anchor(painter, point, color);
                 if i > 0 {
                     painter.line_segment(
                         [self.points[i - 1], point],
@@ -44,9 +43,9 @@ impl Drawing {
         // Modified Schiff moves the anchor point to midway between p0 and p1
         if self.points.len() < 3 {
             for &p in &self.points {
-                painter.circle_filled(
+                super::style::placed_anchor(
+                    painter,
                     p,
-                    DESIGN_TOKENS.rounding.sm,
                     Color32::from_rgba_unmultiplied(
                         self.color[0],
                         self.color[1],
@@ -65,9 +64,9 @@ impl Drawing {
         // Inside uses the first leg midpoint as one tine, and the second anchor as the other.
         if self.points.len() < 3 {
             for &p in &self.points {
-                painter.circle_filled(
+                super::style::placed_anchor(
+                    painter,
                     p,
-                    DESIGN_TOKENS.rounding.sm,
                     Color32::from_rgba_unmultiplied(
                         self.color[0],
                         self.color[1],
@@ -232,13 +231,13 @@ impl Drawing {
         };
         let color = self.color32();
         if self.points.len() < 3 {
-            painter.circle_filled(center, DESIGN_TOKENS.rounding.md, color);
+            super::style::placed_anchor(painter, center, color);
             if let Some(&end) = self.points.get(1) {
                 painter.line_segment(
                     [center, end],
                     Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
                 );
-                painter.circle_filled(end, DESIGN_TOKENS.rounding.sm, color);
+                super::style::placed_anchor(painter, end, color);
             }
             return;
         }
@@ -304,8 +303,6 @@ impl Drawing {
                 );
             }
         }
-        painter.circle_filled(center, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_filled(end, DESIGN_TOKENS.rounding.sm, color);
     }
 
     fn pitchfan_levels(&self) -> Vec<crate::drawings::PitchforkLevel> {

@@ -2,681 +2,157 @@
 //!
 //! Includes: impulse, correction, triangle, double combo, and triple combo waves.
 
-use crate::drawings::domain::Drawing;
+use crate::drawings::domain::{Drawing, DrawingToolType, Wave};
 use crate::drawings::rendering::ChartView;
-use crate::styles::{stroke, typography};
-use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Stroke};
-
-impl Drawing {
-    /// Render Elliott Impulse Wave - 5-wave motive pattern (0-1-2-3-4-5)
-    pub(crate) fn render_elliott_impulse(&self, painter: &egui::Painter, view: &ChartView) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Wave labels with degree notation (can be customized)
-        let labels = ["0", "1", "2", "3", "4", "5"];
-
-        // Highlight the wave legs only when fill is enabled.
-        if self.points.len() >= 3
-            && let Some(fill) = self.fill_color32()
-        {
-            for leg in self.points.windows(2) {
-                let [start, end] = [leg[0], leg[1]];
-                let mid = start.lerp(end, 0.5) + egui::vec2(0.0, 5.0);
-                painter.add(egui::epaint::PathShape::convex_polygon(
-                    vec![start, end, mid],
-                    fill,
-                    Stroke::NONE,
-                ));
-            }
-        }
-
-        for leg in self.points.windows(2) {
-            painter.line_segment([leg[0], leg[1]], self.stroke());
-        }
-
-        // Wave 3 target, projected from the wave 2 end in price
-        if let Some(target) = self.impulse_target() {
-            let fib_color = DESIGN_TOKENS.semantic.indicators.ma.gamma_multiply(0.47); // Orange with alpha
-            let wave2_end = self.points[2];
-            let target_y = (view.price_to_y)(target);
-
-            super::utils::draw_dashed_line(
-                painter,
-                wave2_end,
-                Pos2::new(wave2_end.x + 40.0, target_y),
-                Stroke::new(stroke::HAIRLINE, fib_color),
-                3.0,
-                2.0,
-            );
-
-            painter.text(
-                Pos2::new(wave2_end.x + 45.0, target_y),
-                egui::Align2::LEFT_CENTER,
-                "1.618",
-                self.annotation_font(),
-                fib_color,
-            );
-        }
-
-        // Draw points and labels
-        for (i, &point) in self.points.iter().enumerate() {
-            // Determine label position based on wave direction
-            let is_up = if i > 0 {
-                point.y < self.points[i - 1].y
-            } else {
-                true
-            };
-            let label_offset = if is_up {
-                -DESIGN_TOKENS.spacing.xxl - DESIGN_TOKENS.spacing.md
-            } else {
-                DESIGN_TOKENS.spacing.xxl + DESIGN_TOKENS.spacing.md
-            };
-
-            // Draw anchor point
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            // Draw label with background
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.9);
-
-                // Circle background for wave numbers
-                painter.circle_filled(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    label_bg,
-                );
-                painter.circle_stroke(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    Stroke::new(stroke::HAIRLINE, color),
-                );
-
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Draw "Impulse" label for completed pattern
-        if self.points.len() >= 6 {
-            let label_pos = Pos2::new(
-                (self.points[0].x + self.points[5].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::INFINITY, f32::min)
-                    - 35.0,
-            );
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.78);
-            let label_rect = Rect::from_center_size(
-                label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width
-                        - DESIGN_TOKENS.spacing.xl,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Impulse",
-                self.annotation_font(),
-                color,
-            );
-        }
-    }
-
-    /// Render Elliott Correction Wave - A-B-C corrective pattern
-    pub(crate) fn render_elliott_correction(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Correction labels (starting after wave 5)
-        let labels = ["5", "A", "B", "C"];
-
-        // Draw fill for corrective waves
-        if self.points.len() >= 3 {
-            let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                self.points.clone(),
-                fill_color,
-                Stroke::NONE,
-            ));
-        }
-
-        // Draw connecting lines
-        for i in 1..self.points.len() {
-            painter.line_segment(
-                [self.points[i - 1], self.points[i]],
-                Stroke::new(self.stroke_width, color),
-            );
-        }
-
-        // Draw points and labels
-        for (i, &point) in self.points.iter().enumerate() {
-            let is_up = if i > 0 {
-                point.y < self.points[i - 1].y
-            } else {
-                false
-            };
-            let label_offset = if is_up {
-                -DESIGN_TOKENS.spacing.xxl - DESIGN_TOKENS.spacing.md
-            } else {
-                DESIGN_TOKENS.spacing.xxl + DESIGN_TOKENS.spacing.md
-            };
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.9);
-
-                painter.circle_filled(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    label_bg,
-                );
-                painter.circle_stroke(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    Stroke::new(stroke::HAIRLINE, color),
-                );
-
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Draw "Correction" label
-        if self.points.len() >= 4 {
-            let label_pos = Pos2::new(
-                (self.points[0].x + self.points[3].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::NEG_INFINITY, f32::max)
-                    + 30.0,
-            );
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.78);
-            let label_rect = Rect::from_center_size(
-                label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width
-                        - DESIGN_TOKENS.spacing.sm,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Correction",
-                self.annotation_font(),
-                color,
-            );
-        }
-    }
-
-    /// Render Elliott Triangle - A-B-C-D-E contracting/expanding triangle
-    pub(crate) fn render_elliott_triangle(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        let labels = ["0", "A", "B", "C", "D", "E"];
-
-        // Draw fill between the waves, without the origin
-        if self.points.len() >= 4 {
-            let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                self.points[1..].to_vec(),
-                fill_color,
-                Stroke::NONE,
-            ));
-        }
-
-        // Draw connecting lines
-        for i in 1..self.points.len() {
-            painter.line_segment(
-                [self.points[i - 1], self.points[i]],
-                Stroke::new(self.stroke_width, color),
-            );
-        }
-
-        // Draw converging trendlines for complete triangle
-        if self.points.len() >= 5 {
-            let line_color =
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 120);
-
-            // Trendline through A, C and E
-            let upper_points: Vec<&Pos2> = self
-                .points
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| i % 2 == 1)
-                .map(|(_, p)| p)
-                .collect();
-
-            if upper_points.len() >= 2 {
-                let dx = upper_points[1].x - upper_points[0].x;
-                let dy = upper_points[1].y - upper_points[0].y;
-                let slope = if dx.abs() > 0.001 { dy / dx } else { 0.0 };
-                let extended = Pos2::new(
-                    upper_points.last().unwrap().x + 50.0,
-                    upper_points.last().unwrap().y + slope * 50.0,
-                );
-                super::utils::draw_dashed_line(
-                    painter,
-                    **upper_points.first().unwrap(),
-                    extended,
-                    Stroke::new(stroke::HAIRLINE, line_color),
-                    5.0,
-                    3.0,
-                );
-            }
-
-            // Trendline through B and D
-            let lower_points: Vec<&Pos2> = self
-                .points
-                .iter()
-                .enumerate()
-                .skip(1)
-                .filter(|(i, _)| i % 2 == 0)
-                .map(|(_, p)| p)
-                .collect();
-
-            if lower_points.len() >= 2 {
-                let dx = lower_points[1].x - lower_points[0].x;
-                let dy = lower_points[1].y - lower_points[0].y;
-                let slope = if dx.abs() > 0.001 { dy / dx } else { 0.0 };
-                let extended = Pos2::new(
-                    lower_points.last().unwrap().x + 50.0,
-                    lower_points.last().unwrap().y + slope * 50.0,
-                );
-                super::utils::draw_dashed_line(
-                    painter,
-                    **lower_points.first().unwrap(),
-                    extended,
-                    Stroke::new(stroke::HAIRLINE, line_color),
-                    5.0,
-                    3.0,
-                );
-            }
-        }
-
-        // Draw points and labels: A, C and E lie on the side of the origin that A moves to
-        let a_is_peak = self.points.len() < 2 || self.points[1].y < self.points[0].y;
-        for (i, &point) in self.points.iter().enumerate() {
-            let is_peak = (i % 2 == 1) == a_is_peak;
-            let label_offset = if is_peak {
-                -DESIGN_TOKENS.spacing.xxl - DESIGN_TOKENS.spacing.sm
-            } else {
-                DESIGN_TOKENS.spacing.xxl + DESIGN_TOKENS.spacing.sm
-            };
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.9);
-                painter.circle_filled(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    label_bg,
-                );
-                painter.circle_stroke(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    Stroke::new(stroke::HAIRLINE, color),
-                );
-
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Triangle label
-        if self.points.len() >= 6 {
-            let label_pos = Pos2::new(
-                (self.points[1].x + self.points[5].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::INFINITY, f32::min)
-                    - 35.0,
-            );
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.78);
-            let label_rect = Rect::from_center_size(
-                label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width
-                        - DESIGN_TOKENS.spacing.xl,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Triangle",
-                self.annotation_font(),
-                color,
-            );
-        }
-    }
-
-    /// Render Elliott Double Combo - W-X-Y pattern
-    pub(crate) fn render_elliott_double_combo(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        let labels = ["W", "X", "Y"];
-
-        // Draw connecting lines with X wave styled differently
-        for i in 1..self.points.len() {
-            // X wave (index 1) is drawn dashed
-            if i == 2 {
-                super::utils::draw_dashed_line(
-                    painter,
-                    self.points[i - 1],
-                    self.points[i],
-                    Stroke::new(stroke::HAIRLINE, color),
-                    6.0,
-                    4.0,
-                );
-            } else {
-                painter.line_segment(
-                    [self.points[i - 1], self.points[i]],
-                    Stroke::new(self.stroke_width, color),
-                );
-            }
-        }
-
-        // Draw points and labels
-        for (i, &point) in self.points.iter().enumerate() {
-            let is_up = if i > 0 {
-                point.y < self.points[i - 1].y
-            } else {
-                true
-            };
-            let label_offset = if is_up {
-                -DESIGN_TOKENS.spacing.xxl - DESIGN_TOKENS.spacing.md
-            } else {
-                DESIGN_TOKENS.spacing.xxl + DESIGN_TOKENS.spacing.md
-            };
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.9);
-                painter.circle_filled(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    label_bg,
-                );
-                painter.circle_stroke(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    Stroke::new(stroke::HAIRLINE, color),
-                );
-
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Pattern label
-        if self.points.len() >= 3 {
-            let label_pos = Pos2::new(
-                (self.points[0].x + self.points[2].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::NEG_INFINITY, f32::max)
-                    + 30.0,
-            );
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.78);
-            let label_rect = Rect::from_center_size(
-                label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width
-                        + DESIGN_TOKENS.spacing.lg,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Double Combo",
-                self.annotation_font(),
-                color,
-            );
-        }
-    }
-
-    /// Render Elliott Triple Combo - W-X-Y-X-Z pattern
-    pub(crate) fn render_elliott_triple_combo(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        let labels = ["W", "X", "Y", "X", "Z"];
-
-        // Draw connecting lines with X waves styled differently
-        for i in 1..self.points.len() {
-            // X waves (index 1 and 3) are drawn dashed
-            if i == 2 || i == 4 {
-                super::utils::draw_dashed_line(
-                    painter,
-                    self.points[i - 1],
-                    self.points[i],
-                    Stroke::new(stroke::HAIRLINE, color),
-                    6.0,
-                    4.0,
-                );
-            } else {
-                painter.line_segment(
-                    [self.points[i - 1], self.points[i]],
-                    Stroke::new(self.stroke_width, color),
-                );
-            }
-        }
-
-        // Draw points and labels
-        for (i, &point) in self.points.iter().enumerate() {
-            let is_up = if i > 0 {
-                point.y < self.points[i - 1].y
-            } else {
-                true
-            };
-            let label_offset = if is_up {
-                -DESIGN_TOKENS.spacing.xxl - DESIGN_TOKENS.spacing.md
-            } else {
-                DESIGN_TOKENS.spacing.xxl + DESIGN_TOKENS.spacing.md
-            };
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.9);
-                painter.circle_filled(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    label_bg,
-                );
-                painter.circle_stroke(
-                    label_pos,
-                    (DESIGN_TOKENS.sizing.technical_labels.elliott_label_size / 1.8)
-                        .max(self.annotation_font().size * 0.8),
-                    Stroke::new(stroke::HAIRLINE, color),
-                );
-
-                // Second X gets subscript styling
-                let display_label = if i == 3 { "X₂" } else { labels[i] };
-
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    display_label,
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Pattern label
-        if self.points.len() >= 5 {
-            let label_pos = Pos2::new(
-                (self.points[0].x + self.points[4].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::NEG_INFINITY, f32::max)
-                    + 30.0,
-            );
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.78);
-            let label_rect = Rect::from_center_size(
-                label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width
-                        + DESIGN_TOKENS.spacing.lg,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Triple Combo",
-                self.annotation_font(),
-                color,
-            );
-        }
-    }
-}
+use crate::styles::stroke;
+use egui::{Align2, Pos2, Stroke};
 
 /// The wave 3 target as a multiple of wave 1, projected from the wave 2 end.
 const WAVE_3_TARGET: f64 = 1.618;
 
+/// How far past their last anchor a triangle's boundaries run on.
+const TRIANGLE_EXTENSION: f32 = 50.0;
+
 impl Drawing {
+    /// The waves the anchors of this Elliott tool mark, from its origin.
+    fn elliott_waves(&self) -> Vec<Wave> {
+        use Wave::{Letter, Number};
+        match self.tool_type {
+            DrawingToolType::ElliottImpulse => (0..=5).map(Number).collect(),
+            DrawingToolType::ElliottCorrection => {
+                vec![Number(0), Letter('A'), Letter('B'), Letter('C')]
+            }
+            DrawingToolType::ElliottTriangle => std::iter::once(Number(0))
+                .chain("ABCDE".chars().map(Letter))
+                .collect(),
+            DrawingToolType::ElliottDoubleCombo => std::iter::once(Number(0))
+                .chain("WXY".chars().map(Letter))
+                .collect(),
+            DrawingToolType::ElliottTripleCombo => std::iter::once(Number(0))
+                .chain("WXYXZ".chars().map(Letter))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Indices of the legs ending in an X wave, which link the simple corrections of a
+    /// combination and are drawn dashed.
+    fn elliott_link_legs(&self) -> &'static [usize] {
+        match self.tool_type {
+            DrawingToolType::ElliottDoubleCombo => &[2],
+            DrawingToolType::ElliottTripleCombo => &[2, 4],
+            _ => &[],
+        }
+    }
+
+    /// An Elliott wave: its legs, labels in the configured degree and, for an impulse, the
+    /// wave 3 target; a triangle also runs its boundaries on.
+    pub(crate) fn render_elliott_wave(&self, painter: &egui::Painter, view: &ChartView) {
+        let color = self.color32();
+        let config = self.pattern_config();
+
+        match self.tool_type {
+            DrawingToolType::ElliottImpulse => {
+                if self.points.len() >= 3
+                    && let Some(fill) = self.fill_color32()
+                {
+                    for leg in self.points.windows(2) {
+                        let mid = leg[0].lerp(leg[1], 0.5) + egui::vec2(0.0, 5.0);
+                        painter.add(egui::epaint::PathShape::convex_polygon(
+                            vec![leg[0], leg[1], mid],
+                            fill,
+                            Stroke::NONE,
+                        ));
+                    }
+                }
+            }
+            DrawingToolType::ElliottCorrection if self.points.len() >= 3 => {
+                self.paint_pattern_fill(painter, self.points.clone());
+            }
+            DrawingToolType::ElliottTriangle if self.points.len() >= 4 => {
+                self.paint_pattern_fill(painter, self.points[1..].to_vec());
+            }
+            _ => {}
+        }
+
+        let links = self.elliott_link_legs();
+        for (i, leg) in self.points.windows(2).enumerate() {
+            if links.contains(&(i + 1)) {
+                super::utils::draw_dashed_line(
+                    painter,
+                    leg[0],
+                    leg[1],
+                    Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.7)),
+                    6.0,
+                    4.0,
+                );
+            } else {
+                painter.line_segment([leg[0], leg[1]], self.stroke());
+            }
+        }
+
+        if self.tool_type == DrawingToolType::ElliottTriangle {
+            self.paint_triangle_boundaries(painter);
+        }
+
+        if self.tool_type == DrawingToolType::ElliottImpulse
+            && config.show_target
+            && let Some(target) = self.impulse_target()
+        {
+            let wave2_end = self.points[2];
+            let target_y = (view.price_to_y)(target);
+            super::utils::draw_dashed_line(
+                painter,
+                wave2_end,
+                Pos2::new(wave2_end.x + 40.0, target_y),
+                Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.6)),
+                3.0,
+                2.0,
+            );
+            painter.text(
+                Pos2::new(wave2_end.x + 45.0, target_y),
+                Align2::LEFT_CENTER,
+                "1.618",
+                self.annotation_font(),
+                color,
+            );
+        }
+
+        let labels: Vec<_> = self
+            .elliott_waves()
+            .into_iter()
+            .map(|wave| config.degree.label(wave))
+            .collect();
+        self.paint_anchor_labels(painter, &labels);
+    }
+
+    /// The dashed boundaries through A, C and E and through B and D, run on past their last
+    /// anchor.
+    fn paint_triangle_boundaries(&self, painter: &egui::Painter) {
+        if self.points.len() < 5 {
+            return;
+        }
+        let stroke = Stroke::new(stroke::HAIRLINE, self.color32().gamma_multiply(0.5));
+        for side in [1, 2] {
+            let anchors: Vec<Pos2> = self.points.iter().skip(side).step_by(2).copied().collect();
+            let [first, second, ..] = anchors[..] else {
+                continue;
+            };
+            let last = anchors[anchors.len() - 1];
+            let dx = second.x - first.x;
+            let slope = if dx.abs() > 0.001 {
+                (second.y - first.y) / dx
+            } else {
+                0.0
+            };
+            let end = Pos2::new(
+                last.x + TRIANGLE_EXTENSION,
+                last.y + slope * TRIANGLE_EXTENSION,
+            );
+            super::utils::draw_dashed_line(painter, first, end, stroke, 5.0, 3.0);
+        }
+    }
+
     /// The price of the wave 3 target: the 0 to 1 price leg times [`WAVE_3_TARGET`] from the
     /// wave 2 end, in the direction of wave 1. A logarithmic construction (the drawing's
     /// `fib_config`) scales the wave 2 end by the same multiple of the leg's log return. `None`
@@ -704,7 +180,7 @@ impl Drawing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drawings::domain::{ChartPoint, DrawingToolType, FibonacciConfig};
+    use crate::drawings::domain::{ChartPoint, FibonacciConfig, PatternConfig, WaveDegree};
 
     #[test]
     fn impulse_target_projects_the_first_wave_from_the_wave_2_end_in_price() {
@@ -748,5 +224,110 @@ mod tests {
                 (got, want) => assert_eq!(got, want, "{prices:?}"),
             }
         }
+    }
+
+    fn texts(drawing: &Drawing) -> Vec<String> {
+        let view = ChartView {
+            instrument: None,
+            bars: &[],
+            revision: 0,
+            bar_to_x: &|x| x,
+            price_to_y: &|p| 300.0 - p as f32,
+            y_to_price: &|y| f64::from(300.0 - y),
+            time_axis: true,
+            executions: None,
+        };
+        let output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
+            drawing.render_elliott_wave(ui.painter(), &view);
+        });
+        let found = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect();
+        output.drop_without_applying_deltas();
+        found
+    }
+
+    fn wave(tool: DrawingToolType) -> Drawing {
+        let mut drawing = Drawing::new(0, tool);
+        let count = tool.required_points().unwrap();
+        for i in 0..count {
+            let price = if i % 2 == 0 { 100.0 } else { 150.0 } + i as f64;
+            drawing.chart_points.push(ChartPoint::new(i as f32, price));
+            drawing
+                .points
+                .push(Pos2::new(40.0 * i as f32, 300.0 - price as f32));
+        }
+        drawing
+    }
+
+    /// Each Elliott tool labels its waves from the origin; combinations start at an origin
+    /// before W and draw their X waves dashed.
+    #[test]
+    fn elliott_waves_label_every_anchor_from_the_origin() {
+        let cases = [
+            (
+                DrawingToolType::ElliottImpulse,
+                vec!["0", "1", "2", "3", "4", "5"],
+            ),
+            (DrawingToolType::ElliottCorrection, vec!["0", "A", "B", "C"]),
+            (
+                DrawingToolType::ElliottTriangle,
+                vec!["0", "A", "B", "C", "D", "E"],
+            ),
+            (
+                DrawingToolType::ElliottDoubleCombo,
+                vec!["0", "W", "X", "Y"],
+            ),
+            (
+                DrawingToolType::ElliottTripleCombo,
+                vec!["0", "W", "X", "Y", "X", "Z"],
+            ),
+        ];
+        for (tool, want) in cases {
+            let mut drawing = wave(tool);
+            drawing.pattern = Some(PatternConfig {
+                show_target: false,
+                ..PatternConfig::default()
+            });
+            assert_eq!(texts(&drawing), want, "{tool:?}");
+        }
+        assert_eq!(
+            wave(DrawingToolType::ElliottTripleCombo).elliott_link_legs(),
+            [2, 4]
+        );
+    }
+
+    /// The degree sets the notation, and labels can be hidden.
+    #[test]
+    fn elliott_degree_and_label_visibility_follow_settings() {
+        let mut drawing = wave(DrawingToolType::ElliottCorrection);
+        drawing.pattern = Some(PatternConfig {
+            degree: WaveDegree::Intermediate,
+            ..PatternConfig::default()
+        });
+        assert_eq!(texts(&drawing), ["(0)", "(A)", "(B)", "(C)"]);
+        drawing.pattern = Some(PatternConfig {
+            degree: WaveDegree::Cycle,
+            ..PatternConfig::default()
+        });
+        assert_eq!(texts(&drawing), ["a", "b", "c"]);
+        drawing.pattern = Some(PatternConfig {
+            show_labels: false,
+            ..PatternConfig::default()
+        });
+        assert!(texts(&drawing).is_empty());
+
+        let mut impulse = wave(DrawingToolType::ElliottImpulse);
+        assert!(texts(&impulse).contains(&"1.618".to_owned()));
+        impulse.pattern = Some(PatternConfig {
+            show_target: false,
+            ..PatternConfig::default()
+        });
+        assert!(!texts(&impulse).contains(&"1.618".to_owned()));
     }
 }

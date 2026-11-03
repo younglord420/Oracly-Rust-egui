@@ -73,6 +73,11 @@ impl DrawingToolType {
                 Self::ABCDPattern,
                 Self::TrianglePattern,
                 Self::ThreeDrivesPattern,
+                Self::GartleyPattern,
+                Self::BatPattern,
+                Self::ButterflyPattern,
+                Self::CrabPattern,
+                Self::SharkPattern,
             ],
             "elliott" => vec![
                 Self::ElliottImpulse,
@@ -218,13 +223,18 @@ impl DrawingToolType {
             Self::GannSquare,
             Self::GannFixed,
             Self::GannFan,
-            // Patterns (6)
+            // Patterns (11)
             Self::XABCDPattern,
             Self::CypherPattern,
             Self::HeadAndShoulders,
             Self::ABCDPattern,
             Self::TrianglePattern,
             Self::ThreeDrivesPattern,
+            Self::GartleyPattern,
+            Self::BatPattern,
+            Self::ButterflyPattern,
+            Self::CrabPattern,
+            Self::SharkPattern,
             // Elliott Wave (5)
             Self::ElliottImpulse,
             Self::ElliottCorrection,
@@ -342,6 +352,11 @@ impl DrawingToolType {
             Self::GannFan => "assets/icons/drawing/gann-fan.svg",
             Self::XABCDPattern => "assets/icons/drawing/xabcd-pattern.svg",
             Self::CypherPattern => "assets/icons/drawing/cypher-pattern.svg",
+            Self::GartleyPattern
+            | Self::BatPattern
+            | Self::ButterflyPattern
+            | Self::CrabPattern
+            | Self::SharkPattern => "assets/icons/drawing/xabcd-pattern.svg",
             Self::HeadAndShoulders => "assets/icons/drawing/head-and-shoulders.svg",
             Self::ABCDPattern => "assets/icons/drawing/abcd.svg",
             Self::TrianglePattern => "assets/icons/drawing/triangle-pattern.svg",

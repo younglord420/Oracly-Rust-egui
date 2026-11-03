@@ -1,137 +1,116 @@
 //! Chart pattern rendering implementations
 //!
-//! Includes: XABCD, Cypher, Head & Shoulders, ABCD, Triangle, and Three Drives patterns.
+//! Includes: XABCD and the named harmonic patterns (Gartley, Bat, Butterfly, Crab, Shark,
+//! Cypher), Head & Shoulders, ABCD, Triangle, and Three Drives patterns.
 
-use crate::drawings::domain::{Drawing, DrawingToolType};
+use crate::drawings::domain::{Drawing, DrawingToolType, PatternConfig, WaveLabel, harmonic_rules};
 use crate::drawings::rendering::ChartView;
-use crate::styles::{stroke, typography};
+use crate::styles::stroke;
 use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Stroke};
+use egui::{Align2, Color32, Pos2, Rect, Stroke};
 
 /// The extension of the second correction, as the least and the greatest ratio, in which the third
 /// drive is expected to end.
 const THREE_DRIVES_EXTENSION: [f64; 2] = [1.272, 1.618];
 
+/// Gap between an anchor and its label.
+const LABEL_GAP: f32 = 6.0;
+
+/// Chord ends of a ratio of `leg` over `base`: the outermost anchors of the two legs.
+fn chord(leg: [usize; 2], base: [usize; 2]) -> [usize; 2] {
+    let all = [leg[0], leg[1], base[0], base[1]];
+    [
+        *all.iter().min().unwrap_or(&0),
+        *all.iter().max().unwrap_or(&0),
+    ]
+}
+
+/// Whether the anchor at `i` is a peak on screen: above the middle of its neighbours.
+fn is_peak(points: &[Pos2], i: usize) -> bool {
+    let p = points[i];
+    let before = i.checked_sub(1).and_then(|j| points.get(j)).unwrap_or(&p).y;
+    let after = points.get(i + 1).unwrap_or(&p).y;
+    p.y <= (before + after) / 2.0
+}
+
+/// Display name of a named harmonic pattern.
+fn harmonic_name(tool: DrawingToolType) -> &'static str {
+    match tool {
+        DrawingToolType::GartleyPattern => "Gartley",
+        DrawingToolType::BatPattern => "Bat",
+        DrawingToolType::ButterflyPattern => "Butterfly",
+        DrawingToolType::CrabPattern => "Crab",
+        DrawingToolType::SharkPattern => "Shark",
+        DrawingToolType::CypherPattern => "Cypher",
+        _ => "",
+    }
+}
+
 impl Drawing {
-    /// Render XABCD Harmonic Pattern - Gartley, Bat, Butterfly, Crab with Fibonacci ratios
-    pub(crate) fn render_xabcd_pattern(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
+    /// Saved pattern options, or the defaults.
+    pub(crate) fn pattern_config(&self) -> PatternConfig {
+        self.pattern.unwrap_or_default()
+    }
 
-        let labels = ["X", "A", "B", "C", "D"];
+    /// The pattern's legs between consecutive anchors.
+    pub(super) fn paint_pattern_legs(&self, painter: &egui::Painter) {
+        let stroke = Stroke::new(self.stroke_width, self.color32());
+        for leg in self.points.windows(2) {
+            painter.line_segment([leg[0], leg[1]], stroke);
+        }
+    }
 
-        // Draw pattern fill for completed pattern (PRZ - Potential Reversal Zone)
-        if self.points.len() >= 5 {
-            // Fill the ABCD portion
-            let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
-
-            // Fill XAB
+    /// Fills `polygon` with the drawing's fill colour, when it has one.
+    pub(super) fn paint_pattern_fill(&self, painter: &egui::Painter, polygon: Vec<Pos2>) {
+        if polygon.len() >= 3
+            && let Some(fill) = self.fill_color32()
+        {
             painter.add(egui::epaint::PathShape::convex_polygon(
-                vec![self.points[0], self.points[1], self.points[2]],
-                fill_color,
-                Stroke::NONE,
-            ));
-
-            // Fill BCD
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                vec![self.points[2], self.points[3], self.points[4]],
-                fill_color,
+                polygon,
+                fill,
                 Stroke::NONE,
             ));
         }
+    }
 
-        // Draw connecting lines
-        for i in 1..self.points.len() {
-            painter.line_segment(
-                [self.points[i - 1], self.points[i]],
-                Stroke::new(self.stroke_width, color),
-            );
+    /// Labels each anchor that has one, above a peak and below a trough, unless labels are hidden.
+    pub(super) fn paint_anchor_labels(&self, painter: &egui::Painter, labels: &[WaveLabel]) {
+        if !self.pattern_config().show_labels {
+            return;
         }
-
-        // Draw labels and anchor points
-        for (i, &point) in self.points.iter().enumerate() {
-            // Determine label position (above or below based on local extrema)
-            let is_peak = if i > 0 && i < self.points.len() - 1 {
-                point.y < self.points[i - 1].y && point.y < self.points[i + 1].y
-            } else if i == 0 {
-                self.points.len() > 1 && point.y < self.points[1].y
+        let color = self.color32();
+        for (i, label) in labels.iter().enumerate().take(self.points.len()) {
+            if label.text.is_empty() {
+                continue;
+            }
+            let point = self.points[i];
+            let galley = painter.layout_no_wrap(label.text.clone(), self.annotation_font(), color);
+            let size = galley.size();
+            let ring = if label.circled {
+                size.max_elem() / 2.0 + 3.0
             } else {
-                self.points.len() > 1 && point.y < self.points[i - 1].y
+                0.0
             };
-
-            let label_offset = if is_peak {
-                -DESIGN_TOKENS.sizing.technical_labels.elliott_label_size
+            let offset = LABEL_GAP + ring + size.y / 2.0;
+            let center = if is_peak(&self.points, i) {
+                point - egui::vec2(0.0, offset)
             } else {
-                DESIGN_TOKENS.sizing.technical_labels.elliott_label_size
+                point + egui::vec2(0.0, offset)
             };
-
-            // Anchor point
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            // Label with background
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.86);
-                let label_rect = Rect::from_center_size(
-                    label_pos,
-                    egui::Vec2::new(
-                        DESIGN_TOKENS.sizing.technical_labels.elliott_label_size,
-                        DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                    ) * (self.annotation_font().size / typography::XS).max(1.0),
-                );
-                painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
+            painter.galley(center - size / 2.0, galley, color);
+            if label.circled {
+                painter.circle_stroke(center, ring, Stroke::new(stroke::HAIRLINE, color));
             }
         }
-
-        // Calculate and display Fibonacci ratios for completed pattern
-        if self.points.len() >= 4 {
-            self.draw_harmonic_ratios(painter, color);
-        }
     }
 
-    /// Draw each ratio on the chord joining the outside ends of its two legs.
-    fn draw_harmonic_ratios(&self, painter: &egui::Painter, color: Color32) {
-        let [b, c, d] = self.harmonic_ratios();
-        let cypher = self.tool_type == DrawingToolType::CypherPattern;
-        for (ends, ratio) in [
-            ([0, 2], b),
-            (if cypher { [0, 3] } else { [1, 3] }, c),
-            (if cypher { [0, 4] } else { [2, 4] }, d),
-            (
-                [0, 4],
-                (!cypher).then(|| self.leg_ratio([1, 4], [0, 1])).flatten(),
-            ),
-        ] {
-            self.draw_pattern_ratio(painter, color, ends, ratio);
-        }
-    }
-
+    /// Draws a ratio on the dashed chord joining the outside ends of its two legs.
     fn draw_pattern_ratio(
         &self,
         painter: &egui::Painter,
-        color: Color32,
         [from, to]: [usize; 2],
         ratio: Option<f64>,
+        text_color: Color32,
     ) {
         let (Some(&a), Some(&b)) = (self.points.get(from), self.points.get(to)) else {
             return;
@@ -140,15 +119,16 @@ impl Drawing {
             painter,
             a,
             b,
-            Stroke::new(stroke::HAIRLINE, color.gamma_multiply(0.4)),
+            Stroke::new(stroke::HAIRLINE, self.color32().gamma_multiply(0.4)),
             DESIGN_TOKENS.spacing.sm,
             DESIGN_TOKENS.spacing.xs + DESIGN_TOKENS.spacing.hairline,
         );
         let Some(ratio) = ratio else {
             return;
         };
-        let galley = painter.layout_no_wrap(format!("{ratio:.3}"), self.annotation_font(), color);
-        let at = |t| egui::Align2::CENTER_BOTTOM.anchor_size(a.lerp(b, t), galley.size());
+        let galley =
+            painter.layout_no_wrap(format!("{ratio:.3}"), self.annotation_font(), text_color);
+        let at = |t| Align2::CENTER_BOTTOM.anchor_size(a.lerp(b, t), galley.size());
         let rect = [0.5, 0.4, 0.6, 0.3, 0.7]
             .into_iter()
             .map(at)
@@ -159,361 +139,165 @@ impl Drawing {
                     .any(|p| r.intersects(Rect::from_center_size(*p, egui::vec2(24.0, 48.0))))
             })
             .unwrap_or_else(|| at(0.5));
-        painter.galley(rect.min, galley, color);
+        painter.galley(rect.min, galley, text_color);
     }
 
-    /// Render Cypher Pattern - Similar to XABCD with Cypher-specific ratios
-    pub(crate) fn render_cypher_pattern(&self, painter: &egui::Painter) {
-        // Cypher uses same structure as XABCD but with different ideal ratios
-        // Ideal: B = 0.382-0.618, C = 1.13-1.414, D = 0.786
-        self.render_xabcd_pattern(painter);
-
-        // Add "Cypher" label if pattern is complete
+    /// XABCD and the named harmonic patterns: the X-A-B-C-D legs over the XAB and BCD bodies,
+    /// each ratio on its chord and, for a named pattern, its verdict at D.
+    pub(crate) fn render_harmonic_pattern(&self, painter: &egui::Painter) {
+        let config = self.pattern_config();
         if self.points.len() >= 5 {
-            let color =
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 200);
+            self.paint_pattern_fill(painter, self.points[0..3].to_vec());
+            self.paint_pattern_fill(painter, self.points[2..5].to_vec());
+        }
+        self.paint_pattern_legs(painter);
+        self.paint_anchor_labels(painter, &plain_labels(&["X", "A", "B", "C", "D"]));
 
-            let label_pos = Pos2::new(
-                (self.points[0].x + self.points[4].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::INFINITY, f32::min)
-                    - DESIGN_TOKENS.spacing.xxxl
-                    - DESIGN_TOKENS.spacing.sm,
+        let color = self.color32();
+        let theme = &DESIGN_TOKENS.semantic.extended;
+        let Some(rules) = harmonic_rules(self.tool_type) else {
+            if config.show_ratios {
+                for (ends, ratio) in [
+                    ([0, 2], self.leg_ratio([1, 2], [0, 1])),
+                    ([1, 3], self.leg_ratio([2, 3], [1, 2])),
+                    ([2, 4], self.leg_ratio([3, 4], [2, 3])),
+                    ([0, 4], self.leg_ratio([1, 4], [0, 1])),
+                ] {
+                    self.draw_pattern_ratio(painter, ends, ratio, color);
+                }
+            }
+            return;
+        };
+        let verdicts: Vec<_> = rules
+            .iter()
+            .map(|r| self.leg_ratio(r.leg, r.base).map(|v| r.band.contains(v)))
+            .collect();
+        if config.show_ratios {
+            for (rule, verdict) in rules.iter().zip(&verdicts) {
+                let text_color = match (config.show_validity, verdict) {
+                    (true, Some(true)) => theme.bullish,
+                    (true, Some(false)) => theme.bearish,
+                    _ => color,
+                };
+                self.draw_pattern_ratio(
+                    painter,
+                    chord(rule.leg, rule.base),
+                    self.leg_ratio(rule.leg, rule.base),
+                    text_color,
+                );
+            }
+        }
+        if config.show_validity && self.points.len() >= 5 {
+            let valid = verdicts.iter().all(|v| *v == Some(true));
+            self.paint_harmonic_verdict(painter, valid);
+        }
+    }
+
+    /// The pattern's name and a check or cross beyond D's label.
+    fn paint_harmonic_verdict(&self, painter: &egui::Painter, valid: bool) {
+        let theme = &DESIGN_TOKENS.semantic.extended;
+        let color = if valid { theme.bullish } else { theme.bearish };
+        let d = self.points[4];
+        let galley = painter.layout_no_wrap(
+            harmonic_name(self.tool_type).to_owned(),
+            self.annotation_font(),
+            color,
+        );
+        let size = galley.size();
+        let mark = size.y * 0.6;
+        let width = size.x + 4.0 + mark;
+        // Beyond the D label, on the same side.
+        let offset = LABEL_GAP * 2.0 + size.y * 1.5;
+        let center = if is_peak(&self.points, 4) {
+            d - egui::vec2(0.0, offset)
+        } else {
+            d + egui::vec2(0.0, offset)
+        };
+        let left = center.x - width / 2.0;
+        painter.galley(Pos2::new(left, center.y - size.y / 2.0), galley, color);
+        let m = Rect::from_center_size(
+            Pos2::new(left + size.x + 4.0 + mark / 2.0, center.y),
+            egui::Vec2::splat(mark),
+        );
+        let stroke = Stroke::new(1.5, color);
+        if valid {
+            painter.line_segment([m.left_center(), m.center_bottom()], stroke);
+            painter.line_segment([m.center_bottom(), m.right_top()], stroke);
+        } else {
+            painter.line_segment([m.left_top(), m.right_bottom()], stroke);
+            painter.line_segment([m.left_bottom(), m.right_top()], stroke);
+        }
+    }
+
+    /// Head and Shoulders: the seven anchors, the neckline through the troughs and the target.
+    pub(crate) fn render_head_and_shoulders(&self, painter: &egui::Painter) {
+        let config = self.pattern_config();
+        if self.points.len() >= 5 {
+            self.paint_pattern_fill(painter, self.points.clone());
+        }
+        self.paint_pattern_legs(painter);
+        self.paint_anchor_labels(painter, &plain_labels(&["", "LS", "", "H", "", "RS", ""]));
+
+        let Some((neckline, target_y)) = self.neckline() else {
+            return;
+        };
+        let color = self.color32();
+        if config.show_neckline {
+            painter.line_segment(neckline, Stroke::new(self.stroke_width, color));
+        }
+        if config.show_target {
+            let last_x = self.points[self.points.len() - 1].x;
+            let end = last_x + DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x;
+            super::utils::draw_dashed_line(
+                painter,
+                Pos2::new(last_x, target_y),
+                Pos2::new(end, target_y),
+                Stroke::new(stroke::HAIRLINE, color),
+                DESIGN_TOKENS.spacing.md + DESIGN_TOKENS.spacing.xs,
+                DESIGN_TOKENS.spacing.sm,
             );
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.86);
-            let label_rect = Rect::from_center_size(
-                label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
             painter.text(
-                label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Cypher",
+                Pos2::new(end + LABEL_GAP, target_y),
+                Align2::LEFT_CENTER,
+                "Target",
                 self.annotation_font(),
                 color,
             );
         }
     }
 
-    /// Render Head and Shoulders Pattern - With neckline and target projection
-    pub(crate) fn render_head_and_shoulders(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Labels for H&S points: LS (Left Shoulder), Head, RS (Right Shoulder)
-        let labels = ["", "LS", "", "Head", "", "RS", ""];
-
-        // Draw pattern fill
-        if self.points.len() >= 5 {
-            let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                self.points.clone(),
-                fill_color,
-                Stroke::NONE,
-            ));
-        }
-
-        // Draw connecting lines
-        for (i, &point) in self.points.iter().enumerate() {
-            if i > 0 {
-                painter.line_segment(
-                    [self.points[i - 1], point],
-                    Stroke::new(self.stroke_width, color),
-                );
-            }
-
-            // Anchor points
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            // Draw labels for shoulder/head points
-            if i < labels.len() && !labels[i].is_empty() {
-                let is_peak = i > 0
-                    && i < self.points.len() - 1
-                    && point.y < self.points[i - 1].y
-                    && point.y < self.points[i + 1].y;
-                let label_offset = if is_peak {
-                    -DESIGN_TOKENS.spacing.xxxl
-                } else {
-                    DESIGN_TOKENS.spacing.xxxl
-                };
-
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.86);
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_rect = Rect::from_center_size(
-                    label_pos,
-                    egui::Vec2::new(
-                        DESIGN_TOKENS.sizing.technical_labels.hs_label_width,
-                        DESIGN_TOKENS.sizing.technical_labels.gann_label_height,
-                    ) * (self.annotation_font().size / typography::XS).max(1.0),
-                );
-                painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Draw neckline and target projection for complete pattern
-        if let Some((neckline, target_y)) = self.neckline() {
-            let neckline_color =
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 200);
-            let last_x = self.points[self.points.len() - 1].x;
-
-            painter.line_segment(neckline, Stroke::new(self.stroke_width, neckline_color));
-
-            // Draw target line (dashed)
-            let target_color = DESIGN_TOKENS.semantic.indicators.ma.gamma_multiply(0.7); // Orange
-            super::utils::draw_dashed_line(
-                painter,
-                Pos2::new(last_x, target_y),
-                Pos2::new(
-                    last_x + DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x,
-                    target_y,
-                ),
-                Stroke::new(stroke::HAIRLINE, target_color),
-                DESIGN_TOKENS.spacing.md + DESIGN_TOKENS.spacing.xs,
-                DESIGN_TOKENS.spacing.sm,
-            );
-
-            // Target label
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.86);
-            let target_label_pos = Pos2::new(
-                last_x
-                    + DESIGN_TOKENS.sizing.technical_labels.fib_label_offset_x
-                    + DESIGN_TOKENS.spacing.lg,
-                target_y,
-            );
-            let target_rect = Rect::from_center_size(
-                target_label_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.line_label_width
-                        + DESIGN_TOKENS.spacing.sm,
-                    DESIGN_TOKENS.sizing.technical_labels.gann_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(target_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                target_label_pos,
-                egui::Align2::CENTER_CENTER,
-                "Target",
-                self.annotation_font(),
-                target_color,
-            );
-        }
-    }
-
-    /// Render ABCD Pattern - With AB=CD validation and Fibonacci overlay
+    /// ABCD: the A-B-C-D legs, with C's retracement of AB and D's extension of BC.
     pub(crate) fn render_abcd_pattern(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        let labels = ["A", "B", "C", "D"];
-
-        // Draw fill for completed pattern
         if self.points.len() >= 4 {
-            let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                self.points[0..4].to_vec(),
-                fill_color,
-                Stroke::NONE,
-            ));
+            self.paint_pattern_fill(painter, self.points[0..4].to_vec());
         }
-
-        // Draw connecting lines
-        for i in 1..self.points.len() {
-            painter.line_segment(
-                [self.points[i - 1], self.points[i]],
-                Stroke::new(self.stroke_width, color),
-            );
-        }
-
-        self.draw_pattern_ratio(painter, color, [0, 2], self.leg_ratio([1, 2], [0, 1]));
-        self.draw_pattern_ratio(painter, color, [1, 3], self.leg_ratio([2, 3], [1, 2]));
-
-        // Draw anchor points and labels
-        for (i, &point) in self.points.iter().enumerate() {
-            let is_peak = if i > 0 && i < self.points.len() - 1 {
-                point.y < self.points[i - 1].y && point.y < self.points[i + 1].y
-            } else if i == 0 {
-                self.points.len() > 1 && point.y < self.points[1].y
-            } else {
-                self.points.len() > 1 && point.y < self.points[i - 1].y
-            };
-
-            let label_offset = if is_peak {
-                -DESIGN_TOKENS.sizing.technical_labels.elliott_label_size
-            } else {
-                DESIGN_TOKENS.sizing.technical_labels.elliott_label_size
-            };
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.86);
-                let label_rect = Rect::from_center_size(
-                    label_pos,
-                    egui::Vec2::new(
-                        DESIGN_TOKENS.sizing.technical_labels.elliott_label_size,
-                        DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                    ) * (self.annotation_font().size / typography::XS).max(1.0),
-                );
-                painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
-
-        // Calculate and display AB=CD ratio
-        if self.points.len() >= 4
-            && let Some(ratio) = self.abcd_ratio()
-        {
-            // Ratio label
-            let ratio_pos = Pos2::new(
-                (self.points[0].x + self.points[3].x) / 2.0,
-                self.points
-                    .iter()
-                    .map(|p| p.y)
-                    .fold(f32::NEG_INFINITY, f32::max)
-                    + DESIGN_TOKENS.spacing.xxxl
-                    + DESIGN_TOKENS.spacing.sm,
-            );
-
-            // Color based on how close to 1.0 (perfect AB=CD)
-            let ratio_color = if (ratio - 1.0).abs() < 0.05 {
-                DESIGN_TOKENS.semantic.extended.bullish // Green - good
-            } else if (ratio - 1.0).abs() < 0.15 {
-                DESIGN_TOKENS.semantic.extended.favorite_gold // Amber - acceptable
-            } else {
-                DESIGN_TOKENS.semantic.indicators.ma // Orange - weak
-            };
-
-            let label_bg = DESIGN_TOKENS
-                .semantic
-                .extended
-                .chart_axis_bg
-                .gamma_multiply(0.86);
-            let label_rect = Rect::from_center_size(
-                ratio_pos,
-                egui::Vec2::new(
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_width,
-                    DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                ) * (self.annotation_font().size / typography::XS).max(1.0),
-            );
-            painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-            painter.text(
-                ratio_pos,
-                egui::Align2::CENTER_CENTER,
-                format!("CD/AB: {ratio:.2}"),
-                self.annotation_font(),
-                ratio_color,
-            );
+        self.paint_pattern_legs(painter);
+        self.paint_anchor_labels(painter, &plain_labels(&["A", "B", "C", "D"]));
+        if self.pattern_config().show_ratios {
+            let color = self.color32();
+            self.draw_pattern_ratio(painter, [0, 2], self.leg_ratio([1, 2], [0, 1]), color);
+            self.draw_pattern_ratio(painter, [1, 3], self.leg_ratio([2, 3], [1, 2]), color);
         }
     }
 
-    /// Render Triangle Pattern - With apex calculation and breakout projection
+    /// Triangle: the zigzag between two boundaries, run on dashed to where they meet.
     pub(crate) fn render_triangle_pattern(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Four anchors zigzag between the two boundaries; fewer are a plain polygon.
+        let color = self.color32();
         let boundaries = triangle_boundaries(&self.points, painter.clip_rect().right());
-        let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
         if self.points.len() == 3 {
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                self.points.clone(),
-                fill_color,
-                Stroke::NONE,
-            ));
+            self.paint_pattern_fill(painter, self.points.clone());
         } else if let Some((_, fill)) = &boundaries {
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                fill.clone(),
-                fill_color,
-                Stroke::NONE,
-            ));
+            self.paint_pattern_fill(painter, fill.clone());
         }
-
-        // Draw connecting lines
-        for (i, &point) in self.points.iter().enumerate() {
-            if i > 0 {
-                painter.line_segment(
-                    [self.points[i - 1], point],
-                    Stroke::new(self.stroke_width, color),
-                );
-            }
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-        }
-
+        self.paint_pattern_legs(painter);
         if self.points.len() == 3 {
             painter.line_segment(
                 [self.points[2], self.points[0]],
                 Stroke::new(self.stroke_width, color),
             );
         }
-
-        // Draw both boundaries through their anchors, then dashed on to where they meet.
         if let Some((lines, _)) = &boundaries {
-            let extend_color =
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 80);
+            let extend = color.gamma_multiply(0.3);
             for (line, last) in lines.iter().zip([self.points[2], self.points[3]]) {
                 painter.line_segment([line[0], last], Stroke::new(self.stroke_width, color));
                 if line[1].x > last.x {
@@ -521,177 +305,69 @@ impl Drawing {
                         painter,
                         last,
                         line[1],
-                        Stroke::new(stroke::HAIRLINE, extend_color),
+                        Stroke::new(stroke::HAIRLINE, extend),
                         DESIGN_TOKENS.spacing.sm + DESIGN_TOKENS.spacing.hairline,
                         DESIGN_TOKENS.spacing.xs + DESIGN_TOKENS.spacing.hairline,
                     );
                 }
             }
         }
-
-        if self.points.len() >= 3 {
-            // Draw numbered labels
-            for (i, &point) in self.points.iter().enumerate() {
-                let label_offset = if i % 2 == 0 {
-                    -DESIGN_TOKENS.sizing.technical_labels.elliott_label_size
-                } else {
-                    DESIGN_TOKENS.sizing.technical_labels.elliott_label_size
-                };
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.86);
-                let label_rect = Rect::from_center_size(
-                    label_pos,
-                    egui::Vec2::new(
-                        DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                        DESIGN_TOKENS.sizing.technical_labels.gann_label_height,
-                    ) * (self.annotation_font().size / typography::XS).max(1.0),
-                );
-                painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    format!("{}", i + 1),
-                    self.annotation_font(),
-                    color,
-                );
-            }
-        }
+        self.paint_anchor_labels(painter, &plain_labels(&["A", "B", "C", "D"]));
     }
 
-    /// Render Three Drives Pattern - With each leg's ratio and the reversal zone
+    /// Three Drives: the drives and their corrections, each leg's ratio and the reversal zone.
     pub(crate) fn render_three_drives_pattern(&self, painter: &egui::Painter, view: &ChartView) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Draw fill for complete pattern
+        let config = self.pattern_config();
         if self.points.len() >= 7 {
-            let fill_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
-            painter.add(egui::epaint::PathShape::convex_polygon(
-                self.points.clone(),
-                fill_color,
-                Stroke::NONE,
-            ));
+            self.paint_pattern_fill(painter, self.points.clone());
         }
+        self.paint_pattern_legs(painter);
+        self.paint_anchor_labels(painter, &plain_labels(&["", "1", "A", "2", "B", "3", ""]));
 
-        // Draw connecting lines
-        for i in 1..self.points.len() {
-            painter.line_segment(
-                [self.points[i - 1], self.points[i]],
-                Stroke::new(self.stroke_width, color),
-            );
-        }
-
-        // Draw points and labels
-        let labels = ["1", "2", "3", "4", "5", "6", "7"];
-        for (i, &point) in self.points.iter().enumerate() {
-            // Determine if peak or trough for label positioning
-            let is_peak = if i > 0 && i < self.points.len() - 1 {
-                point.y < self.points[i - 1].y && point.y < self.points[i + 1].y
-            } else {
-                i % 2 == 1 // Odd points are typically peaks in three drives
-            };
-
-            let label_offset = if is_peak {
-                -DESIGN_TOKENS.spacing.xxxl
-            } else {
-                DESIGN_TOKENS.spacing.xxxl
-            };
-
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.lg, color);
-            painter.circle_stroke(
-                point,
-                DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, Color32::WHITE),
-            );
-
-            if i < labels.len() {
-                let label_pos = Pos2::new(point.x, point.y + label_offset);
-                let label_bg = DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.86);
-                let label_rect = Rect::from_center_size(
-                    label_pos,
-                    egui::Vec2::new(
-                        DESIGN_TOKENS.sizing.technical_labels.elliott_label_size,
-                        DESIGN_TOKENS.sizing.technical_labels.pattern_label_height,
-                    ) * (self.annotation_font().size / typography::XS).max(1.0),
-                );
-                painter.rect_filled(label_rect, DESIGN_TOKENS.rounding.sm, label_bg);
-                painter.text(
-                    label_pos,
-                    egui::Align2::CENTER_CENTER,
-                    labels[i],
-                    self.annotation_font(),
-                    color,
-                );
+        let color = self.color32();
+        if config.show_ratios {
+            // Each correction's retracement of the drive before it and each drive's extension
+            // of the correction before it, on the chord joining the outside ends of the two legs.
+            for (ends, ratio) in [[0, 2], [1, 3], [2, 4], [3, 5]]
+                .into_iter()
+                .zip(self.three_drives_ratios())
+            {
+                self.draw_pattern_ratio(painter, ends, ratio, color);
             }
         }
 
-        // Each correction's retracement of the drive before it and each drive's extension of the
-        // correction before it, on the chord joining the outside ends of the two legs
-        for (ends, ratio) in [[0, 2], [1, 3], [2, 4], [3, 5]]
-            .into_iter()
-            .zip(self.three_drives_ratios())
-        {
-            self.draw_pattern_ratio(painter, color, ends, ratio);
-        }
-
-        // Draw drive labels (Drive 1, 2, 3) at the peaks
-        if self.points.len() >= 5 {
-            let drive_color =
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 180);
-
-            // Identify drive peaks (typically points 1, 3, 5 for bullish)
-            let drive_points = [1usize, 3, 5];
-            let drive_labels = ["Drive 1", "Drive 2", "Drive 3"];
-
-            for (di, &pi) in drive_points.iter().enumerate() {
-                if pi < self.points.len() {
-                    let drive_pos = Pos2::new(
-                        self.points[pi].x,
-                        self.points[pi].y - DESIGN_TOKENS.sizing.technical_labels.hs_label_width,
-                    );
-                    painter.text(
-                        drive_pos,
-                        egui::Align2::CENTER_CENTER,
-                        drive_labels[di],
-                        self.annotation_font(),
-                        drive_color,
-                    );
-                }
-            }
-        }
-
-        // Draw the reversal zone, the price interval the third drive is expected to end in, from
-        // the last drive's anchor to the pattern's last
-        if self.points.len() >= 7
+        // The price interval the third drive is expected to end in, from the last drive's
+        // anchor to the pattern's last.
+        if config.show_zone
+            && self.points.len() >= 7
             && let Some(prices) = self.three_drives_zone()
         {
-            let reversal_color = self.fill_color32().unwrap_or(Color32::TRANSPARENT);
             let [y1, y2] = prices.map(|price| (view.price_to_y)(price));
             let (x1, x2) = (self.points[5].x, self.points[6].x);
-            let zone_rect = Rect::from_x_y_ranges(x1.min(x2)..=x1.max(x2), y1.min(y2)..=y1.max(y2));
-            painter.rect_filled(zone_rect, DESIGN_TOKENS.rounding.md, reversal_color);
-
+            let zone = Rect::from_x_y_ranges(x1.min(x2)..=x1.max(x2), y1.min(y2)..=y1.max(y2));
+            if let Some(fill) = self.fill_color32() {
+                painter.rect_filled(zone, 0.0, fill);
+            }
             painter.text(
-                zone_rect.center(),
-                egui::Align2::CENTER_CENTER,
+                zone.center(),
+                Align2::CENTER_CENTER,
                 "PRZ",
                 self.annotation_font(),
-                DESIGN_TOKENS.semantic.extended.bullish,
+                color,
             );
         }
     }
+}
+
+/// Labels without circles.
+fn plain_labels(texts: &[&str]) -> Vec<WaveLabel> {
+    texts
+        .iter()
+        .map(|t| WaveLabel {
+            text: (*t).to_owned(),
+            circled: false,
+        })
+        .collect()
 }
 
 /// Triangle pattern boundaries from the zigzag anchors (first peak, first trough, second peak,
@@ -763,28 +439,6 @@ impl Drawing {
         head_and_shoulders_neckline(&self.points, extend)
     }
 
-    /// B's price retracement of XA, C's retracement of AB (extension of XA for Cypher), and D's price
-    /// retracement of XC for Cypher or extension of BC for XABCD.
-    fn harmonic_ratios(&self) -> [Option<f64>; 3] {
-        if self.tool_type == DrawingToolType::ABCDPattern {
-            return [
-                self.leg_ratio([1, 2], [0, 1]),
-                self.leg_ratio([2, 3], [1, 2]),
-                None,
-            ];
-        }
-        let cypher = self.tool_type == DrawingToolType::CypherPattern;
-        [
-            self.leg_ratio([1, 2], [0, 1]),
-            if cypher {
-                self.leg_ratio([0, 3], [0, 1])
-            } else {
-                self.leg_ratio([2, 3], [1, 2])
-            },
-            self.leg_ratio([3, 4], if cypher { [0, 3] } else { [2, 3] }),
-        ]
-    }
-
     /// Price ratios of the Three drives legs: correction 1 over drive 1, drive 2 over correction 1,
     /// correction 2 over drive 2 and drive 3 over correction 2.
     fn three_drives_ratios(&self) -> [Option<f64>; 4] {
@@ -810,11 +464,6 @@ impl Drawing {
         Some(THREE_DRIVES_EXTENSION.map(|ratio| to + (from - to) * ratio))
     }
 
-    /// Price ratio of an ABCD pattern's CD leg to its AB leg.
-    fn abcd_ratio(&self) -> Option<f64> {
-        self.leg_ratio([2, 3], [0, 1])
-    }
-
     /// Price height of the leg between two anchors over that of a base leg; `None` when an anchor
     /// has no chart coordinates or the base leg is flat.
     fn leg_ratio(&self, leg: [usize; 2], base: [usize; 2]) -> Option<f64> {
@@ -832,7 +481,40 @@ impl Drawing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drawings::domain::{ChartPoint, DrawingToolType};
+    use crate::drawings::domain::{ChartPoint, PatternConfig};
+
+    fn pattern(tool: DrawingToolType, prices: &[f64]) -> Drawing {
+        // Screen y is 1000 / price, a non-linear scale on which screen ratios differ from price
+        // ratios.
+        let mut drawing = Drawing::new(0, tool);
+        for (i, &price) in prices.iter().enumerate() {
+            let x = 40.0 * i as f32;
+            drawing.chart_points.push(ChartPoint::new(x, price));
+            drawing.points.push(Pos2::new(x, (1000.0 / price) as f32));
+        }
+        drawing
+    }
+
+    fn texts(drawing: &Drawing) -> Vec<(String, Color32)> {
+        let output = egui::Context::default().run_ui(egui::RawInput::default(), |ui| {
+            let painter = ui.painter();
+            match drawing.tool_type {
+                DrawingToolType::ABCDPattern => drawing.render_abcd_pattern(painter),
+                DrawingToolType::HeadAndShoulders => drawing.render_head_and_shoulders(painter),
+                _ => drawing.render_harmonic_pattern(painter),
+            }
+        });
+        let found = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(t) => Some((t.galley.job.text.clone(), t.fallback_color)),
+                _ => None,
+            })
+            .collect();
+        output.drop_without_applying_deltas();
+        found
+    }
 
     #[test]
     fn head_and_shoulders_neckline_runs_through_the_troughs() {
@@ -925,123 +607,97 @@ mod tests {
         }
     }
 
+    /// Ratios are measured in price: XABCD shows B, C, D and AD/XA; ABCD shows C and D; the
+    /// named patterns show their own rules, Cypher measuring C against XA and D against XC.
     #[test]
     fn pattern_ratios_are_measured_in_price() {
-        // Screen y is 1000 / price, a non-linear scale on which screen ratios differ from price ratios.
-        let pattern = |tool, prices: &[f64]| {
-            let mut drawing = Drawing::new(0, tool);
-            for (i, &price) in prices.iter().enumerate() {
-                let x = 10.0 * i as f32;
-                drawing.chart_points.push(ChartPoint::new(x, price));
-                drawing.points.push(Pos2::new(x, (1000.0 / price) as f32));
-            }
-            drawing
-        };
-        // [B retracement, C extension, D retracement/extension, AD/XA or CD/AB]. Cypher measures
-        // C against XA and D against XC; XABCD measures D against BC. ABCD uses the
-        // first four anchors as A, B, C, D.
-        use DrawingToolType::{CypherPattern, XABCDPattern};
+        use DrawingToolType::{ABCDPattern, CypherPattern, XABCDPattern};
         let cases = [
             (
-                DrawingToolType::ABCDPattern,
+                ABCDPattern,
                 &[200.0, 100.0, 161.8, 38.2][..],
-                [Some(0.618), Some(2.0), None, Some(1.236)],
+                vec![0.618, 2.0],
             ),
             (
                 XABCDPattern,
-                &[100.0, 200.0, 138.2, 176.4, 78.6][..],
-                [
-                    Some(61.8 / 100.0),
-                    Some(38.2 / 61.8),
-                    Some(97.8 / 38.2),
-                    Some(121.4 / 100.0),
-                ],
+                &[100.0, 200.0, 138.2, 176.4, 78.6],
+                vec![0.618, 38.2 / 61.8, 97.8 / 38.2, 121.4 / 100.0],
             ),
-            (
-                XABCDPattern,
-                &[100.0, 150.0, 125.0, 175.0],
-                [Some(25.0 / 50.0), Some(2.0), None, None],
-            ),
-            (
-                XABCDPattern,
-                &[100.0, 100.0, 138.2, 176.4],
-                [None, Some(1.0), None, None],
-            ),
+            (XABCDPattern, &[100.0, 150.0, 125.0, 175.0], vec![0.5, 2.0]),
             (
                 CypherPattern,
                 &[100.0, 200.0, 150.0, 227.2, 127.2208],
-                [Some(0.5), Some(1.272), Some(0.786), None],
+                vec![0.5, 1.272, 0.786],
             ),
             (
                 CypherPattern,
                 &[300.0, 200.0, 250.0, 172.8, 272.7792],
-                [Some(0.5), Some(1.272), Some(0.786), None],
-            ),
-            (
-                CypherPattern,
-                &[100.0, 200.0, 150.0, 227.2],
-                [Some(0.5), Some(1.272), None, None],
-            ),
-            (
-                CypherPattern,
-                &[100.0, 100.0, 125.0, 150.0, 110.7],
-                [None, None, Some(0.786), None],
-            ),
-            (
-                CypherPattern,
-                &[100.0, 200.0, 150.0, 100.0, 120.0],
-                [Some(0.5), Some(0.0), None, None],
+                vec![0.5, 1.272, 0.786],
             ),
         ];
-        for (tool, prices, expected) in cases {
-            let drawing = pattern(tool, prices);
-            let [b, c, d] = drawing.harmonic_ratios();
-            let ctx = egui::Context::default();
-            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                let painter = ui.painter().clone();
-                if tool == DrawingToolType::ABCDPattern {
-                    drawing.render_abcd_pattern(&painter);
-                } else {
-                    drawing.render_xabcd_pattern(&painter);
-                }
-            });
-            let labels: Vec<_> = output
-                .shapes
-                .iter()
-                .filter_map(|shape| {
-                    if let egui::Shape::Text(t) = &shape.shape {
-                        Some(t.galley.job.text.clone())
-                    } else {
-                        None
-                    }
-                })
+        for (tool, prices, ratios) in cases {
+            let labels: Vec<_> = texts(&pattern(tool, prices))
+                .into_iter()
+                .map(|(t, _)| t)
                 .collect();
-            output.drop_without_applying_deltas();
-            for ratio in expected[..3]
-                .iter()
-                .copied()
-                .flatten()
-                .chain((tool == XABCDPattern).then_some(expected[3]).flatten())
-            {
+            for ratio in ratios {
                 assert!(
                     labels.contains(&format!("{ratio:.3}")),
-                    "{tool:?}: {labels:?}"
+                    "{tool:?} {ratio}: {labels:?}"
                 );
             }
-            let placement = match tool {
-                XABCDPattern => drawing.leg_ratio([1, 4], [0, 1]),
-                DrawingToolType::ABCDPattern => drawing.abcd_ratio(),
-                _ => None,
-            };
-            for (actual, expected) in [b, c, d, placement].into_iter().zip(expected) {
-                match (actual, expected) {
-                    (Some(a), Some(e)) => {
-                        assert!((a - e).abs() < 1e-6, "{tool:?} {prices:?}: {a} != {e}")
-                    }
-                    _ => assert_eq!(actual, expected, "{tool:?} {prices:?}"),
-                }
-            }
         }
+    }
+
+    /// A named harmonic colours each ratio by its rule and names itself at D, green when every
+    /// rule holds and red otherwise; both can be hidden.
+    #[test]
+    fn harmonic_patterns_judge_their_ratios() {
+        let theme = &DESIGN_TOKENS.semantic.extended;
+        // Gartley: AB/XA 0.618, BC/AB 0.618, CD/BC 1.272, AD/XA 0.786.
+        let ideal = [100.0, 200.0, 138.2, 176.4, 121.4];
+        let gartley = pattern(DrawingToolType::GartleyPattern, &ideal);
+        let found = texts(&gartley);
+        let color_of = |text: &str| found.iter().find(|(t, _)| t == text).map(|(_, c)| *c);
+        assert_eq!(color_of("Gartley"), Some(theme.bullish), "{found:?}");
+        assert_eq!(color_of("0.618"), Some(theme.bullish), "{found:?}");
+        for label in ["X", "A", "B", "C", "D"] {
+            assert!(color_of(label).is_some(), "{label}: {found:?}");
+        }
+
+        // The same anchors are no Bat: AB/XA 0.618 lies outside its 0.382 to 0.5.
+        let bat = pattern(DrawingToolType::BatPattern, &ideal);
+        let found = texts(&bat);
+        let color_of = |text: &str| found.iter().find(|(t, _)| t == text).map(|(_, c)| *c);
+        assert_eq!(color_of("Bat"), Some(theme.bearish), "{found:?}");
+
+        let mut quiet = gartley.clone();
+        quiet.pattern = Some(PatternConfig {
+            show_labels: false,
+            show_ratios: false,
+            show_validity: false,
+            ..PatternConfig::default()
+        });
+        assert!(texts(&quiet).is_empty());
+    }
+
+    /// Head and Shoulders names its shoulders and head, and shows the target unless hidden.
+    #[test]
+    fn head_and_shoulders_labels_and_target_follow_settings() {
+        let mut drawing = pattern(
+            DrawingToolType::HeadAndShoulders,
+            &[10.0, 5.0, 8.0, 4.0, 8.0, 5.0, 10.0],
+        );
+        let found: Vec<_> = texts(&drawing).into_iter().map(|(t, _)| t).collect();
+        for label in ["LS", "H", "RS", "Target"] {
+            assert!(found.contains(&label.to_owned()), "{label}: {found:?}");
+        }
+        drawing.pattern = Some(PatternConfig {
+            show_target: false,
+            ..PatternConfig::default()
+        });
+        let found: Vec<_> = texts(&drawing).into_iter().map(|(t, _)| t).collect();
+        assert!(!found.contains(&"Target".to_owned()));
     }
 
     #[test]

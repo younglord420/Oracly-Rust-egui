@@ -23,7 +23,7 @@ impl Drawing {
             (self.points.as_slice(), self.chart_points.as_slice())
         else {
             if let Some(&point) = self.points.first() {
-                painter.circle_filled(point, DESIGN_TOKENS.rounding.md, self.color32());
+                crate::drawings::rendering::style::placed_anchor(painter, point, self.color32());
             }
             return;
         };

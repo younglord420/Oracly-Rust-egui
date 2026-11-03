@@ -247,6 +247,7 @@ impl DrawingPropertiesDialog {
                 drawing.fib_config = old.fib_config;
                 drawing.pitchfork = old.pitchfork;
                 drawing.gann = old.gann;
+                drawing.pattern = old.pattern;
                 drawing.ghost_feed = old.ghost_feed;
                 drawing.position_size = old.position_size;
                 drawing.position_sizing = old.position_sizing;

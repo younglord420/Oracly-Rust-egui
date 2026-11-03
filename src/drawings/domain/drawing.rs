@@ -10,8 +10,8 @@
 
 use super::{
     ArrowStyle, ChartPoint, DrawingToolType, FibonacciConfig, FontWeight, GannConfig,
-    GhostFeedConfig, PitchforkConfig, PositionSize, PositionSizing, RegressionTrendConfig,
-    TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility,
+    GhostFeedConfig, PatternConfig, PitchforkConfig, PositionSize, PositionSizing,
+    RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility,
 };
 
 use crate::data::VolumeProfileConfig;
@@ -164,6 +164,9 @@ pub struct Drawing {
     /// Price and time divisions of Gann boxes and squares.
     #[serde(default)]
     pub gann: Option<GannConfig>,
+    /// Annotations shown by the pattern, Elliott wave and cycle tools.
+    #[serde(default)]
+    pub pattern: Option<PatternConfig>,
     /// Average range and noise, in ticks, of the candles a Ghost Feed projects.
     #[serde(default)]
     pub ghost_feed: Option<GhostFeedConfig>,
@@ -227,6 +230,11 @@ impl Drawing {
             fill_color: match tool_type {
                 DrawingToolType::XABCDPattern
                 | DrawingToolType::CypherPattern
+                | DrawingToolType::GartleyPattern
+                | DrawingToolType::BatPattern
+                | DrawingToolType::ButterflyPattern
+                | DrawingToolType::CrabPattern
+                | DrawingToolType::SharkPattern
                 | DrawingToolType::ABCDPattern
                 | DrawingToolType::TrianglePattern => Some([242, 54, 69, 25]),
                 DrawingToolType::HeadAndShoulders
@@ -313,6 +321,7 @@ impl Drawing {
                 DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel
             ),
             gann: None,
+            pattern: None,
             ghost_feed: None,
             // Z-order (default: 0, higher values render on top)
             z_order: 0,

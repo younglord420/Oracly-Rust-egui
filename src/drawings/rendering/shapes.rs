@@ -3,7 +3,6 @@
 //! Includes: rotated rect, double curve, brush, highlighter, path, curve, and sine line.
 
 use crate::drawings::domain::{Drawing, DrawingToolType};
-use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Shape, Stroke};
 
 impl Drawing {
@@ -164,20 +163,11 @@ impl Drawing {
         );
         let stroke = Stroke::new(self.stroke_width, color);
 
-        // Draw connected line segments through all points
-        for (i, &point) in self.points.iter().enumerate() {
-            if i > 0 {
-                painter.line_segment([self.points[i - 1], point], stroke);
-            }
-            // Keep the endpoint clear for its arrowhead.
-            if i + 1 < self.points.len() || !self.arrow_end_style.is_visible() {
-                painter.circle_filled(point, DESIGN_TOKENS.rounding.sm, color);
-            }
+        if let [point] = self.points[..] {
+            super::style::placed_anchor(painter, point, color);
         }
-
-        // Larger circle at start point
-        if !self.points.is_empty() {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.md, color);
+        for pair in self.points.windows(2) {
+            painter.line_segment([pair[0], pair[1]], stroke);
         }
     }
 
@@ -201,16 +191,6 @@ impl Drawing {
         for pair in curve_points(p0, p1, p2).windows(2) {
             painter.line_segment([pair[0], pair[1]], stroke);
         }
-
-        // Draw anchor points
-        painter.circle_filled(p0, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_filled(p2, DESIGN_TOKENS.rounding.md, color);
-        // Draw control point (smaller, semi-transparent)
-        painter.circle_filled(
-            p1,
-            DESIGN_TOKENS.rounding.sm,
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 128),
-        );
     }
 
     /// The curve's start, control and end points: the control point is the

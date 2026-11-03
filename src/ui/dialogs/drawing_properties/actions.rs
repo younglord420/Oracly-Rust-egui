@@ -231,6 +231,7 @@ impl DrawingProps {
                 drawing.fib_config = settings.fib_config.clone();
                 drawing.pitchfork = settings.pitchfork.clone();
                 drawing.gann = settings.gann.clone();
+                drawing.pattern = settings.pattern;
                 drawing.ghost_feed = settings.ghost_feed;
                 drawing.position_size = settings.position_size;
                 drawing.position_sizing = settings.position_sizing;

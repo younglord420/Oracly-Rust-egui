@@ -9,6 +9,7 @@ mod drawing;
 mod gann;
 mod ghost_feed;
 mod options;
+mod pattern;
 mod pitchfork;
 mod template;
 
@@ -25,6 +26,9 @@ pub use options::{
     ArrowStyle, DrawingOptions, FibPreset, FibonacciConfig, FibonacciLevel, FontWeight, HandlePos,
     PositionSize, PositionSizing, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
     TextVerticalAlign, TimeframeVisibility,
+};
+pub use pattern::{
+    HarmonicRule, PatternConfig, RatioBand, Wave, WaveDegree, WaveLabel, harmonic_rules,
 };
 pub use pitchfork::{PitchforkConfig, PitchforkLevel};
 pub use template::DrawingTemplate;

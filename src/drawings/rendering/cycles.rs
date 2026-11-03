@@ -4,8 +4,6 @@
 
 use super::style::circle_sides;
 use crate::drawings::domain::Drawing;
-use crate::styles::stroke;
-use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke};
 
 impl Drawing {
@@ -37,6 +35,7 @@ impl Drawing {
         };
         let first = ((f64::from(near) - anchor) / step).ceil().max(0.0) as i64;
         let last = ((f64::from(far) - anchor) / step).floor() as i64;
+        let numbered = self.pattern_config().show_cycle_numbers;
         for cycle in first..=last {
             let x = (anchor + cycle as f64 * step) as f32;
             painter.vline(
@@ -44,21 +43,16 @@ impl Drawing {
                 chart_rect.y_range(),
                 Stroke::new(self.stroke_width, color),
             );
+            if numbered {
+                painter.text(
+                    Pos2::new(x + 3.0, chart_rect.max.y - 3.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    cycle.to_string(),
+                    self.annotation_font(),
+                    color,
+                );
+            }
         }
-
-        // Draw anchor points with white stroke
-        painter.circle_filled(p1, DESIGN_TOKENS.rounding.lg, color);
-        painter.circle_stroke(
-            p1,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
-        );
-        painter.circle_filled(p2, DESIGN_TOKENS.rounding.lg, color);
-        painter.circle_stroke(
-            p2,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
-        );
     }
 
     /// Renders time cycles: the anchors span one cycle, repeated as half circles
@@ -98,22 +92,6 @@ impl Drawing {
                 arc_stroke,
             ));
         }
-
-        // Draw center anchor point
-        painter.circle_filled(center, DESIGN_TOKENS.rounding.lg, color);
-        painter.circle_stroke(
-            center,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::THICK, Color32::WHITE),
-        );
-
-        // Draw edge point
-        painter.circle_filled(edge, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_stroke(
-            edge,
-            DESIGN_TOKENS.rounding.md,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
-        );
     }
 
     /// Renders a sine wave line for cyclical analysis.
@@ -154,20 +132,6 @@ impl Drawing {
             wave,
             Stroke::new(self.stroke_width, color),
         ));
-
-        // Draw anchor points
-        painter.circle_filled(p1, DESIGN_TOKENS.rounding.lg, color);
-        painter.circle_stroke(
-            p1,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
-        );
-        painter.circle_filled(p2, DESIGN_TOKENS.rounding.lg, color);
-        painter.circle_stroke(
-            p2,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::MEDIUM, Color32::WHITE),
-        );
     }
 }
 

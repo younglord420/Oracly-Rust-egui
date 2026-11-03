@@ -91,6 +91,11 @@ pub fn get_icon(tool: DrawingToolType) -> &'static Icon {
         // ============ PATTERNS (6 tools) ============
         DrawingToolType::XABCDPattern => &icons::XABCD_PATTERN,
         DrawingToolType::CypherPattern => &icons::CYPHER_PATTERN,
+        DrawingToolType::GartleyPattern
+        | DrawingToolType::BatPattern
+        | DrawingToolType::ButterflyPattern
+        | DrawingToolType::CrabPattern
+        | DrawingToolType::SharkPattern => &icons::XABCD_PATTERN,
         DrawingToolType::HeadAndShoulders => &icons::HEAD_AND_SHOULDERS,
         DrawingToolType::ABCDPattern => &icons::ABCD,
         DrawingToolType::TrianglePattern => &icons::TRIANGLE_PATTERN,

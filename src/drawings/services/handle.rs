@@ -846,7 +846,6 @@ mod tests {
                     DrawingToolType::ProjectionTool,
                     DrawingToolType::BarsPattern,
                     DrawingToolType::GhostFeed,
-                    DrawingToolType::ElliottDoubleCombo,
                 ],
                 3,
             ),
@@ -854,6 +853,7 @@ mod tests {
                 &[
                     DrawingToolType::ABCDPattern,
                     DrawingToolType::ElliottCorrection,
+                    DrawingToolType::ElliottDoubleCombo,
                     DrawingToolType::TrianglePattern,
                     DrawingToolType::DoubleCurve,
                 ],
@@ -863,7 +863,8 @@ mod tests {
                 &[
                     DrawingToolType::XABCDPattern,
                     DrawingToolType::CypherPattern,
-                    DrawingToolType::ElliottTripleCombo,
+                    DrawingToolType::GartleyPattern,
+                    DrawingToolType::SharkPattern,
                     DrawingToolType::Brush,
                     DrawingToolType::Highlighter,
                     DrawingToolType::Polyline,
@@ -875,6 +876,7 @@ mod tests {
                 &[
                     DrawingToolType::ElliottImpulse,
                     DrawingToolType::ElliottTriangle,
+                    DrawingToolType::ElliottTripleCombo,
                 ],
                 6,
             ),

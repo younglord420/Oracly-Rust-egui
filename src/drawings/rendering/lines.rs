@@ -3,6 +3,7 @@
 //! Includes: lines, rays, shapes (rect, circle, ellipse, triangle, arc),
 //! arrows, and polylines.
 
+use super::style::placed_anchor;
 use crate::drawings::domain::Drawing;
 use crate::styles::{stroke, typography};
 use crate::theme::ThemeExt;
@@ -71,7 +72,7 @@ impl Drawing {
         if let Some((left, right)) = self.trend_line_ends(rect) {
             self.styled_segment(painter, left, right, stroke);
         } else if self.points.len() == 1 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.sm, color);
+            placed_anchor(painter, self.points[0], color);
         }
     }
 
@@ -167,7 +168,7 @@ impl Drawing {
     ) {
         let &[start, end, ..] = self.points.as_slice() else {
             if let Some(&point) = self.points.first() {
-                painter.circle_filled(point, DESIGN_TOKENS.rounding.md, color);
+                placed_anchor(painter, point, color);
             }
             return;
         };
@@ -255,7 +256,7 @@ impl Drawing {
             // Main rectangle stroke
             painter.rect_stroke(rect, 0.0, stroke, StrokeKind::Inside);
         } else if self.points.len() == 1 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.md, color);
+            placed_anchor(painter, self.points[0], color);
         }
     }
 
@@ -353,7 +354,7 @@ impl Drawing {
             }
             painter.circle_stroke(center, radius, stroke);
         } else if self.points.len() == 1 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.sm, color);
+            placed_anchor(painter, self.points[0], color);
         }
     }
 
@@ -376,7 +377,7 @@ impl Drawing {
                 painter.line_segment([ellipse_points[i - 1], ellipse_points[i]], stroke);
             }
         } else if self.points.len() == 1 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.sm, color);
+            placed_anchor(painter, self.points[0], color);
         }
     }
 
@@ -400,7 +401,7 @@ impl Drawing {
             painter.line_segment([p3, p1], stroke);
         } else {
             for (i, &p) in self.points.iter().enumerate() {
-                painter.circle_filled(p, DESIGN_TOKENS.rounding.sm, color);
+                placed_anchor(painter, p, color);
                 if i > 0 {
                     painter.line_segment([self.points[i - 1], p], stroke);
                 }
@@ -411,14 +412,11 @@ impl Drawing {
     /// Render arc - semicircle
     pub(crate) fn render_arc(&self, painter: &egui::Painter, color: Color32, stroke: Stroke) {
         if self.points.len() >= 2 {
-            let center = self.points[0];
             for pair in self.arc_path().windows(2) {
                 painter.line_segment([pair[0], pair[1]], stroke);
             }
-
-            painter.circle_filled(center, DESIGN_TOKENS.rounding.sm, color);
         } else if self.points.len() == 1 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.sm, color);
+            placed_anchor(painter, self.points[0], color);
         }
     }
 
@@ -458,11 +456,11 @@ impl Drawing {
 
     /// Render polyline - connected line segments through all points
     pub(crate) fn render_polyline(&self, painter: &egui::Painter, color: Color32, stroke: Stroke) {
-        for (i, &point) in self.points.iter().enumerate() {
-            if i > 0 {
-                painter.line_segment([self.points[i - 1], point], stroke);
-            }
-            painter.circle_filled(point, DESIGN_TOKENS.rounding.sm, color);
+        if let [point] = self.points[..] {
+            placed_anchor(painter, point, color);
+        }
+        for pair in self.points.windows(2) {
+            painter.line_segment([pair[0], pair[1]], stroke);
         }
     }
 
@@ -474,7 +472,7 @@ impl Drawing {
 
             painter.line_segment([start, end], stroke);
         } else if self.points.len() == 1 {
-            painter.circle_filled(self.points[0], DESIGN_TOKENS.rounding.sm, color);
+            placed_anchor(painter, self.points[0], color);
         }
     }
 

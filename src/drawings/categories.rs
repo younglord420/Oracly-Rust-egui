@@ -117,11 +117,21 @@ pub fn get_category_sections(category: &str) -> Vec<(&'static str, Vec<DrawingTo
                 "PATTERNS",
                 vec![
                     DrawingToolType::XABCDPattern,
-                    DrawingToolType::CypherPattern,
                     DrawingToolType::HeadAndShoulders,
                     DrawingToolType::ABCDPattern,
                     DrawingToolType::TrianglePattern,
                     DrawingToolType::ThreeDrivesPattern,
+                ],
+            ),
+            (
+                "HARMONICS",
+                vec![
+                    DrawingToolType::GartleyPattern,
+                    DrawingToolType::BatPattern,
+                    DrawingToolType::ButterflyPattern,
+                    DrawingToolType::CrabPattern,
+                    DrawingToolType::SharkPattern,
+                    DrawingToolType::CypherPattern,
                 ],
             ),
             (

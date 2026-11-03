@@ -1,7 +1,8 @@
 //! Patterns category for left toolbar.
 //!
-//! Contains three sub-sections:
-//! - PATTERNS: XABCD, Cypher, Head and Shoulders, ABCD, Triangle, Three Drives
+//! Contains four sub-sections:
+//! - PATTERNS: XABCD, Head and Shoulders, ABCD, Triangle, Three Drives
+//! - HARMONICS: Gartley, Bat, Butterfly, Crab, Shark, Cypher
 //! - ELLIOTT WAVES: Impulse, Correction, Triangle, Double Combo, Triple Combo
 //! - CYCLES: Cyclic Lines, Time Cycles, Sine Line
 

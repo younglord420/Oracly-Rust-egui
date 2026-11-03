@@ -91,7 +91,7 @@ fn paint_construction_guide(painter: &egui::Painter, points: &[Pos2], stroke: St
         painter.line_segment([pair[0], pair[1]], stroke);
     }
     for &point in points {
-        painter.circle_filled(point, DESIGN_TOKENS.rounding.md, stroke.color);
+        super::style::placed_anchor(painter, point, stroke.color);
     }
 }
 
@@ -586,8 +586,8 @@ impl Drawing {
                 end,
                 Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
             );
-            painter.circle_filled(start, DESIGN_TOKENS.rounding.md, color);
-            painter.circle_filled(end, DESIGN_TOKENS.rounding.sm, color);
+            super::style::placed_anchor(painter, start, color);
+            super::style::placed_anchor(painter, end, color);
             return;
         }
         let Some((config, lines)) = self.fib_channel_level_lines(chart_rect) else {
@@ -799,10 +799,9 @@ impl Drawing {
             }
         }
 
-        // Legacy drawings keep their radius line and centre dot.
+        // Legacy drawings keep their radius line.
         if self.fib_config.is_none() {
             painter.line_segment([center, edge], Stroke::new(self.stroke_width, color));
-            painter.circle_filled(center, DESIGN_TOKENS.rounding.md, color);
         }
     }
 
@@ -916,7 +915,7 @@ impl Drawing {
         };
         if self.points.len() < 3 {
             let color = self.color32();
-            painter.circle_filled(start, DESIGN_TOKENS.rounding.md, color);
+            super::style::placed_anchor(painter, start, color);
             if let Some(&edge) = self.points.get(1) {
                 self.styled_segment(
                     painter,
@@ -924,7 +923,7 @@ impl Drawing {
                     edge,
                     Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
                 );
-                painter.circle_filled(edge, DESIGN_TOKENS.rounding.sm, color);
+                super::style::placed_anchor(painter, edge, color);
             }
             return;
         }

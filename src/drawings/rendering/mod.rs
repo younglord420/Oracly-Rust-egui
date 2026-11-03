@@ -171,6 +171,11 @@ impl Drawing {
             | T::Highlighter
             | T::XABCDPattern
             | T::CypherPattern
+            | T::GartleyPattern
+            | T::BatPattern
+            | T::ButterflyPattern
+            | T::CrabPattern
+            | T::SharkPattern
             | T::ABCDPattern
             | T::ThreeDrivesPattern
             | T::ElliottImpulse
@@ -396,20 +401,25 @@ impl Drawing {
             | DrawingToolType::DisjointChannel => self.render_channel(painter, rect, view),
             DrawingToolType::RegressionTrend => self.render_regression_trend(painter, view),
 
-            // Patterns (6 tools)
-            DrawingToolType::XABCDPattern => self.render_xabcd_pattern(painter),
-            DrawingToolType::CypherPattern => self.render_cypher_pattern(painter),
+            // Patterns (11 tools)
+            DrawingToolType::XABCDPattern
+            | DrawingToolType::CypherPattern
+            | DrawingToolType::GartleyPattern
+            | DrawingToolType::BatPattern
+            | DrawingToolType::ButterflyPattern
+            | DrawingToolType::CrabPattern
+            | DrawingToolType::SharkPattern => self.render_harmonic_pattern(painter),
             DrawingToolType::HeadAndShoulders => self.render_head_and_shoulders(painter),
             DrawingToolType::ABCDPattern => self.render_abcd_pattern(painter),
             DrawingToolType::TrianglePattern => self.render_triangle_pattern(painter),
             DrawingToolType::ThreeDrivesPattern => self.render_three_drives_pattern(painter, view),
 
             // Elliott Wave (5 tools)
-            DrawingToolType::ElliottImpulse => self.render_elliott_impulse(painter, view),
-            DrawingToolType::ElliottCorrection => self.render_elliott_correction(painter),
-            DrawingToolType::ElliottTriangle => self.render_elliott_triangle(painter),
-            DrawingToolType::ElliottDoubleCombo => self.render_elliott_double_combo(painter),
-            DrawingToolType::ElliottTripleCombo => self.render_elliott_triple_combo(painter),
+            DrawingToolType::ElliottImpulse
+            | DrawingToolType::ElliottCorrection
+            | DrawingToolType::ElliottTriangle
+            | DrawingToolType::ElliottDoubleCombo
+            | DrawingToolType::ElliottTripleCombo => self.render_elliott_wave(painter, view),
 
             // Cycles (3 tools)
             DrawingToolType::CyclicLines => self.render_cyclic_lines(painter, rect),
@@ -526,6 +536,11 @@ impl Drawing {
                 | T::GannFixed
                 | T::XABCDPattern
                 | T::CypherPattern
+                | T::GartleyPattern
+                | T::BatPattern
+                | T::ButterflyPattern
+                | T::CrabPattern
+                | T::SharkPattern
                 | T::HeadAndShoulders
                 | T::ABCDPattern
                 | T::TrianglePattern
@@ -888,6 +903,7 @@ mod tests {
             (DrawingToolType::FontIcon, false),
             (DrawingToolType::XABCDPattern, true),
             (DrawingToolType::CypherPattern, true),
+            (DrawingToolType::GartleyPattern, true),
             (DrawingToolType::HeadAndShoulders, true),
             (DrawingToolType::ABCDPattern, true),
             (DrawingToolType::TrianglePattern, true),

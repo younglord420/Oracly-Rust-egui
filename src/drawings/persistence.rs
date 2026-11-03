@@ -319,8 +319,9 @@ impl Default for StorageMetadata {
 impl DrawingStorage {
     /// Current storage format version. Version 3 preserves editable ray and extended-line
     /// extensions. Version 4 gives pitchforks the forward reach they were painted with
-    /// before the extend control existed. Versions 1 and 2 migrate to their former rendered reach.
-    pub const CURRENT_VERSION: u32 = 4;
+    /// before the extend control existed. Version 5 starts Elliott combinations at an origin
+    /// before W. Versions 1 and 2 migrate to their former rendered reach.
+    pub const CURRENT_VERSION: u32 = 5;
 
     /// Create new storage for a symbol
     pub fn new(symbol: impl Into<String>) -> Self {
@@ -557,6 +558,20 @@ impl DrawingStorage {
                             }
                             (T::DoubleCurve, [a, b]) => {
                                 drawing.points = vec![a.clone(), a.clone(), b.clone(), b.clone()];
+                            }
+                            // Combinations began at W; W's wave now starts at an origin as far
+                            // before W as X is after it, at X's price.
+                            (T::ElliottDoubleCombo, [w, x, _])
+                            | (T::ElliottTripleCombo, [w, x, _, _, _])
+                                if version < 5 =>
+                            {
+                                let span = x.ts_ms.saturating_sub(w.ts_ms);
+                                let origin = StoredCoord {
+                                    ts_ms: w.ts_ms.saturating_sub(span),
+                                    subms_ns: w.subms_ns,
+                                    price: x.price,
+                                };
+                                drawing.points.insert(0, origin);
                             }
                             (T::FibonacciWedge | T::Pitchfan, [a, b]) => {
                                 drawing.points.push(StoredCoord {
@@ -977,6 +992,16 @@ mod tests {
                     ..level(2.5)
                 }],
             });
+            drawing.pattern = Some(crate::drawings::PatternConfig {
+                show_labels: false,
+                show_ratios: false,
+                show_validity: false,
+                show_neckline: false,
+                show_target: false,
+                show_zone: false,
+                show_cycle_numbers: true,
+                degree: crate::drawings::WaveDegree::Primary,
+            });
             drawing.ghost_feed = Some(crate::drawings::GhostFeedConfig {
                 average_range_ticks: 2.5,
                 noise_ticks: 0.5,
@@ -1299,6 +1324,32 @@ mod tests {
             assert_eq!(again.drawings[0].points.len(), origins.len());
         }
 
+        // Elliott combinations saved from W on gain an origin before W, at X's price.
+        for (tool, saved) in [
+            (DrawingToolType::ElliottDoubleCombo, 3),
+            (DrawingToolType::ElliottTripleCombo, 5),
+        ] {
+            let mut combo = Drawing::new(1, tool);
+            combo.chart_points = (0..saved)
+                .map(|i| ChartPoint::new(10.0 + 5.0 * i as f32, 100.0 + 10.0 * (i % 2) as f64))
+                .collect();
+            let mut storage = DrawingStorage::new("AAPL");
+            storage.add_drawing(drawing_to_stored(&combo, bar_to_time));
+            // A current file keeps a combination placed only up to its X wave as it is.
+            let json = serde_json::to_string(&storage).unwrap();
+            let (loaded, _) = DrawingStorage::from_json(&json).unwrap();
+            assert_eq!(loaded.drawings[0].points.len(), saved, "{tool:?}");
+            storage.version = 4;
+            let json = serde_json::to_string(&storage).unwrap();
+            let (loaded, skipped) = DrawingStorage::from_json(&json).unwrap();
+            assert!(skipped.is_empty(), "{tool:?}: {skipped:?}");
+            let points = &loaded.drawings[0].points;
+            assert_eq!(points.len(), saved + 1, "{tool:?}");
+            assert_eq!(points[0].ts_ms, bar_to_time(5.0), "{tool:?}");
+            assert_eq!(points[0].price, 110.0, "{tool:?}");
+            assert_eq!(points[1].ts_ms, bar_to_time(10.0), "{tool:?}");
+        }
+
         let mut first = Drawing::new(1, DrawingToolType::FixedRangeVolumeProfile);
         first.volume_profile = VolumeProfileConfig::new(24, 0.7);
         first.chart_points = vec![ChartPoint::new(0.0, 100.0), ChartPoint::new(10.0, 110.0)];
@@ -1452,11 +1503,11 @@ mod tests {
                 .show_on_all
         );
 
-        let got = DrawingStorage::from_json(&current.replace("\"version\": 4", "\"version\": 5"))
+        let got = DrawingStorage::from_json(&current.replace("\"version\": 5", "\"version\": 6"))
             .unwrap_err()
             .to_string();
         assert!(
-            got.contains("unsupported drawing storage version 5"),
+            got.contains("unsupported drawing storage version 6"),
             "{got}"
         );
     }

@@ -213,5 +213,11 @@ impl TextTab {
                 }
             }
         });
+
+        if let Some(template) = &mut props.tool_settings
+            && super::inputs::has_pattern_labels(template.settings.tool_type)
+        {
+            super::inputs::pattern_labels(ui, &mut template.settings);
+        }
     }
 }

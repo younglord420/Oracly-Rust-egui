@@ -185,9 +185,9 @@ impl Drawing {
     ) {
         if self.points.len() < 2 {
             if !self.points.is_empty() {
-                painter.circle_filled(
+                super::style::placed_anchor(
+                    painter,
                     self.points[0],
-                    DESIGN_TOKENS.rounding.sm,
                     Color32::from_rgba_unmultiplied(
                         self.color[0],
                         self.color[1],
@@ -239,9 +239,6 @@ impl Drawing {
             egui::FontId::proportional(typography::SM),
             color,
         );
-
-        painter.circle_filled(p1, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_filled(p2, DESIGN_TOKENS.rounding.md, color);
     }
 
     pub(crate) fn render_date_range(
@@ -252,9 +249,9 @@ impl Drawing {
     ) {
         if self.points.len() < 2 {
             if !self.points.is_empty() {
-                painter.circle_filled(
+                super::style::placed_anchor(
+                    painter,
                     self.points[0],
-                    DESIGN_TOKENS.rounding.sm,
                     Color32::from_rgba_unmultiplied(
                         self.color[0],
                         self.color[1],
@@ -314,9 +311,6 @@ impl Drawing {
         let range_rect =
             Rect::from_x_y_ranges(p1.x.min(p2.x)..=p1.x.max(p2.x), chart_rect.y_range());
         painter.rect_filled(range_rect, 0.0, fill_color);
-
-        painter.circle_filled(p1, DESIGN_TOKENS.rounding.md, color);
-        painter.circle_filled(p2, DESIGN_TOKENS.rounding.md, color);
     }
 
     // === NEW TOOL RENDER FUNCTIONS ===

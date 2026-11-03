@@ -131,6 +131,16 @@ pub enum DrawingToolType {
     XABCDPattern,
     /// Cypher harmonic pattern (5-point variant with specific ratio rules).
     CypherPattern,
+    /// Gartley harmonic pattern, judged by its XABCD ratios.
+    GartleyPattern,
+    /// Bat harmonic pattern, judged by its XABCD ratios.
+    BatPattern,
+    /// Butterfly harmonic pattern, judged by its XABCD ratios.
+    ButterflyPattern,
+    /// Crab harmonic pattern, judged by its XABCD ratios.
+    CrabPattern,
+    /// Shark harmonic pattern, judged by its XABCD ratios.
+    SharkPattern,
     /// Head and Shoulders reversal pattern (7-point).
     HeadAndShoulders,
     /// ABCD harmonic pattern (4-point geometric price pattern).

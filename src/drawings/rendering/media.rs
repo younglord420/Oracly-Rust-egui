@@ -198,7 +198,6 @@ impl Drawing {
         }
         let pos = self.points[0];
         let theme = painter.ctx().active_theme();
-        let accent = theme.ui.info;
         let card_width = DESIGN_TOKENS.sizing.media.tweet_card_width;
         let padding = DESIGN_TOKENS.spacing.lg;
         let (author, body) = self.content(
@@ -237,9 +236,6 @@ impl Drawing {
         let below = text + egui::vec2(0.0, author.size().y + gap);
         painter.galley(text, author, theme.ui.text);
         painter.galley(below, body, theme.ui.text);
-
-        // Anchor point
-        painter.circle_filled(pos, DESIGN_TOKENS.rounding.md, accent);
     }
 
     /// Renders an idea card from the drawing's text: its first line as the title and the
@@ -332,14 +328,6 @@ impl Drawing {
         let below = text + egui::vec2(0.0, title.size().y + gap);
         painter.galley(text, title, theme.ui.text);
         painter.galley(below, description, theme.ui.text);
-
-        // Anchor point
-        painter.circle_filled(pos, DESIGN_TOKENS.rounding.md, accent);
-        painter.circle_stroke(
-            pos,
-            DESIGN_TOKENS.rounding.md,
-            Stroke::new(stroke::MEDIUM, theme.ui.text),
-        );
     }
 
     /// The first line of the drawing's text and the lines after it, or `empty` and `prompt`
