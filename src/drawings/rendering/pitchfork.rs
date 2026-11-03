@@ -244,7 +244,31 @@ impl Drawing {
         }
         let boundary = self.points[2];
         let end = self.points[1];
-        for level in self.pitchfan_levels() {
+        let config = self
+            .pitchfork
+            .clone()
+            .unwrap_or_else(crate::drawings::PitchforkConfig::pitchfan);
+        let opacity = config.background_opacity;
+        let levels = visible_pitchfan_levels(config);
+        if self
+            .pitchfork
+            .as_ref()
+            .is_none_or(|config| config.show_background)
+        {
+            for pair in levels.windows(2) {
+                let a = pitchfan_ray(center, end, boundary, pair[0].value, rect)[1];
+                let b = pitchfan_ray(center, end, boundary, pair[1].value, rect)[1];
+                if a.is_finite() && b.is_finite() {
+                    let color = pair[1].color;
+                    painter.add(egui::Shape::convex_polygon(
+                        vec![center, a, b],
+                        Color32::from_rgba_unmultiplied(color[0], color[1], color[2], opacity),
+                        Stroke::NONE,
+                    ));
+                }
+            }
+        }
+        for level in levels {
             let [_, fan_end] = pitchfan_ray(center, end, boundary, level.value, rect);
             let rgba = level.color;
             let line_color = Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
@@ -285,16 +309,22 @@ impl Drawing {
     }
 
     fn pitchfan_levels(&self) -> Vec<crate::drawings::PitchforkLevel> {
-        let mut config = self
+        let config = self
             .pitchfork
             .clone()
             .unwrap_or_else(crate::drawings::PitchforkConfig::pitchfan);
-        config
-            .levels
-            .retain(|level| level.visible && (0.0..=MAX_PITCHFORK_LEVEL).contains(&level.value));
-        config.levels.sort_by(|a, b| a.value.total_cmp(&b.value));
-        config.levels
+        visible_pitchfan_levels(config)
     }
+}
+
+fn visible_pitchfan_levels(
+    mut config: crate::drawings::PitchforkConfig,
+) -> Vec<crate::drawings::PitchforkLevel> {
+    config
+        .levels
+        .retain(|level| level.visible && (0.0..=MAX_PITCHFORK_LEVEL).contains(&level.value));
+    config.levels.sort_by(|a, b| a.value.total_cmp(&b.value));
+    config.levels
 }
 
 struct ForkParts {
@@ -356,9 +386,9 @@ impl Drawing {
 
 /// Rays from the first pivot through fractional points on the second-to-third leg.
 pub(super) fn pitchfan_lines(drawing: &Drawing, rect: Rect) -> Vec<[Pos2; 2]> {
-    match drawing.points.as_slice() {
-        &[center, end] => vec![[center, end]],
-        &[center, end, boundary, ..] => drawing
+    match *drawing.points.as_slice() {
+        [center, end] => vec![[center, end]],
+        [center, end, boundary, ..] => drawing
             .pitchfan_levels()
             .into_iter()
             .map(|level| pitchfan_ray(center, end, boundary, level.value, rect))

@@ -17,8 +17,9 @@ pub use coordinates::ChartPoint;
 pub use drawing::Drawing;
 pub use gann::{GannConfig, GannFanAngle, GannFanDirection, gann_square_corner};
 pub use ghost_feed::{GhostCandle, GhostFeedConfig, MAX_GHOST_CANDLES};
+pub(crate) use options::fib_ratio_color;
 pub use options::{
-    ArrowStyle, DrawingOptions, FibonacciConfig, FibonacciLevel, FontWeight, HandlePos,
+    ArrowStyle, DrawingOptions, FibPreset, FibonacciConfig, FibonacciLevel, FontWeight, HandlePos,
     PositionSize, PositionSizing, RegressionSource, RegressionTrendConfig, TextHorizontalAlign,
     TextVerticalAlign, TimeframeVisibility,
 };

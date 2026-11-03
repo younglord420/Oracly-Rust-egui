@@ -1,9 +1,9 @@
 //! Inputs that correspond to the selected tool's saved drawing configuration.
 
 use crate::drawings::{
-    Drawing, DrawingToolType as Tool, FibonacciLevel, GannConfig, GannFanAngle, GannFanDirection,
-    PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource, TextHorizontalAlign,
-    TextVerticalAlign,
+    Drawing, DrawingToolType as Tool, FibPreset, FibonacciLevel, GannConfig, GannFanAngle,
+    GannFanDirection, PitchforkConfig, PitchforkLevel, PositionSize, RegressionSource,
+    TextHorizontalAlign, TextVerticalAlign,
 };
 
 use crate::data::{ProfileDisplay, VolumeProfileConfig};
@@ -719,12 +719,42 @@ fn fibonacci(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
     let control_h = super::style::control_row_height(ui);
     ui.spacing_mut().interact_size.y = control_h;
 
-    ui.strong(l10n::text(ui.ctx(), "Fibonacci levels"));
+    ui.horizontal(|ui| {
+        ui.set_min_height(control_h);
+        ui.strong(l10n::text(ui.ctx(), "Fibonacci levels"));
+        if drawing.tool_type == Tool::FibonacciRetracement {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let ctx = ui.ctx().clone();
+                let mut preset = FibPreset::matching(&config);
+                let before = preset;
+                super::style::text_combo_popup(
+                    ui,
+                    "fib_level_preset",
+                    "Level preset",
+                    &mut preset,
+                    &FibPreset::ALL.map(Some),
+                    |p| l10n::text(&ctx, p.map_or("Custom", FibPreset::label)),
+                    super::style::control_column_width(ui)
+                        .min(ui.available_width())
+                        .clamp(92.0, 140.0),
+                    control_h,
+                );
+                if preset != before
+                    && let Some(preset) = preset
+                {
+                    let (levels, reverse) = preset.levels();
+                    config.levels = levels;
+                    config.reverse = reverse;
+                }
+            });
+        }
+    });
+    let next_color = crate::drawings::domain::fib_ratio_color(1.0, config.levels.len());
     level_grid(
         ui,
         &mut config.levels,
         pickers,
-        FibonacciLevel::new(1.0, "", drawing.color),
+        FibonacciLevel::new(1.0, "", next_color),
         |level| LevelRow {
             visible: &mut level.visible,
             value: &mut level.value,
@@ -973,11 +1003,10 @@ fn pitchfork(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSt
 }
 
 fn pitchfan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerState>) {
-    let mut config = drawing.pitchfork.clone().unwrap_or_else(|| {
-        let mut config = PitchforkConfig::pitchfan();
-        config.recolor_pitchfan(drawing.color);
-        config
-    });
+    let mut config = drawing
+        .pitchfork
+        .clone()
+        .unwrap_or_else(PitchforkConfig::pitchfan);
     let original = config.clone();
     ui.strong(l10n::text(ui.ctx(), "Fan levels"));
     level_grid(
@@ -994,6 +1023,11 @@ fn pitchfan(ui: &mut Ui, drawing: &mut Drawing, pickers: &mut Vec<ColorPickerSta
             width: Some((&mut level.width, drawing.stroke_width)),
             range: 0.0..=crate::drawings::validation::MAX_PITCHFORK_LEVEL,
         },
+    );
+    background(
+        ui,
+        &mut config.show_background,
+        &mut config.background_opacity,
     );
     if config != original {
         drawing.pitchfork = Some(config);

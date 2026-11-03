@@ -372,6 +372,9 @@ pub struct FibonacciConfig {
     /// Uniform stroke width for horizontal (or channel) level lines.
     #[serde(default = "default_levels_line_width")]
     pub levels_line_width: f32,
+    /// Dash pattern of the level lines.
+    #[serde(default)]
+    pub levels_line_style: LineStyle,
 }
 
 fn percent_levels() -> bool {
@@ -406,39 +409,167 @@ fn default_fib_label_font_size() -> f32 {
     12.0
 }
 
-/// Standard retracement level table used by major charting platforms.
+/// Neutral bound colour of the 0, 1, 2 and 3 levels.
+const LEVEL_ANCHOR: [u8; 4] = [120, 123, 134, 255];
+const LEVEL_PURPLE: [u8; 4] = [156, 39, 176, 255];
+const LEVEL_AMBER: [u8; 4] = [255, 183, 77, 255];
+/// Single colour of the time zone lines.
+const LEVEL_ZONE: [u8; 4] = [56, 192, 253, 255];
+
+/// The conventional colour of a Fibonacci ratio, shared by every level tool so the same ratio
+/// reads the same everywhere. Unknown ratios cycle through distinguishable hues by position.
+pub(crate) fn fib_ratio_color(ratio: f32, index: usize) -> [u8; 4] {
+    const RED: [u8; 4] = [242, 54, 69, 255];
+    const ORANGE: [u8; 4] = [255, 152, 0, 255];
+    const GREEN: [u8; 4] = [76, 175, 80, 255];
+    const TEAL: [u8; 4] = [8, 153, 129, 255];
+    const BLUE: [u8; 4] = [91, 156, 246, 255];
+    const PINK: [u8; 4] = [233, 30, 99, 255];
+    const AQUA: [u8; 4] = [38, 166, 154, 255];
+    const VIOLET: [u8; 4] = [171, 71, 188, 255];
+    const CORAL: [u8; 4] = [239, 83, 80, 255];
+    const CYAN: [u8; 4] = [56, 192, 253, 255];
+    const TABLE: &[(f32, [u8; 4])] = &[
+        (0.0, LEVEL_ANCHOR),
+        (0.125, RED),
+        (0.236, RED),
+        (0.25, RED),
+        (0.382, ORANGE),
+        (0.5, GREEN),
+        (0.618, TEAL),
+        (0.705, LEVEL_AMBER),
+        (0.75, BLUE),
+        (0.786, BLUE),
+        (0.886, LEVEL_PURPLE),
+        (1.0, LEVEL_ANCHOR),
+        (1.272, BLUE),
+        (1.382, ORANGE),
+        (1.414, AQUA),
+        (1.618, RED),
+        (2.0, LEVEL_ANCHOR),
+        (2.272, VIOLET),
+        (2.382, ORANGE),
+        (2.414, PINK),
+        (2.618, ORANGE),
+        (3.0, LEVEL_ANCHOR),
+        (3.272, CORAL),
+        (3.618, LEVEL_PURPLE),
+        (4.236, GREEN),
+        (4.618, PINK),
+        (-0.27, CYAN),
+        (-0.272, CYAN),
+        (-0.62, BLUE),
+        (-0.618, BLUE),
+        (-1.0, AQUA),
+        (-1.5, VIOLET),
+        (-2.0, LEVEL_PURPLE),
+        (-2.5, PINK),
+    ];
+    const CYCLE: [[u8; 4]; 12] = [
+        CYAN,
+        BLUE,
+        TEAL,
+        GREEN,
+        ORANGE,
+        RED,
+        PINK,
+        LEVEL_PURPLE,
+        LEVEL_ANCHOR,
+        AQUA,
+        VIOLET,
+        CORAL,
+    ];
+    TABLE
+        .iter()
+        .find(|(r, _)| (r - ratio).abs() < 1e-6)
+        .map_or(CYCLE[index % CYCLE.len()], |&(_, color)| color)
+}
+
+/// Levels at `ratios`, coloured by convention, with only `on` enabled.
+fn ladder(ratios: &[f32], on: &[f32]) -> Vec<FibonacciLevel> {
+    ratios
+        .iter()
+        .enumerate()
+        .map(|(i, &ratio)| {
+            let visible = on.iter().any(|v| (v - ratio).abs() < 1e-6);
+            FibonacciLevel::with_visibility(ratio, "", fib_ratio_color(ratio, i), visible)
+        })
+        .collect()
+}
+
+/// The full retracement ladder with the classic pullback ratios on and the rest off.
 fn retracement_levels() -> Vec<FibonacciLevel> {
-    let grey = [120, 123, 134, 255];
-    let red = [242, 54, 69, 255];
-    let light_green = [129, 199, 132, 255];
-    let green = [76, 175, 80, 255];
-    let teal = [8, 153, 129, 255];
-    let cyan = [0, 188, 212, 255];
-    let blue = [41, 98, 255, 255];
-    let pink = [233, 30, 99, 255];
-    let purple = [156, 39, 176, 255];
-    // On: 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618, 2.618, 3.618, 4.236.
-    // Off: 1.272, 1.414, 2, 2.272.
-    [
-        (0.0, true, grey),
-        (0.236, true, red),
-        (0.382, true, light_green),
-        (0.5, true, green),
-        (0.618, true, teal),
-        (0.786, true, cyan),
-        (1.0, true, grey),
-        (1.272, false, pink),
-        (1.414, false, red),
-        (1.618, true, blue),
-        (2.0, false, pink),
-        (2.272, false, purple),
-        (2.618, true, purple),
-        (3.618, true, pink),
-        (4.236, true, blue),
-    ]
-    .into_iter()
-    .map(|(value, visible, color)| FibonacciLevel::with_visibility(value, "", color, visible))
-    .collect()
+    FibPreset::Classic.levels().0
+}
+
+/// A ready-made retracement level set, offered in the Inputs preset menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FibPreset {
+    /// The standard pullback ratios, level 0 on the second anchor.
+    Classic,
+    /// The swing plus projections beyond it, level 0 on the first anchor.
+    Extension,
+    /// The optimal trade entry zone around 0.705 with targets beyond the swing.
+    OptimalEntry,
+}
+
+impl FibPreset {
+    /// Every preset, in menu order.
+    pub const ALL: [Self; 3] = [Self::Classic, Self::Extension, Self::OptimalEntry];
+
+    /// Menu label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Classic => "Classic",
+            Self::Extension => "Extension",
+            Self::OptimalEntry => "OTE",
+        }
+    }
+
+    /// The preset's levels and its reverse flag.
+    pub fn levels(self) -> (Vec<FibonacciLevel>, bool) {
+        const LADDER: &[f32] = &[
+            0.0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.786, 0.886, 1.0, 1.272, 1.414, 1.618, 2.0,
+            2.272, 2.414, 2.618, 3.0, 3.272, 3.618, 4.236, 4.618, -0.272, -0.618, -1.0,
+        ];
+        match self {
+            Self::Classic => (
+                ladder(LADDER, &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]),
+                false,
+            ),
+            Self::Extension => (
+                ladder(
+                    LADDER,
+                    &[0.0, 1.0, 1.272, 1.414, 1.618, 2.0, 2.618, 3.618, 4.236],
+                ),
+                true,
+            ),
+            Self::OptimalEntry => {
+                let mut levels = ladder(
+                    &[
+                        0.0, 0.236, 0.382, 0.5, 0.62, 0.705, 0.79, 0.886, 1.0, 1.272, 1.414, 1.618,
+                        2.0, 2.618, 3.0, 3.618, 4.236, 4.618, -0.27, -0.62, -1.0, -1.5, -2.0, -2.5,
+                    ],
+                    &[0.0, 0.5, 0.62, 0.705, 0.79, 1.0, -0.27, -0.62],
+                );
+                // The entry zone reads as one band.
+                for level in &mut levels {
+                    if [0.62, 0.79].iter().any(|v| (v - level.value).abs() < 1e-6) {
+                        level.color = LEVEL_AMBER;
+                    }
+                }
+                (levels, false)
+            }
+        }
+    }
+
+    /// The preset `config` matches exactly, or `None` once the user has edited it.
+    pub fn matching(config: &FibonacciConfig) -> Option<Self> {
+        Self::ALL.into_iter().find(|preset| {
+            let (levels, reverse) = preset.levels();
+            reverse == config.reverse && levels == config.levels
+        })
+    }
 }
 
 impl Default for FibonacciConfig {
@@ -447,7 +578,7 @@ impl Default for FibonacciConfig {
         Self {
             levels: retracement_levels(),
             show_background: true,
-            background_opacity: 40,
+            background_opacity: 20,
             extend_left: false,
             extend_right: false,
             reverse: false,
@@ -455,15 +586,16 @@ impl Default for FibonacciConfig {
             show_prices: Some(true),
             show_levels: Some(true),
             levels_as_percent: false,
-            labels_on_left: false,
-            label_h_align: Some(TextHorizontalAlign::Right),
-            label_v_align: default_fib_label_v_align(),
+            labels_on_left: true,
+            label_h_align: Some(TextHorizontalAlign::Left),
+            label_v_align: TextVerticalAlign::Top,
             label_font_size: default_fib_label_font_size(),
             show_trend_line: true,
             trend_line_color: default_trend_line_color(),
             trend_line_style: default_trend_line_style(),
             trend_line_width: default_trend_line_width(),
             levels_line_width: default_levels_line_width(),
+            levels_line_style: LineStyle::Solid,
         }
     }
 }
@@ -471,50 +603,35 @@ impl Default for FibonacciConfig {
 impl FibonacciConfig {
     /// Extension levels (beyond 100%)
     pub fn extension_default() -> Self {
-        let grey = [120, 123, 134, 255];
-        let blue = [41, 98, 255, 255];
-        let red = [242, 54, 69, 255];
-        let orange = [255, 152, 0, 255];
-        let green = [76, 175, 80, 255];
-        let purple = [156, 39, 176, 255];
-        let pink = [233, 30, 99, 255];
+        let mut levels = ladder(
+            &[0.0, 0.382, 0.5, 0.618, 1.0, 1.618, 2.618],
+            &[0.0, 0.382, 0.5, 0.618, 1.0, 1.618, 2.618],
+        );
+        // The furthest default target reads as the outermost projection.
+        if let Some(last) = levels.last_mut() {
+            last.color = LEVEL_PURPLE;
+        }
         Self {
-            // Typical trend-based extension set: 0, 0.382, 0.5, 0.618, 1, 1.618, 2.618.
-            levels: vec![
-                FibonacciLevel::with_visibility(0.0, "", grey, true),
-                FibonacciLevel::with_visibility(0.236, "", red, false),
-                FibonacciLevel::with_visibility(0.382, "", orange, true),
-                FibonacciLevel::with_visibility(0.5, "", green, true),
-                FibonacciLevel::with_visibility(0.618, "", blue, true),
-                FibonacciLevel::with_visibility(0.786, "", purple, false),
-                FibonacciLevel::with_visibility(1.0, "", grey, true),
-                FibonacciLevel::with_visibility(1.272, "", pink, false),
-                FibonacciLevel::with_visibility(1.414, "", red, false),
-                FibonacciLevel::with_visibility(1.618, "", orange, true),
-                FibonacciLevel::with_visibility(2.0, "", green, false),
-                FibonacciLevel::with_visibility(2.272, "", pink, false),
-                FibonacciLevel::with_visibility(2.618, "", purple, true),
-                FibonacciLevel::with_visibility(3.618, "", pink, false),
-                FibonacciLevel::with_visibility(4.236, "", blue, false),
-            ],
-            show_background: true,
-            background_opacity: 40,
+            levels,
+            show_background: false,
+            background_opacity: 20,
             extend_left: false,
-            extend_right: true,
+            extend_right: false,
             reverse: false,
             logarithmic: false,
             show_prices: Some(true),
             show_levels: Some(true),
             levels_as_percent: false,
-            labels_on_left: false,
-            label_h_align: Some(TextHorizontalAlign::Right),
-            label_v_align: default_fib_label_v_align(),
+            labels_on_left: true,
+            label_h_align: Some(TextHorizontalAlign::Left),
+            label_v_align: TextVerticalAlign::Top,
             label_font_size: default_fib_label_font_size(),
             show_trend_line: true,
             trend_line_color: default_trend_line_color(),
             trend_line_style: default_trend_line_style(),
             trend_line_width: default_trend_line_width(),
             levels_line_width: default_levels_line_width(),
+            levels_line_style: LineStyle::Solid,
         }
     }
 
@@ -536,69 +653,47 @@ impl FibonacciConfig {
     /// original renderer defaults; new tools store this table when constructed.
     pub fn for_tool(tool: super::DrawingToolType) -> Self {
         use super::DrawingToolType as T;
-        let grey = [128, 128, 128, 255];
-        let blue = [41, 98, 255, 255];
-        let red = [242, 54, 69, 255];
-        let orange = [255, 152, 0, 255];
-        let green = [76, 175, 80, 255];
-        let teal = [8, 153, 129, 255];
-        let cyan = [0, 188, 212, 255];
-        let pink = [233, 30, 99, 255];
-        let purple = [156, 39, 176, 255];
-        let table = match tool {
-            T::FibonacciTimeZones => [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0]
-                .map(|value| (value, if value == 0.0 { grey } else { blue }))
+        let levels = match tool {
+            T::FibonacciChannel => ladder(
+                &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.618, 2.618],
+                &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.618, 2.618],
+            ),
+            T::FibonacciTimeZones => [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0]
+                .map(|value| FibonacciLevel::new(value, "", LEVEL_ZONE))
                 .to_vec(),
-            T::TrendBasedFibTime => vec![
-                (0.0, grey),
-                (0.382, red),
-                (0.5, [129, 199, 132, 255]),
-                (0.618, green),
-                (1.0, teal),
-                (1.382, cyan),
-                (1.618, grey),
-                (2.0, blue),
-                (2.382, pink),
-                (2.618, purple),
-                (3.0, [103, 58, 183, 255]),
-            ],
-            T::FibonacciSpeedFan => vec![
-                (0.0, grey),
-                (0.25, orange),
-                (0.382, cyan),
-                (0.5, green),
-                (0.618, teal),
-                (0.75, blue),
-                (1.0, grey),
-            ],
-            T::FibonacciCircles | T::FibonacciSpeedResistanceArcs => vec![
-                (0.236, red),
-                (0.382, orange),
-                (0.5, teal),
-                (0.618, green),
-                (0.786, cyan),
-                (1.0, grey),
-                (1.618, blue),
-                (2.618, pink),
-                (3.618, blue),
-                (4.236, pink),
-                (4.618, red),
-            ],
+            T::TrendBasedFibTime => {
+                let ratios = [
+                    0.0, 0.382, 0.5, 0.618, 1.0, 1.382, 1.618, 2.0, 2.382, 2.618, 3.0,
+                ];
+                // 0.5 is present but hidden by default.
+                let on: Vec<f32> = ratios.into_iter().filter(|&r| r != 0.5).collect();
+                ladder(&ratios, &on)
+            }
+            T::FibonacciSpeedFan => ladder(
+                &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0],
+                &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0],
+            ),
+            T::FibonacciCircles | T::FibonacciSpeedResistanceArcs => ladder(
+                &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.618, 2.618],
+                &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.618, 2.618],
+            ),
+            T::FibonacciWedge => ladder(
+                &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0],
+                &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0],
+            ),
             T::FibonacciExtension => return Self::extension_default(),
             _ => return Self::default(),
         };
         Self {
-            levels: table
-                .into_iter()
-                .map(|(value, color)| {
-                    let mut level = FibonacciLevel::new(value, "", color);
-                    level.visible = tool != T::TrendBasedFibTime || value != 0.5;
-                    level
-                })
-                .collect(),
-            show_background: tool != T::FibonacciTimeZones,
-            background_opacity: 51,
-            levels_as_percent: tool != T::FibonacciTimeZones,
+            levels,
+            // Only the horizontal level tools tint between levels by default.
+            show_background: false,
+            background_opacity: 20,
+            // Ratios read as plain numbers; channels label the ratio only.
+            show_prices: Some(false),
+            levels_as_percent: false,
+            labels_on_left: false,
+            label_h_align: Some(TextHorizontalAlign::Right),
             ..Self::default()
         }
     }
@@ -1307,6 +1402,73 @@ mod tests {
         vis.add_timeframe("1h");
         assert!(vis.is_visible_on("1h"));
         assert!(!vis.is_visible_on("1D"));
+    }
+
+    /// New tools start from the conventional level sets: the classic retracement (matching its
+    /// preset), shared ratio colours, and fills only where levels are horizontal.
+    #[test]
+    fn fibonacci_defaults_follow_the_conventional_sets() {
+        use super::super::DrawingToolType as T;
+        let on = |config: &FibonacciConfig| -> Vec<f32> {
+            config.visible_levels().map(|l| l.value).collect()
+        };
+        let retracement = FibonacciConfig::default();
+        assert_eq!(
+            on(&retracement),
+            [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+        );
+        assert_eq!(FibPreset::matching(&retracement), Some(FibPreset::Classic));
+        assert_eq!(retracement.effective_h_align(), TextHorizontalAlign::Left);
+        assert!(retracement.show_background);
+
+        let (levels, reverse) = FibPreset::Extension.levels();
+        assert!(reverse);
+        assert!(levels.iter().any(|l| l.visible && l.value == 4.236));
+
+        let extension = FibonacciConfig::extension_default();
+        assert_eq!(on(&extension), [0.0, 0.382, 0.5, 0.618, 1.0, 1.618, 2.618]);
+        assert!(!extension.show_background && !extension.extend_right);
+
+        for (tool, want) in [
+            (
+                T::FibonacciChannel,
+                &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.618, 2.618][..],
+            ),
+            (
+                T::FibonacciTimeZones,
+                &[0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0],
+            ),
+            (
+                T::FibonacciSpeedFan,
+                &[0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0],
+            ),
+            (
+                T::TrendBasedFibTime,
+                &[0.0, 0.382, 0.618, 1.0, 1.382, 1.618, 2.0, 2.382, 2.618, 3.0],
+            ),
+            (
+                T::FibonacciCircles,
+                &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.618, 2.618],
+            ),
+            (T::FibonacciWedge, &[0.236, 0.382, 0.5, 0.618, 0.786, 1.0]),
+        ] {
+            let config = FibonacciConfig::for_tool(tool);
+            assert_eq!(on(&config), want, "{tool:?}");
+            assert!(!config.show_background, "{tool:?}");
+        }
+        // The same ratio reads the same colour in every tool.
+        let teal = |config: FibonacciConfig| {
+            config
+                .levels
+                .into_iter()
+                .find(|l| l.value == 0.618)
+                .unwrap()
+                .color
+        };
+        assert_eq!(
+            teal(FibonacciConfig::default()),
+            teal(FibonacciConfig::for_tool(T::FibonacciCircles))
+        );
     }
 
     /// Anchors 100 then 200: level v sits at 200 - 100 * v, or at 100 + 100 * v when reversed.

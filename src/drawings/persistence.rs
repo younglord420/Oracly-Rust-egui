@@ -1154,6 +1154,8 @@ mod tests {
             fib.show_levels = None;
             fib.levels_as_percent = true;
             fib.label_h_align = None;
+            fib.labels_on_left = false;
+            fib.label_v_align = crate::drawings::TextVerticalAlign::Middle;
             assert_eq!(
                 format!("{:?}", restore(stored, want.id)),
                 format!("{want:?}")

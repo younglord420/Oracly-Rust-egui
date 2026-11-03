@@ -46,24 +46,28 @@ pub struct PitchforkConfig {
 impl PitchforkConfig {
     /// Rays of a new pitchfan, matching the former fixed ratios.
     pub fn pitchfan() -> Self {
-        let color = [255, 255, 255, 255];
+        let levels = [
+            (0.0, [120, 123, 134, 255]),
+            (0.236, [242, 54, 69, 255]),
+            (0.382, [255, 152, 0, 255]),
+            (0.5, [76, 175, 80, 255]),
+            (0.618, [8, 153, 129, 255]),
+            (0.786, [0, 188, 212, 255]),
+            (1.0, [41, 98, 255, 255]),
+        ];
         Self {
-            levels: [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
-                .map(|value| {
+            levels: levels
+                .map(|(value, color)| {
                     let edge = value <= f32::EPSILON || (value - 1.0).abs() <= 1e-4;
-                    let mut level = PitchforkLevel::new(
-                        value,
-                        true,
-                        [color[0], color[1], color[2], if edge { 255 } else { 150 }],
-                    );
+                    let mut level = PitchforkLevel::new(value, true, color);
                     if !edge {
                         level.width = Some(crate::styles::stroke::HAIRLINE);
                     }
                     level
                 })
                 .to_vec(),
-            show_background: false,
-            background_opacity: 0,
+            show_background: true,
+            background_opacity: 40,
         }
     }
 
@@ -124,5 +128,35 @@ impl Default for PitchforkConfig {
             show_background: true,
             background_opacity: 20,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pitchfan_defaults_are_coloured_and_filled() {
+        let config = PitchforkConfig::pitchfan();
+        assert!(config.show_background);
+        assert!(config.background_opacity > 0);
+        assert_eq!(config.levels.len(), 7);
+        assert!(
+            config
+                .levels
+                .windows(2)
+                .all(|pair| pair[0].color != pair[1].color)
+        );
+
+        let drawing = crate::drawings::Drawing::with_color(
+            1,
+            crate::drawings::DrawingToolType::Pitchfan,
+            [9, 8, 7, 255],
+        );
+        let levels = &drawing.pitchfork.unwrap().levels;
+        assert!(
+            levels.windows(2).all(|pair| pair[0].color != pair[1].color),
+            "the toolbar's initial drawing colour must not flatten the default palette"
+        );
     }
 }

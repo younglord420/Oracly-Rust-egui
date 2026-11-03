@@ -323,11 +323,6 @@ impl Drawing {
     pub fn with_color(id: usize, tool_type: DrawingToolType, color: [u8; 4]) -> Self {
         let mut drawing = Self::new(id, tool_type);
         drawing.color = color;
-        if tool_type == DrawingToolType::Pitchfan
-            && let Some(config) = &mut drawing.pitchfork
-        {
-            config.recolor_pitchfan(color);
-        }
         if tool_type != DrawingToolType::ElliottCorrection
             && let Some(fill) = &mut drawing.fill_color
         {
@@ -407,7 +402,13 @@ impl Drawing {
                 FibonacciConfig::default()
             }
         });
-        let origin = self.chart_points.get(2).unwrap_or(start).price;
+        // A trend-based extension only projects once C is placed (or previewed); legacy
+        // completed two-point drawings keep projecting from A.
+        let origin = match self.chart_points.get(2) {
+            Some(origin) => origin.price,
+            None if extension && !self.completed => return None,
+            None => start.price,
+        };
         let prices = config
             .level_prices(start.price, end.price, extension, origin)
             .collect();
@@ -655,6 +656,11 @@ impl Drawing {
                 level.color = color;
             }
         }
+        if self.tool_type == DrawingToolType::Pitchfan
+            && let Some(config) = &mut self.pitchfork
+        {
+            config.recolor_pitchfan(color);
+        }
     }
 
     /// Get the fill color as Color32, if set
@@ -804,6 +810,8 @@ mod tests {
         // Numeric-looking custom labels are ignored; empty labels derive from the ratio.
         config.levels[2].label = "100%".into();
         config.levels[3].label.clear();
+        // An extension level turned on past the off 0.886..1.414 levels keeps its index.
+        config.levels[11].visible = true;
         fib.fib_config = Some(config);
         // (drawing, bar) -> (level, name, price); prices by hand.
         for (drawing, bar, scale, expected) in [
@@ -855,12 +863,9 @@ mod tests {
                     (2, "0.382", 161.8),
                     (3, "0.5", 150.0),
                     (4, "0.618", 138.2),
-                    (5, "0.786", 121.4),
-                    (6, "1", 100.0),
-                    (9, "1.618", 38.2),
-                    (12, "2.618", -61.8),
-                    (13, "3.618", -161.8),
-                    (14, "4.236", -223.6),
+                    (6, "0.786", 121.4),
+                    (8, "1", 100.0),
+                    (11, "1.618", 38.2),
                 ],
             ),
             // Straight on the scale: the geometric mean of 100 and 400 halfway on a log scale.

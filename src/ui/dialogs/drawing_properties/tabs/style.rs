@@ -48,7 +48,21 @@ fn has_fib_style_controls(tool: DrawingToolType) -> bool {
 }
 
 fn shows_generic_line_row(tool: DrawingToolType) -> bool {
-    !has_fib_style_controls(tool)
+    !has_fib_style_controls(tool) && tool != DrawingToolType::Pitchfan
+}
+
+/// Fibonacci tools whose lines take their colours from their levels: the Line row offers
+/// width and style only.
+fn colours_from_levels(tool: DrawingToolType) -> bool {
+    matches!(
+        tool,
+        DrawingToolType::FibonacciTimeZones
+            | DrawingToolType::FibonacciSpeedFan
+            | DrawingToolType::TrendBasedFibTime
+            | DrawingToolType::FibonacciCircles
+            | DrawingToolType::FibonacciSpeedResistanceArcs
+            | DrawingToolType::FibonacciWedge
+    )
 }
 
 /// Style / Appearance section renderer.
@@ -99,13 +113,15 @@ impl StyleTab {
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.spacing_mut().item_spacing.x = gap;
-                            if let Some(color) = color_swatch(
-                                ui,
-                                &mut pickers[LINE_PICKER],
-                                props.color,
-                                "drawing_props_color",
-                                true,
-                            ) {
+                            if !tool.is_some_and(colours_from_levels)
+                                && let Some(color) = color_swatch(
+                                    ui,
+                                    &mut pickers[LINE_PICKER],
+                                    props.color,
+                                    "drawing_props_color",
+                                    true,
+                                )
+                            {
                                 props.color = color;
                             }
                             line_width_combo(ui, &mut props.line_width, width_chip_w, control_h);
@@ -949,18 +965,36 @@ fn fib_style_controls(
                 .color(theme.ui.text_secondary),
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            line_width_combo_with_id(
-                ui,
-                "drawing_props_fib_levels_width",
-                "Levels line width",
-                &mut config.levels_line_width,
-                width_chip_w.max(72.0),
-                control_h,
+            ui.allocate_ui_with_layout(
+                Vec2::new(col_w.min(ui.available_width()), control_h),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    line_style_combo(
+                        ui,
+                        "drawing_props_fib_levels_style",
+                        "Levels line style",
+                        &mut config.levels_line_style,
+                        style_chip_w,
+                        control_h,
+                    );
+                    line_width_combo_with_id(
+                        ui,
+                        "drawing_props_fib_levels_width",
+                        "Levels line width",
+                        &mut config.levels_line_width,
+                        width_chip_w,
+                        control_h,
+                    );
+                },
             );
         });
     });
 
-    extend_control(ui, &mut config.extend_left, &mut config.extend_right, col_w);
+    // Only the retracement's levels run on past their anchors.
+    if tool_type == DrawingToolType::FibonacciRetracement {
+        extend_control(ui, &mut config.extend_left, &mut config.extend_right, col_w);
+    }
 }
 
 fn extend_control(ui: &mut Ui, left: &mut bool, right: &mut bool, col_w: f32) {
@@ -1233,5 +1267,10 @@ mod tests {
         assert_ne!(LINE_PICKER, FIB_TREND_PICKER);
         assert_ne!(FILL_PICKER, FIB_TREND_PICKER);
         assert!(shows_generic_line_row(DrawingToolType::TrendLine));
+        assert!(!shows_generic_line_row(DrawingToolType::Pitchfan));
+        // Level tools take their colours from the levels; the spiral has none of its own.
+        assert!(colours_from_levels(DrawingToolType::FibonacciCircles));
+        assert!(!colours_from_levels(DrawingToolType::FibonacciSpiral));
+        assert!(!colours_from_levels(DrawingToolType::TrendLine));
     }
 }

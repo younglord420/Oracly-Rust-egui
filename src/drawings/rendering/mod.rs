@@ -296,6 +296,11 @@ impl Drawing {
             T::FibonacciTimeZones => outline.lines = self.fibonacci_time_zone_lines(rect),
             T::FibonacciWedge => return self.fibonacci_wedge_outline(),
             T::FibonacciSpeedFan => outline.lines = self.fibonacci_speed_fan_lines(rect),
+            T::FibonacciCircles | T::FibonacciSpeedResistanceArcs => {
+                outline.lines = self.fibonacci_ring_lines();
+            }
+            T::FibonacciSpiral => outline.lines = self.fibonacci_spiral_lines(),
+            T::TrendBasedFibTime => outline.lines = self.trend_fib_time_lines(rect),
             _ => return None,
         }
         Some(outline)
@@ -1216,7 +1221,13 @@ mod tests {
 
     #[test]
     fn three_anchor_tools_preview_their_first_leg() {
-        for tool in [DrawingToolType::Pitchfan, DrawingToolType::FibonacciWedge] {
+        for tool in [
+            DrawingToolType::Pitchfan,
+            DrawingToolType::FibonacciWedge,
+            DrawingToolType::FibonacciChannel,
+            DrawingToolType::FibonacciExtension,
+            DrawingToolType::TrendBasedFibTime,
+        ] {
             let mut drawing = Drawing::new(1, tool);
             drawing.points = vec![Pos2::new(40.0, 80.0), Pos2::new(180.0, 140.0)];
             let shapes = paint(&drawing);
@@ -1232,6 +1243,32 @@ mod tests {
             }
             assert!(has_guide(&shapes), "{tool:?} hides its first anchor");
         }
+    }
+
+    #[test]
+    fn pitchfan_background_follows_its_input_toggle() {
+        fn filled_paths(shapes: &[Shape]) -> usize {
+            shapes
+                .iter()
+                .map(|shape| match shape {
+                    Shape::Vec(inner) => filled_paths(inner),
+                    Shape::Path(path) => usize::from(path.fill != egui::Color32::TRANSPARENT),
+                    _ => 0,
+                })
+                .sum()
+        }
+
+        let mut drawing = Drawing::new(1, DrawingToolType::Pitchfan);
+        drawing.points = vec![
+            Pos2::new(80.0, 220.0),
+            Pos2::new(220.0, 100.0),
+            Pos2::new(220.0, 300.0),
+        ];
+        let with_background = filled_paths(&paint(&drawing));
+        drawing.pitchfork.as_mut().unwrap().show_background = false;
+        let without_background = filled_paths(&paint(&drawing));
+        assert!(with_background > 0);
+        assert_eq!(without_background, 0);
     }
 
     fn paint(drawing: &Drawing) -> Vec<Shape> {
