@@ -859,10 +859,17 @@ mod tests {
                 Some(7),
                 vec![(0.0, 0.0), (100.0, 0.0)],
             ),
+            // A date range is the box between its anchors, not a band down the pane.
+            (
+                T::DateRange,
+                (150.0, 65.0),
+                Some(7),
+                vec![(100.0, 50.0), (200.0, 80.0)],
+            ),
             (
                 T::DateRange,
                 (150.0, 400.0),
-                Some(7),
+                None,
                 vec![(100.0, 50.0), (200.0, 80.0)],
             ),
             (

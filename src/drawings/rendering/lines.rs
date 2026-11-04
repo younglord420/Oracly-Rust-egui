@@ -318,7 +318,7 @@ impl Drawing {
         // Width label (bottom center)
         if width > 50.0 {
             let width_label_pos = Pos2::new(rect.center().x, rect.max.y + typography::XS);
-            super::measurements::boxed_label(
+            self.label_box(
                 painter,
                 egui::Align2::CENTER_CENTER,
                 width_label_pos,
@@ -330,7 +330,7 @@ impl Drawing {
 
         // Height label (right center)
         if height > 50.0 {
-            super::measurements::boxed_label(
+            self.label_box(
                 painter,
                 egui::Align2::LEFT_CENTER,
                 Pos2::new(rect.max.x + typography::XS, rect.center().y),

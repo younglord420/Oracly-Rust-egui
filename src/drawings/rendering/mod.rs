@@ -217,7 +217,13 @@ impl Drawing {
                     outline.areas.push(vec![a, b, c]);
                 }
             }
-            T::Measure | T::DateAndPriceRange | T::GannBox | T::GannSquare | T::GannFixed => {
+            T::Measure
+            | T::PriceRange
+            | T::DateRange
+            | T::DateAndPriceRange
+            | T::GannBox
+            | T::GannSquare
+            | T::GannFixed => {
                 boxed(&mut outline, Rect::from_two_pos(first, second));
             }
             T::RotatedRect => {
@@ -228,24 +234,6 @@ impl Drawing {
                 }
             }
             T::Rect => boxed(&mut outline, self.rectangle_bounds(rect)?),
-            T::PriceRange => {
-                let mid_x = (first.x + second.x) / 2.0;
-                outline.lines = vec![
-                    across(first.y),
-                    across(second.y),
-                    [Pos2::new(mid_x, first.y), Pos2::new(mid_x, second.y)],
-                ];
-            }
-            T::DateRange => {
-                let band = Rect::from_x_y_ranges(
-                    first.x.min(second.x)..=first.x.max(second.x),
-                    rect.y_range(),
-                );
-                outline.lines = [first.x, second.x]
-                    .map(|x| [Pos2::new(x, rect.min.y), Pos2::new(x, rect.max.y)])
-                    .into();
-                outline.areas.push(corners(band));
-            }
             T::Circle => {
                 let radius = first.distance(second);
                 let ring: Vec<Pos2> = (0..=64)
@@ -568,6 +556,8 @@ impl Drawing {
                 | T::BarsPattern
                 | T::FixedRangeVolumeProfile
                 | T::Measure
+                | T::PriceRange
+                | T::DateRange
                 | T::DateAndPriceRange
                 | T::Arrow
                 | T::ArrowMarker

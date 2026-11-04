@@ -8,7 +8,7 @@ use crate::localization as l10n;
 use crate::model::{Bar, SpanCache};
 use crate::painting::volume_profile::ProfileStyle;
 use crate::scales::PriceFormatter;
-use crate::styles::{stroke, typography};
+use crate::styles::stroke;
 use egui::{Color32, Pos2, Shape, Stroke};
 use std::cell::RefCell;
 use std::ops::Range;
@@ -94,65 +94,92 @@ impl Drawing {
             return;
         };
 
-        // Fill between the inner bands, in quads so each piece stays convex.
+        // Fill between the inner bands as one mesh, so no seams show between bars.
         if let Some(fill) = config.band_fill {
             let fill = Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
-            for (up, low) in lines[1].windows(2).zip(lines[2].windows(2)) {
-                painter.add(Shape::convex_polygon(
-                    vec![up[0], up[1], low[1], low[0]],
-                    fill,
-                    Stroke::NONE,
-                ));
+            let mut mesh = egui::Mesh::default();
+            for (&up, &low) in lines[1].iter().zip(&lines[2]) {
+                mesh.colored_vertex(up, fill);
+                mesh.colored_vertex(low, fill);
             }
+            for i in 0..(mesh.vertices.len() as u32 / 2).saturating_sub(1) {
+                let k = i * 2;
+                mesh.add_triangle(k, k + 1, k + 2);
+                mesh.add_triangle(k + 1, k + 3, k + 2);
+            }
+            painter.add(Shape::mesh(mesh));
         }
-        // Bands (the outer ones fainter), then the VWAP line, each labelled at the last bar.
-        let font = egui::FontId::proportional(typography::XS);
+        // Bands (the outer ones fainter), then the VWAP line.
         let faint =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150);
         let rgba = |c: [u8; 4]| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
         let upper = config.upper_color.map_or(faint, rgba);
         let lower = config.lower_color.map_or(faint, rgba);
         let [vwap_line, bands @ ..] = lines;
+        let mut labels = Vec::new();
         for (i, (band, name)) in bands.into_iter().zip(names).enumerate() {
             if i >= 2 && !config.show_outer {
                 break;
             }
             let band_color = if i % 2 == 0 { upper } else { lower };
             let alpha = if i < 2 { 1.0 } else { 0.5 };
-            let label_at = band.last().map(|p| Pos2::new(p.x - 20.0, p.y));
+            if let Some(&last) = band.last() {
+                labels.push((last.y, name, band_color));
+            }
             painter.add(Shape::line(
                 band,
                 Stroke::new(stroke::HAIRLINE, band_color.gamma_multiply(alpha)),
             ));
-            if let Some(pos) = label_at {
-                painter.text(
-                    pos,
-                    egui::Align2::CENTER_CENTER,
-                    name,
-                    font.clone(),
-                    band_color,
-                );
-            }
         }
         painter.add(Shape::line(
             vwap_line,
-            Stroke::new(self.stroke_width.max(2.0), color),
+            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
         ));
+
+        // Labels sit just right of the last bar, spread apart so none covers another.
         let precision = view
             .instrument
             .and_then(crate::scales::instrument_price_precision)
             .map_or_else(|| crate::scales::price_decimals(vwap), usize::from);
-        crate::drawings::rendering::measurements::boxed_label(
+        let font = self.annotation_font();
+        let gap = font.size + 4.0;
+        let x = end.x + 6.0;
+        let vwap_rect = self.label_box_on(
             painter,
-            egui::Align2::RIGHT_CENTER,
-            Pos2::new(end.x - 20.0, end.y),
+            egui::Align2::LEFT_CENTER,
+            Pos2::new(x, end.y),
             format!(
                 "VWAP {}",
                 crate::scales::DefaultPriceFormatter::with_precision(precision).format(vwap)
             ),
-            Color32::WHITE,
-            color,
+            color.to_opaque(),
         );
+        labels.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut taken = vec![vwap_rect.y_range()];
+        for (y, name, band_color) in labels {
+            let mut y = y;
+            for _ in 0..taken.len() {
+                let Some(range) = taken
+                    .iter()
+                    .find(|range| (range.min - gap / 2.0..=range.max + gap / 2.0).contains(&y))
+                else {
+                    break;
+                };
+                y = if y < (range.min + range.max) / 2.0 {
+                    range.min - gap / 2.0 - 0.5
+                } else {
+                    range.max + gap / 2.0 + 0.5
+                };
+            }
+            let rect = painter.text(
+                Pos2::new(x + 2.0, y),
+                egui::Align2::LEFT_CENTER,
+                name,
+                font.clone(),
+                band_color,
+            );
+            taken.push(rect.y_range());
+        }
     }
 
     /// Renders the volume profile of the bars between the two anchors, with
@@ -222,7 +249,7 @@ impl Drawing {
                 Pos2::new(left + 3.0, (view.price_to_y)(profile.high())),
                 egui::Align2::LEFT_TOP,
                 l10n::text(painter.ctx(), note),
-                egui::FontId::proportional(typography::XS),
+                self.annotation_font(),
                 Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 200),
             );
         }
@@ -272,6 +299,54 @@ impl Drawing {
             _ => return None,
         };
         self.span_profile(view, first, bars).as_ref().clone()
+    }
+}
+
+impl Drawing {
+    /// The prices an anchored VWAP (to its outermost band) or a volume profile reaches while
+    /// part of it is in the `visible` bars, for the chart's price fit; `None` for other tools
+    /// or off screen.
+    pub(crate) fn volume_tool_price_span(
+        &self,
+        bars: &[Bar],
+        visible: Range<usize>,
+    ) -> Option<(f64, f64)> {
+        let anchor = |i: usize| self.chart_points.get(i).map(|p| p.bar_idx);
+        let (first, span) = match self.tool_type {
+            DrawingToolType::FixedRangeVolumeProfile => bars_between(bars, anchor(0)?, anchor(1)?)?,
+            DrawingToolType::AnchoredVolumeProfile | DrawingToolType::AnchoredVWAP => {
+                bars_between(bars, anchor(0)?, f32::INFINITY)?
+            }
+            _ => return None,
+        };
+        let last = first + span.len();
+        if last <= visible.start || first >= visible.end {
+            return None;
+        }
+        let mut range = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut widen = |low: f64, high: f64| {
+            if low.is_finite() && high.is_finite() {
+                range = (range.0.min(low), range.1.max(high));
+            }
+        };
+        if self.tool_type == DrawingToolType::AnchoredVWAP {
+            let config = self.vwap.unwrap_or_default();
+            let k = config.multiplier.abs() * if config.show_outer { 2.0 } else { 1.0 };
+            let mut sums = VwapSums::default();
+            for (i, bar) in span.iter().enumerate() {
+                sums.add(bar);
+                if (visible.start..visible.end).contains(&(first + i))
+                    && let Some((vwap, sigma)) = sums.value()
+                {
+                    widen(vwap - k * sigma, vwap + k * sigma);
+                }
+            }
+        } else {
+            for bar in span.iter().filter(|bar| !bar.is_whitespace()) {
+                widen(bar.low, bar.high);
+            }
+        }
+        (range.0 <= range.1).then_some(range)
     }
 }
 
@@ -360,9 +435,9 @@ fn span_profile(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui::Rect;
     use crate::drawings::domain::DrawingToolType;
     use crate::drawings::rendering::sample_bars;
+    use egui::Rect;
 
     fn assert_close(got: f64, want: f64) {
         assert!((got - want).abs() < 1e-9, "got {got}, want {want}");

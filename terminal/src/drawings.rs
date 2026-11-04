@@ -136,14 +136,21 @@ impl Terminal {
             self.drawings.selection.hide();
             return;
         };
-        let toolbar = &mut self.drawings.selection;
-        let size = toolbar.estimated_size();
+        let size = self.drawings.selection.estimated_size();
         let clip = if self.chart_area == egui::Rect::NOTHING {
             ui.max_rect()
         } else {
             self.chart_area
         };
+        let mut bounds = bounds;
+        if let Some(painted) = self.chart().drawings().painted_bounds(id)
+            && painted.min.y < bounds.min.y
+            && painted.min.y - size.y - 8.0 >= clip.min.y + 4.0
+        {
+            bounds.min.y = painted.min.y;
+        }
         let pos = FloatingSelectionToolbar::anchor_rect(bounds, clip, size);
+        let toolbar = &mut self.drawings.selection;
         toolbar.show_near_drawing(id, pos);
         let mut slots = vec![ColorSlot {
             label: "Line",

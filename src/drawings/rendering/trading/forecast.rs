@@ -1,7 +1,7 @@
 //! Forecast tool rendering
 
 use crate::drawings::domain::{ChartPoint, Drawing};
-use crate::drawings::rendering::measurements::{boxed_label, elapsed_ms, format_duration};
+use crate::drawings::rendering::measurements::{elapsed_ms, format_duration};
 use crate::drawings::rendering::{ChartView, bars_between};
 use crate::model::{Bar, percent_change};
 use crate::scales::{
@@ -60,7 +60,7 @@ impl Drawing {
 
         let up = change >= 0.0;
         let gap = DESIGN_TOKENS.spacing.md;
-        boxed_label(
+        self.label_box(
             painter,
             if up {
                 Align2::CENTER_TOP
@@ -80,14 +80,14 @@ impl Drawing {
             }
         });
         let badge = |align, pos, status: &str, color| {
-            boxed_label(painter, align, pos, status.to_owned(), color, chart.bg_axis)
+            self.label_box(painter, align, pos, status.to_owned(), color, chart.bg_axis)
         };
         let mut target_pos = end + egui::vec2(0.0, if up { -gap } else { gap });
         if up && let Some((status, color)) = outcome {
             let rect = badge(Align2::CENTER_BOTTOM, target_pos, status, color);
             target_pos.y = rect.top() - DESIGN_TOKENS.spacing.xs;
         }
-        let rect = boxed_label(
+        let rect = self.label_box(
             painter,
             if up {
                 Align2::CENTER_BOTTOM

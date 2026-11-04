@@ -2,7 +2,6 @@
 
 use crate::drawings::domain::Drawing;
 use crate::drawings::rendering::ChartView;
-use crate::drawings::rendering::measurements::boxed_label;
 use crate::drawings::rendering::utils::draw_dashed_line;
 use crate::model::percent_change;
 use crate::scales::{
@@ -43,7 +42,6 @@ impl Drawing {
         let Some(&proj_point) = self.points.get(2) else {
             return;
         };
-        let dy = end.y - start.y;
         let dashed_color =
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150);
         let proj_end = Pos2::new(
@@ -60,7 +58,8 @@ impl Drawing {
         );
 
         // Target zone (shaded rectangle at projection end)
-        self.draw_projection_target_zone(painter, proj_end, dy, dashed_color);
+        let zone = target_zone(end - start);
+        self.draw_projection_target_zone(painter, proj_end, zone, dashed_color);
 
         let precision = view
             .instrument
@@ -69,7 +68,7 @@ impl Drawing {
         self.draw_projection_labels(
             painter,
             [start, end, proj_end],
-            dy,
+            zone.y,
             precision,
             color,
             dashed_color,
@@ -83,14 +82,15 @@ impl Drawing {
         end: Pos2,
         color: Color32,
     ) {
-        painter.line_segment([start, end], Stroke::new(self.stroke_width, color));
+        let width = self.stroke_width.max(stroke::HAIRLINE);
+        painter.line_segment([start, end], Stroke::new(width, color));
 
-        // Draw arrow at end
+        // The arrowhead grows with the line.
         let dx = end.x - start.x;
         let dy = end.y - start.y;
         let angle = dy.atan2(dx);
 
-        let arrow_size = 12.0;
+        let arrow_size = 9.0 + width * 1.5;
         let arrow_angle = 0.4;
         let p1 = Pos2::new(
             end.x - arrow_size * (angle - arrow_angle).cos(),
@@ -100,23 +100,21 @@ impl Drawing {
             end.x - arrow_size * (angle + arrow_angle).cos(),
             end.y - arrow_size * (angle + arrow_angle).sin(),
         );
-        painter.line_segment([end, p1], Stroke::new(stroke::THICK, color));
-        painter.line_segment([end, p2], Stroke::new(stroke::THICK, color));
+        painter.line_segment([end, p1], Stroke::new(width.max(stroke::THICK), color));
+        painter.line_segment([end, p2], Stroke::new(width.max(stroke::THICK), color));
     }
 
     fn draw_projection_target_zone(
         &self,
         painter: &egui::Painter,
         proj_end: Pos2,
-        dy: f32,
+        zone: egui::Vec2,
         dashed_color: Color32,
     ) {
-        let zone_width = 20.0;
-        let zone_height = (dy.abs() * 0.2).max(20.0);
         let zone_fill = self.fill_color32().unwrap_or_else(|| {
             Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 30)
         });
-        let zone_rect = Rect::from_center_size(proj_end, egui::vec2(zone_width, zone_height));
+        let zone_rect = Rect::from_center_size(proj_end, zone);
         painter.rect_filled(zone_rect, DESIGN_TOKENS.rounding.md, zone_fill);
         painter.rect_stroke(
             zone_rect,
@@ -130,7 +128,7 @@ impl Drawing {
         &self,
         painter: &egui::Painter,
         [start, end, proj_end]: [Pos2; 3],
-        dy: f32,
+        zone_height: f32,
         precision: usize,
         color: Color32,
         dashed_color: Color32,
@@ -146,7 +144,7 @@ impl Drawing {
         // Move label (at midpoint of AB)
         let mid_ab = Pos2::new((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
         let label_text = format!("{sign}{} ({sign}{pct_change:.2}%)", format(change.abs()));
-        boxed_label(
+        self.label_box(
             painter,
             egui::Align2::CENTER_CENTER,
             Pos2::new(mid_ab.x + 10.0, mid_ab.y - 10.0),
@@ -160,7 +158,6 @@ impl Drawing {
         );
 
         // Projection target label
-        let zone_height = (dy.abs() * 0.2).max(20.0);
         let target_label = self.chart_points.get(2).map_or_else(
             || "Target: n/a".to_owned(),
             |c| {
@@ -170,15 +167,19 @@ impl Drawing {
                 )
             },
         );
-        boxed_label(
+        self.label_box_on(
             painter,
             egui::Align2::CENTER_CENTER,
             Pos2::new(proj_end.x, proj_end.y - zone_height / 2.0 - 12.0),
             target_label,
-            Color32::WHITE,
-            dashed_color,
+            dashed_color.to_opaque(),
         );
     }
+}
+
+/// Target zone a fifth of the measured move on each axis, at least 20 points either way.
+fn target_zone(leg: egui::Vec2) -> egui::Vec2 {
+    (leg.abs() * 0.2).max(egui::Vec2::splat(20.0))
 }
 
 #[cfg(test)]
@@ -204,7 +205,7 @@ mod tests {
                         Pos2::new(300.0, 200.0),
                         Pos2::new(500.0, 100.0),
                     ],
-                    -100.0,
+                    20.0,
                     2,
                     Color32::BLUE,
                     Color32::BLUE,
@@ -251,13 +252,14 @@ mod tests {
         let map = chart.get_chart_mapping();
         // D=C+(B-A): bar 40+(20-10)=50, price 120+(150-100)=170.
         let target = Pos2::new(map.idx_to_x(50), map.price_to_y(170.0));
-        // The 20 px target zone, painted as a rect or within a tessellated mesh, whose fill
+        let width = target_zone(egui::vec2(map.idx_to_x(20) - map.idx_to_x(10), 0.0)).x;
+        // The target zone, painted as a rect or within a tessellated mesh, whose fill
         // vertices stop half a pixel inside the rect for the feathered edge.
         let [r, g, b, _] = chart.drawings().drawings[0].color;
         let fill = egui::Color32::from_rgba_unmultiplied(r, g, b, 30);
         assert!(output.iter().any(|s| match s {
             egui::Shape::Rect(r) =>
-                (r.rect.width() - 20.0).abs() < 1e-3 && r.rect.center().distance(target) < 1e-2,
+                (r.rect.width() - width).abs() < 1e-3 && r.rect.center().distance(target) < 1e-2,
             egui::Shape::Mesh(m) => {
                 let zone = Rect::from_points(
                     &(m.vertices.iter())
@@ -265,7 +267,7 @@ mod tests {
                         .map(|v| v.pos)
                         .collect::<Vec<_>>(),
                 );
-                (zone.width() - 19.0).abs() < 1e-3 && zone.center().distance(target) < 1e-2
+                (zone.width() - (width - 1.0)).abs() < 1e-3 && zone.center().distance(target) < 1e-2
             }
             _ => false,
         }));

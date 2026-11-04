@@ -103,6 +103,51 @@ impl Chart {
     }
 
     // Source-bar cadence sets precision even when many elements share one time.
+    /// The anchor prices of the selected range tools that mark the price axis, with their colour.
+    #[cfg(feature = "drawings")]
+    fn selected_range_prices(&self) -> Vec<([f64; 2], egui::Color32)> {
+        use crate::drawings::DrawingToolType as T;
+        self.drawings
+            .selected_ids()
+            .filter_map(|id| self.drawings.drawings.iter().find(|d| d.id == id))
+            .filter(|d| {
+                matches!(
+                    d.tool_type,
+                    T::PriceRange | T::DateAndPriceRange | T::Measure
+                )
+            })
+            .filter_map(|d| match d.chart_points.as_slice() {
+                [a, b, ..] => Some(([a.price, b.price], d.color32().to_opaque())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The anchors and screen x of the selected range tools that mark the time axis, with
+    /// their colour.
+    #[cfg(feature = "drawings")]
+    fn selected_range_times(
+        &self,
+    ) -> Vec<([crate::drawings::ChartPoint; 2], [f32; 2], egui::Color32)> {
+        use crate::drawings::DrawingToolType as T;
+        self.drawings
+            .selected_ids()
+            .filter_map(|id| self.drawings.drawings.iter().find(|d| d.id == id))
+            .filter(|d| {
+                matches!(
+                    d.tool_type,
+                    T::DateRange | T::DateAndPriceRange | T::Measure
+                )
+            })
+            .filter_map(|d| match (d.chart_points.as_slice(), d.points.as_slice()) {
+                ([a, b, ..], [pa, pb, ..]) => {
+                    Some(([*a, *b], [pa.x, pb.x], d.color32().to_opaque()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     fn time_label_seconds(&self) -> i64 {
         let bars = &self.state.data().bars;
         let visible = self.state.visible_data();
@@ -2451,6 +2496,47 @@ impl Chart {
                 }
             }
         }
+        // A selected range tool marks its prices on the price axis, over a faint band between them.
+        #[cfg(feature = "drawings")]
+        if show_price_axis {
+            for (prices, color) in self.selected_range_prices() {
+                let ys = prices.map(|price| price_map.price_to_y(price));
+                let axis = if self.config.show_right_axis {
+                    price_rect.right()..=axis_edge
+                } else {
+                    axis_edge.min(rect.left())..=price_rect.left()
+                };
+                painter.rect_filled(
+                    Rect::from_x_y_ranges(axis, ys[0].min(ys[1])..=ys[0].max(ys[1]))
+                        .intersect(price_rect.with_max_x(rect.max.x).with_min_x(rect.min.x)),
+                    0.0,
+                    color.gamma_multiply(0.25),
+                );
+                for (price, y) in prices.into_iter().zip(ys) {
+                    if !price_map
+                        .range()
+                        .contains(price_map.transform().to_scale(price))
+                    {
+                        continue;
+                    }
+                    let label = price_map.transform().label(
+                        price_map.transform().to_scale(price),
+                        rendering::axes::tag_decimals(&price_map, y),
+                        price_formatter.as_deref(),
+                    );
+                    tags.push(rendering::axes::render_axis_value(
+                        &painter,
+                        price_rect,
+                        axis_edge,
+                        y,
+                        label,
+                        (rendering::axes::tag_text_color(color), color),
+                        &tags,
+                        self.config.price_axis.allow_label_overlap,
+                    ));
+                }
+            }
+        }
         let mut independent_axis_width =
             self.paint_series_axes(ui, &painter, rect, price_rect, &colors);
         if show_price_axis {
@@ -2688,6 +2774,40 @@ impl Chart {
                         25.0,
                         None,
                     )));
+                }
+            }
+            // A selected range tool marks its times on the time axis, over a faint band.
+            #[cfg(feature = "drawings")]
+            {
+                let bar_seconds = self.time_label_seconds();
+                for (points, xs, color) in self.selected_range_times() {
+                    let axis = self.time_axis_rect;
+                    painter.rect_filled(
+                        Rect::from_x_y_ranges(xs[0].min(xs[1])..=xs[0].max(xs[1]), axis.y_range())
+                            .intersect(
+                                axis.with_min_x(chart_rect.left())
+                                    .with_max_x(chart_rect.right()),
+                            ),
+                        0.0,
+                        color.gamma_multiply(0.25),
+                    );
+                    for (point, x) in points.into_iter().zip(xs) {
+                        let Some(time) = self.drawing_point_time(&point) else {
+                            continue;
+                        };
+                        if chart_rect.x_range().contains(x) {
+                            time_tags.push(Some(rendering::axes::paint_crosshair_tag(
+                                &painter,
+                                Pos2::new(x, time_axis_top + 1.5),
+                                egui::Align2::CENTER_TOP,
+                                chart_rect.left()..=chart_rect.right(),
+                                scale.format_crosshair(time, bar_seconds),
+                                (rendering::axes::tag_text_color(color), color),
+                                25.0,
+                                None,
+                            )));
+                        }
+                    }
                 }
             }
         }

@@ -264,6 +264,57 @@ impl InputsTab {
                         });
                         ui.end_row();
                     }
+                    let label = form_label(ui, "Width (%)");
+                    ui.add(
+                        egui::DragValue::new(&mut config.width_percent)
+                            .range(5.0..=100.0)
+                            .speed(0.5)
+                            .max_decimals(0),
+                    )
+                    .labelled_by(label.id);
+                    ui.end_row();
+                    let mut poc_custom = config.poc_color.is_some();
+                    let label = form_label(ui, "POC colour");
+                    ui.label_inputs_by(label.id, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut poc_custom, "");
+                            if poc_custom {
+                                pickers.resize_with(5, ColorPickerState::default);
+                                let mut color = config.poc_color.unwrap_or([255, 202, 22, 255]);
+                                level_color(ui, &mut color, &mut pickers[4]);
+                                config.poc_color = Some(color);
+                            } else {
+                                config.poc_color = None;
+                            }
+                        });
+                    });
+                    ui.end_row();
+                    let label = form_label(ui, "POC line");
+                    ui.label_inputs_by(label.id, |ui| {
+                        ui.horizontal(|ui| {
+                            let mut width = config.poc_width.unwrap_or(2.0);
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut width)
+                                        .range(1.0..=4.0)
+                                        .speed(0.1)
+                                        .max_decimals(0)
+                                        .suffix(" px"),
+                                )
+                                .changed()
+                            {
+                                config.poc_width = Some(width);
+                            }
+                            ui.combo_select_width(
+                                "poc_style",
+                                &mut config.poc_style,
+                                LineStyle::all().iter().copied(),
+                                |style| style.name().into(),
+                                (control_width - 70.0).max(80.0),
+                            );
+                        });
+                    });
+                    ui.end_row();
                     let label = form_label(ui, "VAH / VAL lines");
                     ui.label_inputs_by(label.id, |ui| {
                         ui.checkbox(&mut config.show_value_area_lines, "");
@@ -279,7 +330,7 @@ impl InputsTab {
                         let mut colors = config
                             .value_area_colors
                             .unwrap_or([config.up_color, config.down_color]);
-                        pickers.resize_with(4, ColorPickerState::default);
+                        pickers.resize_with(pickers.len().max(4), ColorPickerState::default);
                         for (i, name) in
                             ["Value area up", "Value area down"].into_iter().enumerate()
                         {
@@ -302,6 +353,10 @@ impl InputsTab {
                     updated.down_color = config.down_color;
                     updated.value_area_colors = config.value_area_colors;
                     updated.show_value_area_lines = config.show_value_area_lines;
+                    updated.width_percent = config.width_percent;
+                    updated.poc_color = config.poc_color;
+                    updated.poc_width = config.poc_width;
+                    updated.poc_style = config.poc_style;
                     if updated != original {
                         drawing.volume_profile = Some(updated);
                     }

@@ -1114,14 +1114,21 @@ impl DemoApp {
             self.selection_toolbar.hide();
             return;
         };
-        let toolbar = &mut self.selection_toolbar;
-        let size = toolbar.estimated_size();
+        let size = self.selection_toolbar.estimated_size();
         let clip = if chart_rect == egui::Rect::NOTHING {
             ui.max_rect()
         } else {
             chart_rect
         };
+        let mut bounds = bounds;
+        if let Some(painted) = self.chart.drawings().painted_bounds(id)
+            && painted.min.y < bounds.min.y
+            && painted.min.y - size.y - 8.0 >= clip.min.y + 4.0
+        {
+            bounds.min.y = painted.min.y;
+        }
         let pos = FloatingSelectionToolbar::anchor_rect(bounds, clip, size);
+        let toolbar = &mut self.selection_toolbar;
         toolbar.show_near_drawing(id, pos);
         let mut slots = vec![ColorSlot {
             label: "Line",
@@ -7401,6 +7408,102 @@ mod tests {
                     app.alerts.alerts().last().unwrap().status,
                     egui_charts::model::AlertStatus::Expired,
                     "expiry must not depend on a subscribed watchlist member"
+                );
+            }
+        }
+    }
+
+    /// Picking a tool from a flyout row that lies over the chart selects that tool; the click
+    /// never reaches the chart, even while the rail's quick pick made another tool active.
+    #[test]
+    fn flyout_picks_do_not_reach_the_chart() {
+        use eframe::App;
+        use egui::{Event, Pos2, RawInput};
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        let screen = egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1280.0, 760.0));
+        let frame = |app: &mut DemoApp, events: Vec<Event>| {
+            ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()),
+            )
+            .drop_without_applying_deltas();
+        };
+        let click = |at: Pos2| {
+            [true, false]
+                .map(|pressed| Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                })
+                .to_vec()
+        };
+        for _ in 0..3 {
+            frame(&mut app, vec![]);
+        }
+        let mut buttons: Vec<(String, Pos2)> = Vec::new();
+        for y in (40..700).step_by(4) {
+            let at = Pos2::new(20.0, y as f32);
+            frame(&mut app, vec![Event::PointerMoved(at)]);
+            if let Some(category) = app.drawing_toolbar.state.expanded_category.clone()
+                && !buttons.iter().any(|(c, _)| *c == category)
+            {
+                buttons.push((category, at));
+            }
+        }
+        let categories = ["Lines", "Fibonacci", "Patterns", "Projection", "Brushes/Shapes"];
+        for category in categories {
+            let button = buttons
+                .iter()
+                .find(|(c, _)| c == category)
+                .unwrap_or_else(|| panic!("{category} rail button in {buttons:?}"))
+                .1;
+            for (glide, batched) in [(false, false), (true, false), (false, true)] {
+                frame(&mut app, vec![Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]);
+                frame(&mut app, vec![Event::PointerMoved(button)]);
+                frame(&mut app, click(button));
+                frame(&mut app, vec![]);
+                let quick = app.chart.drawings().active_tool;
+                assert!(quick.is_some(), "{category}: the rail click picks a tool");
+                let flyout = ctx
+                    .memory(|m| m.area_rect(egui::Id::unique(("drawing_toolbar_flyout", category))))
+                    .unwrap_or_else(|| panic!("{category}: flyout laid out"));
+                let row = Pos2::new(flyout.left() + 60.0, flyout.bottom() - 18.0);
+                if glide {
+                    for i in 1..=8 {
+                        let t = i as f32 / 8.0;
+                        frame(&mut app, vec![Event::PointerMoved(button + (row - button) * t)]);
+                    }
+                } else if !batched {
+                    frame(&mut app, vec![Event::PointerMoved(row)]);
+                }
+                if batched {
+                    let mut events = vec![Event::PointerMoved(row)];
+                    events.extend(click(row));
+                    frame(&mut app, events);
+                } else {
+                    frame(&mut app, click(row));
+                }
+                frame(&mut app, vec![]);
+                assert!(
+                    app.chart.drawings().curr_drawing.is_none(),
+                    "{category} (glide {glide}, batched {batched}): the flyout click started a drawing on the chart"
+                );
+                assert_ne!(
+                    app.chart.drawings().active_tool,
+                    quick,
+                    "{category} (glide {glide}, batched {batched}): the flyout click picks its row"
                 );
             }
         }

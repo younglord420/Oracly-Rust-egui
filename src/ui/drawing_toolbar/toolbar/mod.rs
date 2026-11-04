@@ -420,7 +420,12 @@ impl DrawingToolbar {
         category: &str,
         response: &egui::Response,
     ) -> Option<DrawingToolbarAction> {
-        if response.hovered() && !self.state.search_open {
+        let passing_by = self
+            .state
+            .expanded_category
+            .as_deref()
+            .is_some_and(|open| open != category && self.heading_to_flyout(ui, open));
+        if response.hovered() && !self.state.search_open && !passing_by {
             self.open_flyout(ui.ctx(), category, response.rect);
         }
         if response.clicked() {
@@ -655,7 +660,7 @@ impl DrawingToolbar {
             // No layout yet: keep only while the pointer is still near the button.
             return false;
         };
-        if popup.expand(gap).contains(pos) {
+        if popup.expand(gap).contains(pos) || self.heading_to_flyout(ui, category) {
             return true;
         }
         // Bridge covering the gap between the rail button and the flyout.
@@ -668,6 +673,25 @@ impl DrawingToolbar {
             Pos2::new(right + gap, bottom + gap),
         )
         .contains(pos)
+    }
+
+    /// Whether the pointer moved this frame towards the left edge of the open flyout `category`,
+    /// so crossing other rail buttons on the way does not switch or close it.
+    fn heading_to_flyout(&self, ui: &Ui, category: &str) -> bool {
+        let Some(popup) = ui.ctx().memory(|m| m.area_rect(flyout_id(category))) else {
+            return false;
+        };
+        let (pos, delta) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.delta()));
+        let Some(pos) = pos else {
+            return false;
+        };
+        if delta.x <= 0.0 || pos.x >= popup.left() {
+            return false;
+        }
+        let from = pos - delta;
+        let cross = |a: Vec2, b: Vec2| a.x * b.y - a.y * b.x;
+        cross(popup.left_top() - from, delta) >= 0.0
+            && cross(delta, popup.left_bottom() - from) >= 0.0
     }
 
     /// Show the flyout of `category`, apply what the user picked in it to the toolbar state and
@@ -839,6 +863,76 @@ mod tests {
         let before = ctx.memory(|memory| memory.area_rect(id));
         frame(&mut toolbar, Pos2::ZERO);
         assert_eq!(ctx.memory(|memory| memory.area_rect(id)), before);
+    }
+
+    /// A flyout opened from its rail button stays open while the pointer crosses into it and
+    /// down to its last row, and a click there picks that row.
+    #[test]
+    fn flyout_stays_open_down_to_its_last_row() {
+        let ctx = Context::default();
+        let mut toolbar = DrawingToolbar::new();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 760.0));
+        let frame = |toolbar: &mut DrawingToolbar, events: Vec<Event>| {
+            let mut action = DrawingToolbarAction::None;
+            let output = ctx.run_ui(
+                RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    action = toolbar.show_with_action(ui);
+                },
+            );
+            output.drop_without_applying_deltas();
+            action
+        };
+        frame(&mut toolbar, vec![]);
+        // Find the Projection rail button by hovering down the rail.
+        let mut button = None;
+        for y in (40..400).step_by(4) {
+            let at = Pos2::new(20.0, y as f32);
+            frame(&mut toolbar, vec![Event::PointerMoved(at)]);
+            if toolbar.state.expanded_category.as_deref() == Some("Projection") {
+                button = Some(at);
+                break;
+            }
+        }
+        let button = button.expect("Projection rail button");
+        frame(&mut toolbar, vec![]);
+        let flyout = ctx
+            .memory(|m| m.area_rect(super::super::submenu_builder::flyout_id("Projection")))
+            .expect("flyout laid out");
+        let last_row = Pos2::new(flyout.left() + 60.0, flyout.bottom() - 18.0);
+        let steps = 12;
+        for i in 1..=steps {
+            let t = i as f32 / steps as f32;
+            let at = Pos2::new(
+                button.x + (last_row.x - button.x) * t.min(0.3) / 0.3,
+                button.y + (last_row.y - button.y) * t,
+            );
+            frame(&mut toolbar, vec![Event::PointerMoved(at)]);
+            assert_eq!(
+                toolbar.state.expanded_category.as_deref(),
+                Some("Projection"),
+                "closed at {at:?}, flyout {flyout:?}"
+            );
+        }
+        let action = frame(
+            &mut toolbar,
+            [true, false]
+                .map(|pressed| Event::PointerButton {
+                    pos: last_row,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Modifiers::NONE,
+                })
+                .to_vec(),
+        );
+        assert_eq!(
+            action,
+            DrawingToolbarAction::SelectTool(DrawingToolType::DateAndPriceRange)
+        );
     }
 
     /// The flyout searches all families, emits the picked glyph and shows session recents first.

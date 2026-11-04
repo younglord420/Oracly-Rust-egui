@@ -16,6 +16,34 @@ const DEFAULT_WIDTH: f32 = 150.0;
 /// Narrowest box a placement makes.
 const MIN_WIDTH: f32 = 48.0;
 
+/// Screen height of `stop_price`, searched on the side of the entry opposite the target so a
+/// non-linear price scale still gets the stop at the starting reward ratio in price.
+fn position_stop_y(
+    entry_y: f32,
+    target_y: f32,
+    stop_price: f64,
+    y_to_price: impl Fn(f32) -> f64,
+) -> f32 {
+    let linear = entry_y - (target_y - entry_y) / POSITION_REWARD_RATIO as f32;
+    let far = entry_y + (entry_y - target_y) * 8.0;
+    let (near_price, far_price) = (y_to_price(entry_y), y_to_price(far));
+    if !stop_price.is_finite()
+        || (stop_price - near_price).signum() != (far_price - stop_price).signum()
+    {
+        return linear;
+    }
+    let (mut near, mut far) = (entry_y, far);
+    for _ in 0..48 {
+        let mid = (near + far) / 2.0;
+        if (y_to_price(mid) - stop_price).signum() == (near_price - stop_price).signum() {
+            near = mid;
+        } else {
+            far = mid;
+        }
+    }
+    (near + far) / 2.0
+}
+
 impl Drawing {
     /// Whether this is a long or short position drawing.
     pub fn is_position(&self) -> bool {
@@ -106,13 +134,19 @@ impl Drawing {
                 entry.x + DEFAULT_WIDTH,
             )
         };
-        let stop_y = entry.y - (target_y - entry.y) / POSITION_REWARD_RATIO as f32;
+        let entry_price = self
+            .chart_points
+            .first()
+            .map_or_else(|| y_to_price(entry.y), |p| p.price);
+        let target_price = y_to_price(target_y);
+        let stop_price = entry_price - (target_price - entry_price) / POSITION_REWARD_RATIO;
+        let stop_y = position_stop_y(entry.y, target_y, stop_price, &y_to_price);
         let bar = x_to_bar(right);
         self.points.truncate(1);
         self.chart_points.truncate(1);
-        for y in [target_y, stop_y] {
+        for (y, price) in [(target_y, target_price), (stop_y, stop_price)] {
             self.points.push(Pos2::new(right, y));
-            self.chart_points.push(ChartPoint::new(bar, y_to_price(y)));
+            self.chart_points.push(ChartPoint::new(bar, price));
         }
     }
 
@@ -225,6 +259,20 @@ mod tests {
         assert_eq!(drawing.points[1], Pos2::new(250.0, 372.0));
         assert_eq!(drawing.points[2], Pos2::new(250.0, 564.0));
         assert!(drawing.position_is_long());
+    }
+
+    /// On a logarithmic scale the stop still sits at half the target's distance in price.
+    #[test]
+    fn placement_keeps_the_ratio_in_price() {
+        let price = |y: f32| 10f64.powf(f64::from(1000.0 - y) / 200.0);
+        let mut drawing = Drawing::new(1, DrawingToolType::LongPos);
+        drawing.points = vec![Pos2::new(100.0, 500.0), Pos2::new(160.0, 400.0)];
+        drawing.chart_points = vec![ChartPoint::new(10.0, price(500.0))];
+        drawing.chart_points.push(ChartPoint::new(16.0, price(400.0)));
+        drawing.lay_out_position(|x| x / 10.0, price);
+        let (entry, target, stop) = drawing.position_prices().unwrap();
+        assert!(((target - entry) / (entry - stop) - 2.0).abs() < 1e-9);
+        assert!((price(drawing.points[2].y) - stop).abs() / stop < 1e-4);
     }
 
     /// A saved risk amount or quantity reads as the same risk against the default account.

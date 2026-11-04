@@ -320,7 +320,7 @@ impl Drawing {
             .extended
             .chart_axis_bg
             .gamma_multiply(0.8);
-        super::measurements::boxed_label(
+        self.label_box(
             painter,
             Align2::LEFT_TOP,
             Pos2::new(rect.max.x + DESIGN_TOKENS.rounding.lg, rect.min.y),

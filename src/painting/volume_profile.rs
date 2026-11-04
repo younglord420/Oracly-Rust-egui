@@ -58,7 +58,12 @@ pub(crate) fn paint_profile(
             width = width.min(painter.clip_rect().width());
         }
     }
-    let max_width = width * if drawing { 1.0 / 3.0 } else { 0.9 };
+    let max_width = width
+        * if drawing {
+            config.width_percent.clamp(5.0, 100.0) / 100.0
+        } else {
+            0.9
+        };
     let max_volume = profile.volume[poc];
 
     for (row, &volume) in profile.volume.iter().enumerate() {
@@ -151,6 +156,7 @@ pub(crate) fn paint_profile(
         [y_at_row(va_high + 1), y_at_row(va_low)],
         config.show_value_area_lines,
         drawing,
+        &config,
     );
     if drawing {
         return;
@@ -173,22 +179,35 @@ fn draw_volume_profile_lines(
     [vah_y, val_y]: [f32; 2],
     show_value_area_lines: bool,
     drawing: bool,
+    config: &VolumeProfileConfig,
 ) {
     let theme = painter.ctx().active_theme();
     let font = egui::FontId::proportional(theme.text.tiny);
 
-    let poc_color = theme.ui.text;
-    painter.add(egui::Shape::line(
-        vec![Pos2::new(rect.min.x, poc_y), Pos2::new(rect.max.x, poc_y)],
-        Stroke::new(
-            if drawing {
-                stroke::THICK
-            } else {
-                stroke::HAIRLINE
-            },
-            poc_color,
-        ),
-    ));
+    let poc_color = config.poc_color.map_or(theme.ui.text, |c| {
+        Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+    });
+    let poc_width = config.poc_width.unwrap_or(if drawing {
+        stroke::THICK
+    } else {
+        stroke::HAIRLINE
+    });
+    let poc_line = [Pos2::new(rect.min.x, poc_y), Pos2::new(rect.max.x, poc_y)];
+    let poc_stroke = Stroke::new(poc_width, poc_color);
+    match config.poc_style.dash_pattern() {
+        None => {
+            painter.line_segment(poc_line, poc_stroke);
+        }
+        Some((dash, gap)) => {
+            let scale = poc_width.max(1.0);
+            painter.extend(egui::Shape::dashed_line(
+                &poc_line,
+                poc_stroke,
+                dash * scale,
+                gap * scale,
+            ));
+        }
+    }
 
     let va_color = Color32::from_rgba_unmultiplied(color[0], color[1], color[2], 200);
     for y in [vah_y, val_y].into_iter().filter(|_| show_value_area_lines) {

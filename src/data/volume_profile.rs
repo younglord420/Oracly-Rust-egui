@@ -1,7 +1,7 @@
 //! Price-row volume distributions shared by studies and drawings.
 
 use super::FootprintBar;
-use crate::model::Bar;
+use crate::model::{Bar, LineStyle};
 use serde::{Deserialize, Serialize};
 use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
@@ -58,6 +58,18 @@ pub struct VolumeProfileConfig {
     pub value_area_colors: Option<[[u8; 4]; 2]>,
     /// Draw the high and low boundaries of the value area.
     pub show_value_area_lines: bool,
+    /// Widest row of a volume profile drawing, as a percent of its box; 5 to 100.
+    pub width_percent: f32,
+    /// Point of control line colour; absent uses the theme's text colour.
+    pub poc_color: Option<[u8; 4]>,
+    /// Point of control line width, 1 to 4; absent uses the default for a study or drawing.
+    pub poc_width: Option<f32>,
+    /// Point of control line style.
+    pub poc_style: LineStyle,
+}
+
+fn profile_width_percent() -> f32 {
+    100.0 / 3.0
 }
 
 /// Stored settings of a volume profile, checked by [`VolumeProfileConfig::new`] on load.
@@ -77,6 +89,14 @@ struct VolumeProfileFields {
     value_area_colors: Option<[[u8; 4]; 2]>,
     #[serde(default)]
     show_value_area_lines: bool,
+    #[serde(default = "profile_width_percent")]
+    width_percent: f32,
+    #[serde(default)]
+    poc_color: Option<[u8; 4]>,
+    #[serde(default)]
+    poc_width: Option<f32>,
+    #[serde(default)]
+    poc_style: LineStyle,
 }
 
 impl TryFrom<VolumeProfileFields> for VolumeProfileConfig {
@@ -90,6 +110,17 @@ impl TryFrom<VolumeProfileFields> for VolumeProfileConfig {
         config.down_color = fields.down_color;
         config.value_area_colors = fields.value_area_colors;
         config.show_value_area_lines = fields.show_value_area_lines;
+        config.width_percent = if fields.width_percent.is_finite() {
+            fields.width_percent.clamp(5.0, 100.0)
+        } else {
+            profile_width_percent()
+        };
+        config.poc_color = fields.poc_color;
+        config.poc_width = fields
+            .poc_width
+            .filter(|w| w.is_finite())
+            .map(|w| w.clamp(1.0, 4.0));
+        config.poc_style = fields.poc_style;
         config
             .with_row_size(fields.row_size)
             .ok_or("volume profile row height must be finite and positive")
@@ -150,6 +181,10 @@ impl Default for VolumeProfileConfig {
             down_color: profile_down_color(),
             value_area_colors: None,
             show_value_area_lines: false,
+            width_percent: profile_width_percent(),
+            poc_color: None,
+            poc_width: None,
+            poc_style: LineStyle::Solid,
         }
     }
 }

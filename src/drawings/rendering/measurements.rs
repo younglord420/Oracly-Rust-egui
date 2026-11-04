@@ -31,11 +31,18 @@ impl Drawing {
             let price_diff = cp2.price - cp1.price;
             let is_measuring_down = price_diff < 0.0;
 
-            // Color based on direction: Red for down, Blue for up
-            let base_color = if is_measuring_down {
-                DESIGN_TOKENS.semantic.extended.bearish // Red (down)
+            // The default line colour reads as direction: red down, blue up.
+            let default_color = [
+                crate::drawings::manager::DEFAULT_DRAWING_COLOR_DARK,
+                crate::drawings::manager::DEFAULT_DRAWING_COLOR_LIGHT,
+            ]
+            .contains(&self.color);
+            let base_color = if !default_color {
+                self.color32().to_opaque()
+            } else if is_measuring_down {
+                DESIGN_TOKENS.semantic.extended.bearish
             } else {
-                DESIGN_TOKENS.semantic.extended.accent // Blue (up)
+                DESIGN_TOKENS.semantic.extended.accent
             };
 
             // Draw SEMI-TRANSPARENT RECTANGLE filling the area from start to cursor
@@ -152,7 +159,8 @@ impl Drawing {
 
             // Draw info box at the top-left corner of rect
             let font = self.annotation_font();
-            let galley = painter.layout_no_wrap(info.clone(), font.clone(), Color32::WHITE);
+            let ink = self.label_text_on(base_color);
+            let galley = painter.layout_no_wrap(info.clone(), font.clone(), ink);
             let text_size = galley.size();
 
             // Pos box near the top-left corner of rect
@@ -172,7 +180,7 @@ impl Drawing {
             painter.galley(
                 Pos2::new(snap.edge(box_x + padding.x), snap.edge(box_y + padding.y)),
                 galley,
-                Color32::WHITE,
+                ink,
             );
         }
     }
@@ -182,114 +190,133 @@ impl Drawing {
         Stroke::new(self.stroke_width.max(stroke::HAIRLINE), self.color32())
     }
 
-    /// The band a range tool shades: its fill, or its line colour faintly.
+    /// The box a range tool shades: its fill, or its line colour faintly.
     fn range_fill(&self) -> Color32 {
         self.fill_color32().unwrap_or_else(|| {
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 20)
+            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 30)
         })
     }
 
-    /// Price range: the band between two prices across the pane, its edge lines, a connector
-    /// and the price change beside it.
-    pub(crate) fn render_price_range(
-        &self,
-        painter: &egui::Painter,
-        chart_rect: Rect,
-        view: &ChartView,
-    ) {
+    /// A line from `from` to `to` with a filled head at `to`.
+    fn range_arrow(&self, painter: &egui::Painter, from: Pos2, to: Pos2) {
+        let line = self.range_stroke();
+        let along = to - from;
+        let length = along.length();
+        if length < 1.0 {
+            return;
+        }
+        let dir = along / length;
+        let head = (6.0 + line.width * 2.0).min(length * 0.5);
+        let base = to - dir * head;
+        let across = dir.rot90() * head * 0.45;
+        painter.line_segment([from, base], line);
+        painter.add(egui::Shape::convex_polygon(
+            vec![to, base + across, base - across],
+            line.color,
+            Stroke::NONE,
+        ));
+    }
+
+    /// Price range, date range or date and price range: the box between the anchors with its
+    /// edges, the arrows of what it measures, and the readout beyond the second anchor.
+    fn render_range_box(&self, painter: &egui::Painter, view: &ChartView, price: bool, time: bool) {
         let &[p1, p2, ..] = self.points.as_slice() else {
             if let Some(&point) = self.points.first() {
                 super::style::placed_anchor(painter, point, self.color32());
             }
-            return;
-        };
-        let band = Rect::from_x_y_ranges(chart_rect.x_range(), p1.y.min(p2.y)..=p1.y.max(p2.y));
-        painter.rect_filled(band, 0.0, self.range_fill());
-        let line = self.range_stroke();
-        for y in [p1.y, p2.y] {
-            painter.line_segment(
-                [
-                    Pos2::new(chart_rect.left(), y),
-                    Pos2::new(chart_rect.right(), y),
-                ],
-                line,
-            );
-        }
-        let mid_x = (p1.x + p2.x) / 2.0;
-        painter.line_segment([Pos2::new(mid_x, p1.y), Pos2::new(mid_x, p2.y)], line);
-        let info = self
-            .measurement_label(&[], view.instrument, view.time_axis)
-            .unwrap_or_default();
-        painter.text(
-            Pos2::new(mid_x + 10.0, (p1.y + p2.y) / 2.0),
-            egui::Align2::LEFT_CENTER,
-            info,
-            self.annotation_font(),
-            self.text_color32(),
-        );
-    }
-
-    /// Date range: the band between two times down the pane, its edge lines, a connector and
-    /// the bars, time and volume above it.
-    pub(crate) fn render_date_range(
-        &self,
-        painter: &egui::Painter,
-        chart_rect: Rect,
-        view: &ChartView,
-    ) {
-        let &[p1, p2, ..] = self.points.as_slice() else {
-            if let Some(&point) = self.points.first() {
-                super::style::placed_anchor(painter, point, self.color32());
-            }
-            return;
-        };
-        let band = Rect::from_x_y_ranges(p1.x.min(p2.x)..=p1.x.max(p2.x), chart_rect.y_range());
-        painter.rect_filled(band, 0.0, self.range_fill());
-        let line = self.range_stroke();
-        for x in [p1.x, p2.x] {
-            painter.line_segment(
-                [
-                    Pos2::new(x, chart_rect.top()),
-                    Pos2::new(x, chart_rect.bottom()),
-                ],
-                line,
-            );
-        }
-        let mid_y = (p1.y + p2.y) / 2.0;
-        painter.line_segment([Pos2::new(p1.x, mid_y), Pos2::new(p2.x, mid_y)], line);
-        let info = self
-            .measurement_label(view.bars, view.instrument, view.time_axis)
-            .unwrap_or_default();
-        painter.text(
-            Pos2::new((p1.x + p2.x) / 2.0, mid_y - 10.0),
-            egui::Align2::CENTER_BOTTOM,
-            info,
-            self.annotation_font(),
-            self.text_color32(),
-        );
-    }
-
-    /// Date and price range: the box the anchors span and its readout in the middle.
-    pub(crate) fn render_date_and_price_range(&self, painter: &egui::Painter, view: &ChartView) {
-        let &[p1, p2, ..] = self.points.as_slice() else {
             return;
         };
         let rect = Rect::from_two_pos(p1, p2);
-        let fill = self.fill_color32().unwrap_or_else(|| {
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 30)
-        });
-        painter.rect_filled(rect, 0.0, fill);
-        painter.rect_stroke(rect, 0.0, self.range_stroke(), StrokeKind::Outside);
+        painter.rect_filled(rect, 0.0, self.range_fill());
+        let line = self.range_stroke();
+        if price {
+            for y in [p1.y, p2.y] {
+                painter.line_segment(
+                    [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)],
+                    line,
+                );
+            }
+        }
+        if time {
+            for x in [p1.x, p2.x] {
+                painter.line_segment(
+                    [Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())],
+                    line,
+                );
+            }
+        }
+        let center = rect.center();
+        if price {
+            self.range_arrow(
+                painter,
+                Pos2::new(center.x, p1.y),
+                Pos2::new(center.x, p2.y),
+            );
+        }
+        if time {
+            self.range_arrow(
+                painter,
+                Pos2::new(p1.x, center.y),
+                Pos2::new(p2.x, center.y),
+            );
+        }
         let info = self
             .measurement_label(view.bars, view.instrument, view.time_axis)
             .unwrap_or_default();
-        painter.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            info,
-            self.annotation_font(),
-            self.text_color32(),
-        );
+        if info.is_empty() {
+            return;
+        }
+        // The readout sits beyond the second anchor's side, inside the pane where it can.
+        let below = p2.y >= p1.y;
+        let gap = DESIGN_TOKENS.spacing.sm;
+        let anchor = if below {
+            Pos2::new(center.x, rect.bottom() + gap)
+        } else {
+            Pos2::new(center.x, rect.top() - gap)
+        };
+        let card_color = self.color32().to_opaque();
+        let ink = self.label_text_on(card_color);
+        let galley = painter.layout_no_wrap(info, self.annotation_font(), ink);
+        let pad = egui::vec2(8.0, 6.0);
+        let size = galley.size() + pad * 2.0;
+        let align = if below {
+            egui::Align2::CENTER_TOP
+        } else {
+            egui::Align2::CENTER_BOTTOM
+        };
+        let clip = painter.clip_rect();
+        let mut card = align.anchor_size(anchor, size);
+        card = card.translate(egui::vec2(
+            (clip.right() - card.right()).min(0.0) + (clip.left() - card.left()).max(0.0),
+            (clip.bottom() - card.bottom()).min(0.0) + (clip.top() - card.top()).max(0.0),
+        ));
+        painter.rect_filled(card, DESIGN_TOKENS.rounding.md, card_color);
+        painter.galley(card.min + pad, galley, ink);
+    }
+
+    /// Price range: the box between two prices, a vertical arrow and the price change.
+    pub(crate) fn render_price_range(
+        &self,
+        painter: &egui::Painter,
+        _chart_rect: Rect,
+        view: &ChartView,
+    ) {
+        self.render_range_box(painter, view, true, false);
+    }
+
+    /// Date range: the box between two times, a horizontal arrow and the bars, time and volume.
+    pub(crate) fn render_date_range(
+        &self,
+        painter: &egui::Painter,
+        _chart_rect: Rect,
+        view: &ChartView,
+    ) {
+        self.render_range_box(painter, view, false, true);
+    }
+
+    /// Date and price range: the box between the anchors, both arrows and the full readout.
+    pub(crate) fn render_date_and_price_range(&self, painter: &egui::Painter, view: &ChartView) {
+        self.render_range_box(painter, view, true, true);
     }
 
     pub(crate) fn render_info_line(&self, painter: &egui::Painter, view: &ChartView) {
@@ -569,7 +596,44 @@ struct InfoLineStats {
     angle: String,
 }
 
-/// Paints `text` over a `bg` box sized to it, placed at `pos` by `align`, and returns its bounds.
+impl Drawing {
+    /// [`boxed_label`] in the drawing's label font, so its Label size applies.
+    pub(super) fn label_box(
+        &self,
+        painter: &egui::Painter,
+        align: egui::Align2,
+        pos: Pos2,
+        text: String,
+        color: Color32,
+        bg: Color32,
+    ) -> Rect {
+        boxed_label(painter, align, pos, text, color, bg, self.annotation_font())
+    }
+
+    /// The label text colour over `bg`: the drawing's own text colour when set, else black or
+    /// white, whichever reads on it.
+    pub(super) fn label_text_on(&self, bg: Color32) -> Color32 {
+        self.text_color.map_or_else(
+            || crate::chart::rendering::axes::tag_text_color(bg.to_opaque()),
+            |c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]),
+        )
+    }
+
+    /// [`Self::label_box`] over `bg` with the text colour that reads on it.
+    pub(super) fn label_box_on(
+        &self,
+        painter: &egui::Painter,
+        align: egui::Align2,
+        pos: Pos2,
+        text: String,
+        bg: Color32,
+    ) -> Rect {
+        self.label_box(painter, align, pos, text, self.label_text_on(bg), bg)
+    }
+}
+
+/// Paints `text` in `font` over a `bg` box sized to it, placed at `pos` by `align`, and returns
+/// its bounds.
 pub(super) fn boxed_label(
     painter: &egui::Painter,
     align: egui::Align2,
@@ -577,9 +641,10 @@ pub(super) fn boxed_label(
     text: String,
     color: Color32,
     bg: Color32,
+    font: FontId,
 ) -> Rect {
     let snap = crate::painting::pixel_snap::PixelSnap::of(painter);
-    let galley = painter.layout_no_wrap(text, egui::FontId::proportional(typography::SM), color);
+    let galley = painter.layout_no_wrap(text, font, color);
     let raw = align.anchor_size(pos, galley.size() + egui::vec2(8.0, 4.0));
     let rect = Rect::from_min_size(
         Pos2::new(snap.edge(raw.min.x), snap.edge(raw.min.y)),

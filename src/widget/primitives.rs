@@ -281,6 +281,19 @@ impl Chart {
                 prices.extend(self.primitive_prices(*id));
             }
         }
+        // Anchored VWAPs and volume profiles in view widen the fit as a primitive would.
+        #[cfg(feature = "drawings")]
+        if self.main_series_visible {
+            let (start, end) = self.state.visible_range();
+            prices.extend(
+                self.drawings
+                    .drawings
+                    .iter()
+                    .filter(|d| d.visible && d.pane.is_none())
+                    .filter_map(|d| d.volume_tool_price_span(self.state.shown(), start..end))
+                    .flat_map(|(low, high)| [low, high]),
+            );
+        }
         prices
     }
 

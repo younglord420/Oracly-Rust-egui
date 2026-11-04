@@ -1,7 +1,6 @@
 //! Bars pattern rendering
 
 use crate::drawings::domain::{ChartPoint, Drawing};
-use crate::drawings::rendering::measurements::boxed_label;
 use crate::drawings::rendering::utils::draw_dashed_line;
 use crate::drawings::rendering::{ChartView, bars_between};
 use crate::model::Bar;
@@ -47,13 +46,12 @@ impl Drawing {
             Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
             StrokeKind::Outside,
         );
-        boxed_label(
+        self.label_box_on(
             painter,
             egui::Align2::CENTER_BOTTOM,
             Pos2::new(source_rect.center().x, source_rect.min.y - 4.0),
             "SOURCE".to_owned(),
-            Color32::WHITE,
-            color,
+            color.to_opaque(),
         );
     }
 
@@ -104,13 +102,12 @@ impl Drawing {
         self.draw_dashed_rect(painter, proj_rect, proj_color);
 
         // Projection label
-        boxed_label(
+        self.label_box_on(
             painter,
             egui::Align2::CENTER_BOTTOM,
             Pos2::new(proj_rect.center().x, proj_rect.min.y - 4.0),
             "PROJECTION".to_owned(),
-            Color32::WHITE,
-            proj_color,
+            proj_color.to_opaque(),
         );
 
         // Connection arrow from source to projection
@@ -121,7 +118,7 @@ impl Drawing {
         let dash = 6.0;
         let gap = 4.0;
 
-        let stroke = Stroke::new(stroke::HAIRLINE, color);
+        let stroke = Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color);
         let corners = [
             rect.left_top(),
             rect.right_top(),
@@ -147,7 +144,7 @@ impl Drawing {
                 painter,
                 arrow_start,
                 Pos2::new(arrow_end.x - 10.0, arrow_start.y),
-                Stroke::new(stroke::HAIRLINE, arrow_color),
+                Stroke::new(self.stroke_width.max(stroke::HAIRLINE), arrow_color),
                 dash,
                 gap,
             );

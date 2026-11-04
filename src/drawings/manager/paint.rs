@@ -114,6 +114,17 @@ impl DrawingManager {
         );
     }
 
+    /// Screen area the last paint of drawing `id` covered, labels and headers included.
+    pub fn painted_bounds(&self, id: usize) -> Option<egui::Rect> {
+        let painted = self.painted.lock().unwrap_or_else(|e| e.into_inner());
+        let paint = painted.iter().find(|p| p.id == id)?;
+        let bounds = paint
+            .shapes
+            .iter()
+            .fold(egui::Rect::NOTHING, |b, s| b.union(s.shape.visual_bounding_rect().intersect(s.clip_rect)));
+        bounds.is_positive().then_some(bounds)
+    }
+
     // === Hit testing ===
 
     /// Hit-tests a screen point against all visible drawings (back-to-front).
@@ -266,7 +277,10 @@ impl DrawingManager {
         if let Some(ref drawing) = self.curr_drawing
             && self.owns_pane(drawing)
         {
-            self.render_drawing(drawing, painter, price_rect, view);
+            // A drawing still being placed reads lighter than the placed ones.
+            let mut preview = painter.clone();
+            preview.multiply_opacity(0.7);
+            self.render_drawing(drawing, &preview, price_rect, view);
             if drawing.tool_type == DrawingToolType::Rect {
                 drawing.render_rect_guides(painter);
                 self.render_handles(painter, drawing);
