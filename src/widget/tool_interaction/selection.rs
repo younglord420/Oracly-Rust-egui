@@ -813,6 +813,8 @@ mod tests {
                 drawing.points = vec![Pos2::new(50.0, 60.0), Pos2::new(250.0, 180.0)];
                 if tool == DrawingToolType::Rect {
                     drawing.points = vec![Pos2::new(50.0, 50.0), Pos2::new(250.0, 150.0)];
+                    // An unfilled rectangle is only its border, so the interior grab needs a fill.
+                    drawing.fill_color = Some([20, 40, 80, 40]);
                 }
                 if tool == DrawingToolType::FibonacciChannel {
                     drawing.points.push(Pos2::new(150.0, 200.0));

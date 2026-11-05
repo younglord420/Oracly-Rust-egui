@@ -447,10 +447,6 @@ impl Drawing {
                         | DrawingToolType::Image
                         | DrawingToolType::Tweet
                         | DrawingToolType::Idea
-                        | DrawingToolType::ArrowMarkUp
-                        | DrawingToolType::ArrowMarkDown
-                        | DrawingToolType::ArrowMarkLeft
-                        | DrawingToolType::ArrowMarkRight
                 )
                 && let Some(configured) = self.fill_color32()
             {

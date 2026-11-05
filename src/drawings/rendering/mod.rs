@@ -139,10 +139,19 @@ impl Drawing {
             outline.lines = edges(&c);
             outline.areas.push(c);
         };
-        let filled = self.fill_color.is_some();
+        let filled = self.painted_fill().is_some();
         let &first = p.first()?;
         let across = |y: f32| [Pos2::new(rect.min.x, y), Pos2::new(rect.max.x, y)];
         let mut outline = Outline::default();
+        if matches!(
+            self.tool_type,
+            T::ArrowMarkUp | T::ArrowMarkDown | T::ArrowMarkLeft | T::ArrowMarkRight
+        ) && let Some(glyph) = self.arrow_mark_glyph()
+        {
+            outline.lines = edges(&glyph);
+            outline.areas.push(glyph);
+            return Some(outline);
+        }
         match self.tool_type {
             T::HorizontalRay => outline.lines = vec![[first, Pos2::new(rect.max.x, first.y)]],
             T::CrossLine => {
@@ -233,7 +242,14 @@ impl Drawing {
                     outline.areas.push(corners.to_vec());
                 }
             }
-            T::Rect => boxed(&mut outline, self.rectangle_bounds(rect)?),
+            T::Rect => {
+                let bounds = self.rectangle_bounds(rect)?;
+                let c = corners(bounds);
+                outline.lines = edges(&c);
+                if filled {
+                    outline.areas.push(c);
+                }
+            }
             T::Circle => {
                 let radius = first.distance(second);
                 let ring: Vec<Pos2> = (0..=64)
@@ -255,14 +271,21 @@ impl Drawing {
                 }
             }
             T::Arc => {
-                outline.lines = self.arc_path().windows(2).map(|w| [w[0], w[1]]).collect();
+                let path = self.arc_path();
+                outline.lines = path.windows(2).map(|w| [w[0], w[1]]).collect();
+                if filled && path.len() >= 4 {
+                    let mut ring = path;
+                    ring.pop();
+                    outline.areas.push(ring);
+                }
             }
             T::Curve => {
                 let [p0, p1, p2] = self.curve_controls()?;
-                outline.lines = shapes::curve_points(p0, p1, p2)
-                    .windows(2)
-                    .map(|w| [w[0], w[1]])
-                    .collect();
+                let path = shapes::curve_points(p0, p1, p2);
+                outline.lines = path.windows(2).map(|w| [w[0], w[1]]).collect();
+                if filled && path.len() >= 3 {
+                    outline.areas.push(path);
+                }
             }
             T::DoubleCurve => {
                 outline.lines = self
@@ -467,10 +490,10 @@ impl Drawing {
             // Arrows (6 tools)
             DrawingToolType::Arrow => self.render_arrow(painter, rect, color, stroke),
             DrawingToolType::ArrowMarker => self.render_arrow_marker(painter, rect, color),
-            DrawingToolType::ArrowMarkUp => self.render_arrow_mark_up(painter),
-            DrawingToolType::ArrowMarkDown => self.render_arrow_mark_down(painter),
-            DrawingToolType::ArrowMarkLeft => self.render_horizontal_mark(painter, -1.0),
-            DrawingToolType::ArrowMarkRight => self.render_horizontal_mark(painter, 1.0),
+            DrawingToolType::ArrowMarkUp
+            | DrawingToolType::ArrowMarkDown
+            | DrawingToolType::ArrowMarkLeft
+            | DrawingToolType::ArrowMarkRight => self.render_arrow_mark(painter),
 
             // Additional tools
             DrawingToolType::Pitchfan => self.render_pitchfan(painter, rect),
@@ -1080,8 +1103,8 @@ mod tests {
         }
     }
 
-    /// These anchors form a semicircle of radius sqrt(5000), length 222.144 px.
-    /// An 8 px dash / 4 px gap paints about two thirds, plus at most one dash.
+    /// The dome is one stroke, so an 8 px dash / 4 px gap covers about two thirds of it
+    /// instead of restarting on every sample.
     #[test]
     fn dash_spacing_continues_across_segmented_curves() {
         let mut drawing = Drawing::new(7, DrawingToolType::Arc);
@@ -1101,10 +1124,15 @@ mod tests {
                 })
                 .sum()
         }
+        let outline = drawing
+            .outline(Rect::from_min_max(Pos2::ZERO, Pos2::new(400., 400.)))
+            .unwrap();
+        let full: f32 = outline.lines.iter().map(|[a, b]| a.distance(*b)).sum();
         let painted = length(&paint(&drawing));
+        let fraction = painted / full;
         assert!(
-            painted > 140.0 && painted < 157.0,
-            "painted {painted} px of a 222.144 px arc"
+            fraction > 0.6 && fraction < 0.75,
+            "painted {painted} px of a {full} px dome ({fraction})"
         );
     }
 

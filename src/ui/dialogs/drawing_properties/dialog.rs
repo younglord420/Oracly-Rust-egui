@@ -936,7 +936,7 @@ mod tests {
                 // Fib extend comes only from fib_config controls, still one "Extend" row.
                 (Tool::FibonacciRetracement, false, true, true),
                 (Tool::TextLabel, true, false, true),
-                (Tool::Highlighter, false, false, true),
+                (Tool::Highlighter, false, false, false),
             ] {
                 chart.drawings_mut().drawings = vec![Drawing::new(7, tool)];
                 dialog.open_for_chart(&chart, DrawingId(7));

@@ -77,10 +77,12 @@ impl DrawingToolType {
                 | Self::Highlighter
                 | Self::ArrowMarker
                 | Self::Arrow
+                | Self::ArrowMarkUp
+                | Self::ArrowMarkDown
+                | Self::ArrowMarkLeft
+                | Self::ArrowMarkRight
                 | Self::Path
                 | Self::Polyline
-                | Self::Arc
-                | Self::Curve
                 | Self::DoubleCurve
                 | Self::CyclicLines
                 | Self::SineLine
@@ -154,10 +156,22 @@ impl DrawingToolType {
                 | Self::CrossLine
                 | Self::InfoLine
                 | Self::Arrow
+                | Self::ArrowMarkUp
+                | Self::ArrowMarkDown
+                | Self::ArrowMarkLeft
+                | Self::ArrowMarkRight
                 | Self::Path
                 | Self::Polyline
                 | Self::Rect
                 | Self::RotatedRect
+                | Self::Circle
+                | Self::Ellipse
+                | Self::Triangle
+                | Self::Arc
+                | Self::Curve
+                | Self::DoubleCurve
+                | Self::Sector
+                | Self::Brush
                 | Self::ParallelChannel
                 | Self::FlatTopBottom
                 | Self::DisjointChannel
@@ -177,6 +191,7 @@ impl DrawingToolType {
                 self,
                 Self::TimeCycles
                     | Self::SineLine
+                    | Self::Highlighter
                     | Self::GhostFeed
                     | Self::FairValueGap
                     | Self::OrderBlock

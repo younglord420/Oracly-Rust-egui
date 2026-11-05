@@ -195,14 +195,6 @@ impl DrawingInteraction {
                         return Some(drawing.id);
                     }
                 }
-                DrawingToolType::Rect => {
-                    if drawing
-                        .rectangle_bounds(Rect::EVERYTHING)
-                        .is_some_and(|rect| rect.contains(point))
-                    {
-                        return Some(drawing.id);
-                    }
-                }
                 // Fibonacci tools
                 // The level lines the renderer draws, over the extent it draws them
                 DrawingToolType::FibonacciRetracement | DrawingToolType::FibonacciExtension => {
@@ -242,7 +234,9 @@ impl DrawingInteraction {
                         .union(Rect::from_pos(point))
                         .expand(2.0 * hit_distance);
                     if let Some(outline) = drawing.outline(reach) {
-                        let tolerance = hit_distance.max(outline.width / 2.0);
+                        let tolerance = hit_distance
+                            .max(outline.width / 2.0)
+                            .max(drawing.stroke_width / 2.0);
                         let on_line = outline
                             .lines
                             .iter()
@@ -892,6 +886,19 @@ mod tests {
                 (100.0, 50.0),
                 None,
                 vec![(0.0, 0.0), (200.0, 100.0)],
+            ),
+            // An unfilled rectangle is its border: the top edge hits, the inside does not.
+            (
+                T::Rect,
+                (150.0, 50.0),
+                Some(7),
+                vec![(100.0, 50.0), (200.0, 150.0)],
+            ),
+            (
+                T::Rect,
+                (150.0, 100.0),
+                None,
+                vec![(100.0, 50.0), (200.0, 150.0)],
             ),
         ];
         let mut wrong = Vec::new();

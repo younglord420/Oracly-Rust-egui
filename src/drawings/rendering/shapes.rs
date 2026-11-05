@@ -36,7 +36,7 @@ impl Drawing {
         let Some(points) = self.sector_points() else {
             return;
         };
-        if let Some(fill) = self.fill_color32() {
+        if let Some(fill) = self.painted_fill() {
             // One mesh keeps translucent fill continuous across the fan's internal edges.
             let mut mesh = egui::Mesh::default();
             for &point in &points {
@@ -55,13 +55,10 @@ impl Drawing {
         let Some(corners) = self.rotated_rect_corners() else {
             return;
         };
-        let fill = self.fill_color.map_or(Color32::TRANSPARENT, |c| {
-            Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
-        });
         painter.add(egui::Shape::convex_polygon(
             corners.to_vec(),
-            fill,
-            Stroke::new(self.stroke_width, self.color32()),
+            self.painted_fill().unwrap_or(Color32::TRANSPARENT),
+            self.stroke(),
         ));
     }
 
@@ -83,10 +80,7 @@ impl Drawing {
         let Some(points) = self.double_curve_points() else {
             return;
         };
-        painter.add(egui::Shape::line(
-            points,
-            Stroke::new(self.stroke_width, self.color32()),
-        ));
+        painter.add(egui::Shape::line(points, self.stroke()));
     }
 
     pub(super) fn double_curve_points(&self) -> Option<Vec<Pos2>> {
@@ -119,95 +113,84 @@ impl Drawing {
     }
 
     pub(crate) fn render_brush(&self, painter: &egui::Painter) {
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-        for (i, &point) in self.points.iter().enumerate() {
-            if i > 0 {
-                painter.line_segment(
-                    [self.points[i - 1], point],
-                    Stroke::new(self.brush_width().unwrap_or(self.stroke_width), color),
-                );
-            }
-        }
+        self.paint_freehand(painter, self.color32());
     }
 
     pub(crate) fn render_highlighter(&self, painter: &egui::Painter) {
-        let color =
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 100);
-        for (i, &point) in self.points.iter().enumerate() {
-            if i > 0 {
-                painter.line_segment(
-                    [self.points[i - 1], point],
-                    Stroke::new(self.brush_width().unwrap_or(self.stroke_width), color),
-                );
+        self.paint_freehand(painter, self.highlighter_color());
+    }
+
+    /// The marker colour. A fully opaque line colour stays see-through; any other alpha is
+    /// the opacity stored on the colour.
+    fn highlighter_color(&self) -> Color32 {
+        let color = self.color32();
+        if color.a() == 255 {
+            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 100)
+        } else {
+            color
+        }
+    }
+
+    /// One continuous round stroke, so a freehand path does not darken where its segments meet.
+    fn paint_freehand(&self, painter: &egui::Painter, color: Color32) {
+        let width = self.brush_width().unwrap_or(self.stroke_width);
+        match self.points.as_slice() {
+            [] => {}
+            [point] => {
+                painter.circle_filled(*point, width * 0.5, color);
+            }
+            points => {
+                painter.add(egui::Shape::line(
+                    points.to_vec(),
+                    Stroke::new(width, color),
+                ));
             }
         }
     }
 
     // Note: render_sine_line is now in cycles.rs as it's a cyclic analysis tool
 
-    /// Render Path - Multi-point connected freehand path
+    /// Render Path - connected anchors ending in an arrowhead.
     pub(crate) fn render_path(&self, painter: &egui::Painter) {
         if self.points.is_empty() {
             return;
         }
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-        let stroke = Stroke::new(self.stroke_width, color);
-
+        let color = self.color32();
         if let [point] = self.points[..] {
             super::style::placed_anchor(painter, point, color);
+            return;
         }
-        for pair in self.points.windows(2) {
-            painter.line_segment([pair[0], pair[1]], stroke);
-        }
+        painter.add(egui::Shape::line(self.points.clone(), self.stroke()));
     }
 
-    /// Render Curve - Bezier quadratic curve
+    /// Quadratic curve. The first two anchors are the ends; the third pulls the curve.
     pub(crate) fn render_curve(&self, painter: &egui::Painter) {
-        if self.points.len() < 2 {
-            return;
-        }
-        let Some([p0, p1, p2]) = self.curve_controls() else {
+        let Some([start, control, end]) = self.curve_controls() else {
             return;
         };
-
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-        let stroke = Stroke::new(self.stroke_width, color);
-
-        for pair in curve_points(p0, p1, p2).windows(2) {
-            painter.line_segment([pair[0], pair[1]], stroke);
+        let points = curve_points(start, control, end);
+        if self.points.len() >= 3
+            && let Some(fill) = self.painted_fill()
+        {
+            painter.add(egui::Shape::convex_polygon(
+                points.clone(),
+                fill,
+                Stroke::NONE,
+            ));
         }
+        painter.add(egui::Shape::line(points, self.stroke()));
     }
 
-    /// The curve's start, control and end points: the control point is the
-    /// second anchor of three, or else set off to the side of the midpoint.
-    /// `None` below two anchors.
+    /// Start, off-curve control and end. Below three anchors the control sits on the
+    /// chord, so the preview is the straight segment between the two ends.
     pub(super) fn curve_controls(&self) -> Option<[Pos2; 3]> {
-        let (&p0, &p2) = (self.points.first()?, self.points.last()?);
-        if self.points.len() < 2 {
-            return None;
-        }
-        let p1 = if self.points.len() >= 3 {
-            self.points[1]
-        } else {
-            let mid = Pos2::new((p0.x + p2.x) / 2.0, (p0.y + p2.y) / 2.0);
-            Pos2::new(mid.x - (p2.y - p0.y) * 0.3, mid.y + (p2.x - p0.x) * 0.3)
-        };
-        Some([p0, p1, p2])
+        let (&start, &end) = (self.points.first()?, self.points.get(1)?);
+        let control = self
+            .points
+            .get(2)
+            .copied()
+            .unwrap_or_else(|| Pos2::new((start.x + end.x) * 0.5, (start.y + end.y) * 0.5));
+        Some([start, control, end])
     }
 }
 
@@ -279,5 +262,143 @@ mod tests {
             sector.points = points;
             assert!(sector.outline(rect).is_none());
         }
+    }
+
+    #[test]
+    fn arc_is_a_symmetric_dome_and_curve_bends_toward_its_third_anchor() {
+        let rect = egui::Rect::from_min_max(egui::pos2(-400.0, -400.0), egui::pos2(400.0, 400.0));
+        let mut arc = Drawing::new(0, DrawingToolType::Arc);
+        arc.points = vec![
+            Pos2::new(0.0, 0.0),
+            Pos2::new(100.0, 0.0),
+            Pos2::new(80.0, 40.0),
+        ];
+        let outline = arc.outline(rect).unwrap();
+        assert!(
+            outline
+                .lines
+                .iter()
+                .flatten()
+                .any(|p| p.distance(Pos2::new(50.0, 40.0)) < 1.0),
+            "dome peak follows the apex height at the chord midpoint"
+        );
+        assert!(
+            outline.areas.is_empty(),
+            "an arc without a fill is its border"
+        );
+        arc.fill_color = Some([10, 20, 30, 40]);
+        assert_eq!(arc.outline(rect).unwrap().areas.len(), 1);
+
+        let mut curve = Drawing::new(0, DrawingToolType::Curve);
+        curve.points = vec![
+            Pos2::new(0.0, 0.0),
+            Pos2::new(100.0, 0.0),
+            Pos2::new(50.0, 80.0),
+        ];
+        let [start, control, end] = curve.curve_controls().unwrap();
+        assert_eq!((start, control, end).2, Pos2::new(100.0, 0.0));
+        assert_eq!(control, Pos2::new(50.0, 80.0));
+        let outline = curve.outline(rect).unwrap();
+        assert!(
+            outline
+                .lines
+                .iter()
+                .flatten()
+                .any(|p| p.distance(Pos2::new(50.0, 40.0)) < 1.0),
+            "the quadratic passes halfway toward its control"
+        );
+        curve.fill_color = Some([10, 20, 30, 40]);
+        assert!(
+            curve
+                .outline(rect)
+                .unwrap()
+                .areas
+                .iter()
+                .any(|area| area.iter().any(|p| p.distance(Pos2::new(50.0, 40.0)) < 1.0))
+        );
+    }
+
+    #[test]
+    fn arrow_marks_point_away_from_the_anchor_in_the_line_colour() {
+        let tip = Pos2::new(100.0, 100.0);
+        for (tool, outward) in [
+            (DrawingToolType::ArrowMarkUp, egui::vec2(0.0, 1.0)),
+            (DrawingToolType::ArrowMarkDown, egui::vec2(0.0, -1.0)),
+            (DrawingToolType::ArrowMarkLeft, egui::vec2(1.0, 0.0)),
+            (DrawingToolType::ArrowMarkRight, egui::vec2(-1.0, 0.0)),
+        ] {
+            let mut drawing = Drawing::with_color(1, tool, [12, 80, 200, 255]);
+            drawing.points = vec![tip];
+            let glyph = drawing.arrow_mark_glyph().unwrap();
+            assert_eq!(glyph[0], tip, "{tool:?}");
+            assert!(
+                glyph[1..].iter().all(|p| (*p - tip).dot(outward) >= -1e-3),
+                "{tool:?} body is not on the outward side"
+            );
+            assert!(!tool.supports_fill(), "{tool:?} colour is its line colour");
+        }
+    }
+
+    #[test]
+    fn highlighter_keeps_a_chosen_alpha_and_a_wide_stroke() {
+        let mut drawing = Drawing::with_color(1, DrawingToolType::Highlighter, [10, 20, 30, 40]);
+        assert_eq!(drawing.brush_width(), Some(16.0));
+        drawing.points = vec![Pos2::new(0.0, 0.0), Pos2::new(50.0, 0.0)];
+        drawing.stroke_width = 3.0;
+        assert_eq!(drawing.brush_width(), Some(24.0));
+        let opaque = Drawing::with_color(1, DrawingToolType::Highlighter, [10, 20, 30, 255]);
+        assert_eq!(drawing.highlighter_color().a(), 40);
+        assert_eq!(opaque.highlighter_color().a(), 100);
+        assert_eq!(
+            opaque.highlighter_color(),
+            Color32::from_rgba_unmultiplied(10, 20, 30, 100)
+        );
+    }
+
+    #[test]
+    fn thick_strokes_and_filled_shapes_are_hit_on_their_paint() {
+        use crate::drawings::services::DrawingInteraction;
+        let interaction = DrawingInteraction::new();
+        let mut circle = Drawing::new(7, DrawingToolType::Circle);
+        circle.points = vec![Pos2::ZERO, Pos2::new(10.0, 0.0)];
+        circle.stroke_width = 20.0;
+        assert_eq!(
+            interaction.hit_test(Pos2::new(0.0, 18.0), std::slice::from_ref(&circle), "1D"),
+            Some(7),
+            "a thick ring includes its stroke"
+        );
+        assert_eq!(
+            interaction.hit_test(Pos2::new(0.0, 40.0), std::slice::from_ref(&circle), "1D"),
+            None
+        );
+
+        let mut rect = Drawing::new(7, DrawingToolType::Rect);
+        rect.points = vec![Pos2::new(0.0, 0.0), Pos2::new(100.0, 80.0)];
+        assert_eq!(
+            interaction.hit_test(Pos2::new(50.0, 40.0), std::slice::from_ref(&rect), "1D"),
+            None,
+            "an unfilled rectangle is not its interior"
+        );
+        rect.fill_color = Some([1, 2, 3, 40]);
+        assert_eq!(
+            interaction.hit_test(Pos2::new(50.0, 40.0), std::slice::from_ref(&rect), "1D"),
+            Some(7)
+        );
+
+        let mut sector = Drawing::new(7, DrawingToolType::Sector);
+        sector.points = vec![
+            Pos2::new(0.0, 0.0),
+            Pos2::new(40.0, 0.0),
+            Pos2::new(0.0, 40.0),
+        ];
+        sector.fill_color = Some([0, 0, 0, 0]);
+        assert!(sector.painted_fill().is_none());
+        assert!(
+            sector
+                .outline(egui::Rect::EVERYTHING)
+                .unwrap()
+                .areas
+                .is_empty()
+        );
     }
 }

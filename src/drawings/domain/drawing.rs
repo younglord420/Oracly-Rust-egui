@@ -410,6 +410,13 @@ impl Drawing {
             let y = price_to_y(cp.price);
             self.points.push(egui::Pos2::new(x, y));
         }
+        self.constrain_placed_controls();
+        if self.tool_type == DrawingToolType::Arc
+            && self.points.len() >= 3
+            && self.chart_points.len() >= 3
+        {
+            self.points[2].x = bar_to_x(self.chart_points[2].bar_idx);
+        }
         self.level_ys = self
             .fib_levels()
             .map(|(_, prices)| prices.into_iter().map(&price_to_y).collect())
@@ -984,6 +991,21 @@ impl Drawing {
             egui::pos2(min_x, min_y),
             egui::pos2(max_x, max_y),
         ))
+    }
+
+    /// Keeps tools whose anchors are not all free: an arc's third anchor stays on the
+    /// time midpoint of its chord, so the dome stays symmetric after a drag or a reload.
+    pub(crate) fn constrain_placed_controls(&mut self) {
+        if self.tool_type != DrawingToolType::Arc
+            || self.points.len() < 3
+            || self.chart_points.len() < 3
+        {
+            return;
+        }
+        let mid_bar = (self.chart_points[0].bar_idx + self.chart_points[1].bar_idx) * 0.5;
+        let mid_x = (self.points[0].x + self.points[1].x) * 0.5;
+        self.chart_points[2].bar_idx = mid_bar;
+        self.points[2].x = mid_x;
     }
 
     /// Quadratic bezier curve interpolation

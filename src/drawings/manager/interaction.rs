@@ -635,6 +635,7 @@ impl DrawingManager {
             {
                 return;
             }
+            drawing.constrain_placed_controls();
             if drawing.is_position() {
                 drawing.add_position_stop();
             }

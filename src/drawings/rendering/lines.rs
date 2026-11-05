@@ -4,7 +4,7 @@
 //! arrows, and polylines.
 
 use super::style::placed_anchor;
-use crate::drawings::domain::Drawing;
+use crate::drawings::domain::{Drawing, DrawingToolType};
 use crate::styles::{stroke, typography};
 use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
@@ -248,11 +248,13 @@ impl Drawing {
         stroke: Stroke,
     ) {
         if let Some(rect) = self.rectangle_bounds(pane) {
-            // Fill if configured
-            if let Some(fill) = self.fill_color {
-                let fill_color =
-                    Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
-                painter.rect_filled(rect, 0.0, fill_color);
+            let snap = crate::painting::pixel_snap::PixelSnap::of(painter);
+            let rect = Rect::from_min_max(
+                Pos2::new(snap.edge(rect.min.x), snap.edge(rect.min.y)),
+                Pos2::new(snap.edge(rect.max.x), snap.edge(rect.max.y)),
+            );
+            if let Some(fill) = self.painted_fill() {
+                painter.rect_filled(rect, 0.0, fill);
             }
 
             // Main rectangle stroke
@@ -320,24 +322,22 @@ impl Drawing {
         // Width label (bottom center)
         if width > 50.0 {
             let width_label_pos = Pos2::new(rect.center().x, rect.max.y + typography::XS);
-            self.label_box(
+            self.label_box_on(
                 painter,
                 egui::Align2::CENTER_CENTER,
                 width_label_pos,
                 width_label,
-                chart.axis_text,
                 label_bg,
             );
         }
 
         // Height label (right center)
         if height > 50.0 {
-            self.label_box(
+            self.label_box_on(
                 painter,
                 egui::Align2::LEFT_CENTER,
                 Pos2::new(rect.max.x + typography::XS, rect.center().y),
                 height_label,
-                chart.axis_text,
                 label_bg,
             );
         }
@@ -349,10 +349,8 @@ impl Drawing {
             let center = self.points[0];
             let edge = self.points[1];
             let radius = ((edge.x - center.x).powi(2) + (edge.y - center.y).powi(2)).sqrt();
-            if let Some(fill) = self.fill_color {
-                let fill_color =
-                    Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
-                painter.circle_filled(center, radius, fill_color);
+            if let Some(fill) = self.painted_fill() {
+                painter.circle_filled(center, radius, fill);
             }
             painter.circle_stroke(center, radius, stroke);
         } else if self.points.len() == 1 {
@@ -365,12 +363,10 @@ impl Drawing {
         if self.points.len() >= 2 {
             let ellipse_points = ellipse_points(self.points[0], self.points[1]);
 
-            if let Some(fill) = self.fill_color {
-                let fill_color =
-                    Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
+            if let Some(fill) = self.painted_fill() {
                 painter.add(egui::Shape::convex_polygon(
                     ellipse_points.clone(),
-                    fill_color,
+                    fill,
                     Stroke::NONE,
                 ));
             }
@@ -389,12 +385,10 @@ impl Drawing {
             let p1 = self.points[0];
             let p2 = self.points[1];
             let p3 = self.points[2];
-            if let Some(fill) = self.fill_color {
-                let fill_color =
-                    Color32::from_rgba_unmultiplied(fill[0], fill[1], fill[2], fill[3]);
+            if let Some(fill) = self.painted_fill() {
                 painter.add(egui::Shape::convex_polygon(
                     vec![p1, p2, p3],
-                    fill_color,
+                    fill,
                     Stroke::NONE,
                 ));
             }
@@ -411,49 +405,41 @@ impl Drawing {
         }
     }
 
-    /// Render arc - semicircle
+    /// Half-ellipse dome over the chord from the first anchor to the second. The third
+    /// anchor's height sets the bulge; its horizontal position stays on the chord midpoint.
     pub(crate) fn render_arc(&self, painter: &egui::Painter, color: Color32, stroke: Stroke) {
-        if self.points.len() >= 2 {
-            for pair in self.arc_path().windows(2) {
-                painter.line_segment([pair[0], pair[1]], stroke);
+        let path = self.arc_path();
+        if path.len() >= 2 {
+            if path.len() >= 4
+                && let Some(fill) = self.painted_fill()
+            {
+                let mut ring = path.clone();
+                ring.pop();
+                painter.add(egui::Shape::convex_polygon(ring, fill, Stroke::NONE));
             }
+            painter.add(egui::Shape::line(path, stroke));
         } else if self.points.len() == 1 {
             placed_anchor(painter, self.points[0], color);
         }
     }
 
-    /// Circular arc from the first anchor to the second through the third.
+    /// The dome from the second anchor back to the first, closed along the chord.
+    /// Two anchors are the chord alone.
     pub(super) fn arc_path(&self) -> Vec<Pos2> {
         let &[a, b, ..] = self.points.as_slice() else {
             return Vec::new();
         };
-        let Some(&c) = self.points.get(2) else {
-            return arc_points(a, b);
+        let Some(&apex) = self.points.get(2) else {
+            return vec![a, b];
         };
-        let (u, v) = (b - a, c - a);
-        let det = 2.0 * (u.x * v.y - u.y * v.x);
-        if det.abs() < 1e-6 {
-            return vec![a, c, b];
+        let mut dome = arc_dome(a, b, apex);
+        if let Some(&first) = dome.first()
+            && dome.len() >= 2
+            && dome.last() != Some(&first)
+        {
+            dome.push(first);
         }
-        let center = a + egui::vec2(
-            (u.length_sq() * v.y - v.length_sq() * u.y) / det,
-            (u.x * v.length_sq() - v.x * u.length_sq()) / det,
-        );
-        let angle = |p: Pos2| (p.y - center.y).atan2(p.x - center.x);
-        let start = angle(a);
-        let end = (angle(b) - start).rem_euclid(std::f32::consts::TAU);
-        let through = (angle(c) - start).rem_euclid(std::f32::consts::TAU);
-        let sweep = if through <= end {
-            end
-        } else {
-            end - std::f32::consts::TAU
-        };
-        (0..=64)
-            .map(|i| {
-                let theta = start + sweep * i as f32 / 64.0;
-                center + center.distance(a) * egui::vec2(theta.cos(), theta.sin())
-            })
-            .collect()
+        dome
     }
 
     /// Render polyline - connected line segments through all points
@@ -488,70 +474,63 @@ impl Drawing {
         self.render_arrow(painter, rect, color, Stroke::new(self.stroke_width, color));
     }
 
-    /// Render arrow mark up - upward pointing bullish arrow
-    pub(crate) fn render_arrow_mark_up(&self, painter: &egui::Painter) {
-        if !self.points.is_empty() {
-            let pos = self.points[0];
-            let size = typography::MD;
-            let points = vec![
-                Pos2::new(pos.x, pos.y - size),
-                Pos2::new(pos.x - size * 0.6, pos.y + size * 0.5),
-                Pos2::new(pos.x + size * 0.6, pos.y + size * 0.5),
-            ];
-            let fill = DESIGN_TOKENS.semantic.extended.bullish;
-            let border = DESIGN_TOKENS
-                .semantic
-                .extended
-                .bullish
-                .gamma_multiply(200_f32 / 255.0);
-            let shape = egui::epaint::PathShape::convex_polygon(
-                points,
-                fill,
-                Stroke::new(stroke::HAIRLINE, border),
-            );
-            painter.add(shape);
-        }
-    }
-
-    pub(super) fn render_horizontal_mark(&self, painter: &egui::Painter, direction: f32) {
-        let Some(&tip) = self.points.first() else {
+    /// Fixed-size directional mark: the tip sits on the anchor and the body extends away from it.
+    pub(crate) fn render_arrow_mark(&self, painter: &egui::Painter) {
+        let Some(mut points) = self.arrow_mark_glyph() else {
             return;
         };
-        let size = 14.0;
+        if let Some(&tip) = self.points.first() {
+            let snap = crate::painting::pixel_snap::PixelSnap::of(painter);
+            let snapped = Pos2::new(snap.edge(tip.x), snap.edge(tip.y));
+            let delta = snapped - tip;
+            if delta != egui::Vec2::ZERO {
+                for point in &mut points {
+                    *point += delta;
+                }
+            }
+        }
         painter.add(egui::Shape::convex_polygon(
-            vec![
-                tip,
-                tip + egui::vec2(-direction * size, -size * 0.6),
-                tip + egui::vec2(-direction * size, size * 0.6),
-            ],
+            points,
             self.color32(),
             Stroke::NONE,
         ));
     }
 
-    /// Render arrow mark down - downward pointing bearish arrow
-    pub(crate) fn render_arrow_mark_down(&self, painter: &egui::Painter) {
-        if !self.points.is_empty() {
-            let pos = self.points[0];
-            let size = typography::MD;
-            let points = vec![
-                Pos2::new(pos.x, pos.y + size),
-                Pos2::new(pos.x - size * 0.6, pos.y - size * 0.5),
-                Pos2::new(pos.x + size * 0.6, pos.y - size * 0.5),
-            ];
-            let fill = DESIGN_TOKENS.semantic.extended.bearish;
-            let border = DESIGN_TOKENS
-                .semantic
-                .extended
-                .bearish
-                .gamma_multiply(200_f32 / 255.0);
-            let shape = egui::epaint::PathShape::convex_polygon(
-                points,
-                fill,
-                Stroke::new(stroke::HAIRLINE, border),
-            );
-            painter.add(shape);
-        }
+    /// The mark's polygon in screen space, tip first. `None` for other tools and with no anchor.
+    /// The glyph grows with the stroke width; at the default width of 2 it is the base size.
+    pub(super) fn arrow_mark_glyph(&self) -> Option<Vec<Pos2>> {
+        let &tip = self.points.first()?;
+        let scale = (self.stroke_width / 2.0).max(0.25);
+        let (head, head_w, stem_w, len) = (11.0 * scale, 9.0 * scale, 3.5 * scale, 22.0 * scale);
+        // Base glyph points up in screen space: tip at the origin, body toward +y.
+        let base = [
+            [0.0, 0.0],
+            [-head_w, head],
+            [-stem_w, head],
+            [-stem_w, len],
+            [stem_w, len],
+            [stem_w, head],
+            [head_w, head],
+        ];
+        let (sign_x, sign_y, swap) = match self.tool_type {
+            DrawingToolType::ArrowMarkUp => (1.0, 1.0, false),
+            DrawingToolType::ArrowMarkDown => (1.0, -1.0, false),
+            DrawingToolType::ArrowMarkLeft => (1.0, 1.0, true),
+            DrawingToolType::ArrowMarkRight => (-1.0, 1.0, true),
+            _ => return None,
+        };
+        Some(
+            base.into_iter()
+                .map(|[x, y]| {
+                    let (rx, ry) = if swap {
+                        (sign_x * y, sign_y * x)
+                    } else {
+                        (sign_x * x, sign_y * y)
+                    };
+                    tip + egui::vec2(rx, ry)
+                })
+                .collect(),
+        )
     }
 }
 
@@ -612,19 +591,28 @@ pub(super) fn ellipse_points(p1: Pos2, p2: Pos2) -> Vec<Pos2> {
         .collect()
 }
 
-/// The half circle around `center` that starts at `edge` and turns clockwise
-/// on screen.
-pub(super) fn arc_points(center: Pos2, edge: Pos2) -> Vec<Pos2> {
-    let radius = center.distance(edge);
-    let start_angle = (edge.y - center.y).atan2(edge.x - center.x);
-    let segments = 32;
-    (0..=segments)
+/// Half-ellipse from `b` to `a` bulging by the height of `apex` off the chord.
+/// The apex's screen x is ignored: the dome stays symmetric about the chord midpoint.
+fn arc_dome(a: Pos2, b: Pos2, apex: Pos2) -> Vec<Pos2> {
+    let (mx, my) = ((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+    let (hx, hy) = ((b.x - a.x) * 0.5, (b.y - a.y) * 0.5);
+    let len = hx.hypot(hy);
+    if len < 1e-6 {
+        return vec![a, b];
+    }
+    let (mut nx, mut ny) = (-hy / len, hx / len);
+    let mut off = (apex.y - my) * ny;
+    if off < 0.0 {
+        nx = -nx;
+        ny = -ny;
+        off = -off;
+    }
+    let samples = 40;
+    (0..=samples)
         .map(|i| {
-            let angle = start_angle + std::f32::consts::PI * (i as f32 / segments as f32);
-            Pos2::new(
-                center.x + radius * angle.cos(),
-                center.y + radius * angle.sin(),
-            )
+            let t = i as f32 / samples as f32 * std::f32::consts::PI;
+            let (c, s) = (t.cos(), t.sin());
+            Pos2::new(mx + c * hx + s * off * nx, my + c * hy + s * off * ny)
         })
         .collect()
 }
@@ -774,9 +762,18 @@ mod tests {
                 .collect();
             let fills = output.shapes.iter().filter(|shape| matches!(&shape.shape, egui::Shape::Rect(rect) if rect.fill == theme.chart.bg_axis)).count();
             output.drop_without_applying_deltas();
-            assert_eq!(labels, vec![theme.chart.axis_text; 2]);
+            let readable =
+                crate::chart::rendering::axes::tag_text_color(theme.chart.bg_axis.to_opaque());
+            assert_eq!(labels, vec![readable; 2]);
             assert_eq!(fills, 2);
         }
+        drawing.text_color = Some([20, 30, 40, 255]);
+        let output = ctx.run_ui(Default::default(), |ui| {
+            drawing.render_rect_guides(ui.painter());
+        });
+        let custom = Color32::from_rgba_unmultiplied(20, 30, 40, 255);
+        assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.sections[0].format.color == custom)));
+        output.drop_without_applying_deltas();
     }
 
     /// Dragging the second anchor left of the first still strokes from the leftmost

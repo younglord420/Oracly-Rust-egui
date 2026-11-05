@@ -16,6 +16,17 @@ use crate::styles::typography::font_size;
 use crate::theme::ThemeExt;
 use egui::{Color32, Pos2};
 
+fn centroid(points: &[Pos2]) -> Option<Pos2> {
+    if points.is_empty() {
+        return None;
+    }
+    let (x, y) = points
+        .iter()
+        .fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+    let n = points.len() as f32;
+    Some(Pos2::new(x / n, y / n))
+}
+
 /// Configuration for selection handle appearance and hit testing.
 #[derive(Clone, Debug)]
 pub struct HandleConfig {
@@ -164,6 +175,14 @@ impl HandleService {
                     handles.push((HandlePos::Point(i), point));
                 }
             }
+            // A captured stroke moves as a whole. Per-sample handles would cover the path.
+            DrawingToolType::Brush | DrawingToolType::Highlighter => {
+                if drawing.points.len() == 1 {
+                    handles.push((HandlePos::Point(0), drawing.points[0]));
+                } else if let Some(center) = centroid(&drawing.points) {
+                    handles.push((HandlePos::Middle, center));
+                }
+            }
             // Multi-point tools - show indexed handles
             _ => {
                 for (i, &point) in drawing.points.iter().enumerate() {
@@ -231,6 +250,7 @@ impl HandleService {
                 for point in &mut drawing.points {
                     *point += new_pos - center;
                 }
+                drawing.constrain_placed_controls();
             }
             return;
         }
@@ -396,6 +416,7 @@ impl HandleService {
                 Self::update_multi_point_handle(drawing, handle, new_pos, &x_to_bar, &y_to_price);
             }
         }
+        drawing.constrain_placed_controls();
     }
 
     /// Update handle for two-point tools (trendline, fib, etc.)
@@ -785,6 +806,8 @@ mod tests {
                     DrawingToolType::FlagNote,
                     DrawingToolType::ArrowMarkUp,
                     DrawingToolType::ArrowMarkDown,
+                    DrawingToolType::ArrowMarkLeft,
+                    DrawingToolType::ArrowMarkRight,
                     DrawingToolType::AnchoredVWAP,
                     DrawingToolType::AnchoredVolumeProfile,
                     DrawingToolType::Table,
@@ -879,8 +902,6 @@ mod tests {
                     DrawingToolType::CypherPattern,
                     DrawingToolType::GartleyPattern,
                     DrawingToolType::SharkPattern,
-                    DrawingToolType::Brush,
-                    DrawingToolType::Highlighter,
                     DrawingToolType::Polyline,
                     DrawingToolType::Path,
                 ],
@@ -917,6 +938,49 @@ mod tests {
                 }
             }
         }
+        for tool in [DrawingToolType::Brush, DrawingToolType::Highlighter] {
+            let points: Vec<_> = (0..5)
+                .map(|i| pos2(i as f32 * 30.0, i as f32 * 10.0))
+                .collect();
+            let drawing = create_test_drawing(tool, points);
+            assert_eq!(
+                HandleService::get_handles(&drawing),
+                vec![(HandlePos::Middle, pos2(60.0, 20.0))],
+                "{tool:?} moves as one stroke"
+            );
+        }
+    }
+
+    /// Dragging either end of an arc keeps the apex on the chord's midpoint.
+    #[test]
+    fn arc_apex_stays_on_the_chord_midpoint() {
+        let mut drawing = create_test_drawing(
+            DrawingToolType::Arc,
+            vec![pos2(0.0, 0.0), pos2(100.0, 0.0), pos2(40.0, 30.0)],
+        );
+        HandleService::update_handle(
+            &mut drawing,
+            HandlePos::Point(2),
+            pos2(80.0, 50.0),
+            x_to_bar,
+            y_to_price,
+            |price, _, _| price,
+        );
+        assert_eq!(drawing.points[2], pos2(50.0, 50.0));
+        HandleService::update_handle(
+            &mut drawing,
+            HandlePos::Point(1),
+            pos2(200.0, 40.0),
+            x_to_bar,
+            y_to_price,
+            |price, _, _| price,
+        );
+        assert_eq!(drawing.points[2].x, 100.0);
+        assert_eq!(drawing.points[2].y, 50.0);
+        assert_eq!(
+            drawing.chart_points[2].bar_idx,
+            (drawing.chart_points[0].bar_idx + drawing.chart_points[1].bar_idx) * 0.5
+        );
     }
 
     /// A Gann square spans its two anchors as freely as a box, without squaring itself.
