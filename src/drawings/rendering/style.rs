@@ -28,6 +28,42 @@ impl Drawing {
         egui::FontId::proportional(crate::styles::typography::font_size(self.font_size))
     }
 
+    /// These tools paint their own text colour, including contrast ink, so the
+    /// shared pass must not repaint it. Bold and italic still apply afterwards.
+    fn paints_final_text(&self) -> bool {
+        use DrawingToolType::*;
+        matches!(
+            self.tool_type,
+            TextLabel
+                | AnchoredText
+                | Note
+                | AnchoredNote
+                | Callout
+                | PriceLabel
+                | FlagNote
+                | PriceNote
+                | Comment
+                | Signpost
+                | Image
+                | Tweet
+                | Idea
+        )
+    }
+
+    /// Box fill for a text annotation: `fallback` while none is set, the stored
+    /// fill when one is, and nothing when that fill is fully transparent.
+    pub(crate) fn annotation_box_fill(&self, fallback: Color32) -> Option<Color32> {
+        match self.fill_color {
+            None => Some(fallback),
+            _ => self.painted_fill(),
+        }
+    }
+
+    /// Border of a text annotation. A stroke width of zero draws none.
+    pub(crate) fn annotation_border(&self) -> Option<Stroke> {
+        (self.stroke_width > 0.0).then(|| Stroke::new(self.stroke_width, self.color32()))
+    }
+
     /// Optional user label for line/shape tools that support annotations.
     ///
     /// Primary text tools already paint their body; this only draws when `supports_line_label`
@@ -392,9 +428,10 @@ impl Drawing {
             return;
         }
         if let Shape::Text(t) = shape {
-            if let Some(custom_color) = self
-                .text_color
-                .map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+            if !self.paints_final_text()
+                && let Some(custom_color) = self
+                    .text_color
+                    .map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
             {
                 t.override_text_color = Some(custom_color);
                 t.fallback_color = custom_color;
@@ -428,26 +465,12 @@ impl Drawing {
                 | DrawingToolType::InsidePitchfork
         );
         let custom_fork = fork && self.pitchfork.is_some();
-        // Annotation body fills take the drawing fill colour. Pitchfork bands are styled only
-        // through PitchforkConfig (Inputs → Background), not Drawing::fill_color.
+        // The table grid still takes its fill here. Annotation and content renderers paint
+        // their own backgrounds, so a fill must not recolour folds, flags, bubbles, or bulbs.
+        // Pitchfork bands are styled only through PitchforkConfig (Inputs → Background).
         let fill = |color: &mut Color32| {
             if color.a() > 0
-                && matches!(
-                    self.tool_type,
-                    DrawingToolType::TextLabel
-                        | DrawingToolType::AnchoredText
-                        | DrawingToolType::Note
-                        | DrawingToolType::Callout
-                        | DrawingToolType::PriceLabel
-                        | DrawingToolType::FlagNote
-                        | DrawingToolType::PriceNote
-                        | DrawingToolType::Table
-                        | DrawingToolType::Comment
-                        | DrawingToolType::Signpost
-                        | DrawingToolType::Image
-                        | DrawingToolType::Tweet
-                        | DrawingToolType::Idea
-                )
+                && self.tool_type == DrawingToolType::Table
                 && let Some(configured) = self.fill_color32()
             {
                 *color = configured;

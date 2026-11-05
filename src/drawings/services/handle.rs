@@ -175,6 +175,15 @@ impl HandleService {
                     handles.push((HandlePos::Point(i), point));
                 }
             }
+            // Only the pinned tip is a handle; the box moves by dragging its body.
+            DrawingToolType::Callout
+            | DrawingToolType::Comment
+            | DrawingToolType::Signpost
+            | DrawingToolType::PriceNote => {
+                if let Some(&tip) = drawing.points.first() {
+                    handles.push((HandlePos::Point(0), tip));
+                }
+            }
             // A captured stroke moves as a whole. Per-sample handles would cover the path.
             DrawingToolType::Brush | DrawingToolType::Highlighter => {
                 if drawing.points.len() == 1 {
@@ -854,8 +863,6 @@ mod tests {
                     DrawingToolType::Rect,
                     DrawingToolType::Circle,
                     DrawingToolType::Ellipse,
-                    DrawingToolType::PriceNote,
-                    DrawingToolType::Callout,
                     DrawingToolType::Image,
                     DrawingToolType::DedekindTessellation,
                     DrawingToolType::Sonic,
@@ -937,6 +944,20 @@ mod tests {
                     );
                 }
             }
+        }
+        for tool in [
+            DrawingToolType::Callout,
+            DrawingToolType::Comment,
+            DrawingToolType::Signpost,
+            DrawingToolType::PriceNote,
+        ] {
+            let tip = pos2(10.0, 20.0);
+            let drawing = create_test_drawing(tool, vec![tip, pos2(120.0, 60.0)]);
+            assert_eq!(
+                HandleService::get_handles(&drawing),
+                vec![(HandlePos::Point(0), tip)],
+                "{tool:?} keeps only its tip handle"
+            );
         }
         for tool in [DrawingToolType::Brush, DrawingToolType::Highlighter] {
             let points: Vec<_> = (0..5)
@@ -1131,6 +1152,28 @@ mod tests {
                 Some(expected)
             );
         }
+    }
+
+    /// Dragging an image corner moves that anchor and leaves the other in place,
+    /// which is what resizes the frame.
+    #[test]
+    fn image_handle_drag_resizes_the_frame() {
+        let mut drawing = create_test_drawing(
+            DrawingToolType::Image,
+            vec![pos2(10.0, 20.0), pos2(110.0, 80.0)],
+        );
+        HandleService::update_handle(
+            &mut drawing,
+            HandlePos::Point(1),
+            pos2(200.0, 150.0),
+            x_to_bar,
+            y_to_price,
+            |price, _, _| price,
+        );
+        assert_eq!(drawing.points[0], pos2(10.0, 20.0));
+        assert_eq!(drawing.points[1], pos2(200.0, 150.0));
+        assert_eq!(drawing.chart_points[1].bar_idx, x_to_bar(200.0));
+        assert_eq!(drawing.chart_points[1].price, y_to_price(150.0));
     }
 
     /// A handle drag moves the screen points and the persisted chart points

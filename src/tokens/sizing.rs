@@ -462,6 +462,16 @@ pub struct AnnotationSizingTokens {
     pub signpost_bracket: f32,
     /// Vertical text padding, in egui logical points.
     pub text_padding_y: f32,
+    /// Pin head radius at the standard stroke width, in egui logical points.
+    pub pin_head_radius: f32,
+    /// Pin needle length at the standard stroke width, in egui logical points.
+    pub pin_needle: f32,
+    /// Flag pole length, in egui logical points.
+    pub flag_pole: f32,
+    /// Flag cloth width, in egui logical points.
+    pub flag_width: f32,
+    /// Flag cloth height, in egui logical points.
+    pub flag_height: f32,
 }
 
 /// Media sizing defaults in egui logical points.
@@ -487,6 +497,10 @@ pub struct MediaSizingTokens {
     pub idea_card_height: f32,
     /// Profile radius, in egui logical points.
     pub profile_radius: f32,
+    /// Idea text inset, leaving the bulb on the left, in egui logical points.
+    pub idea_text_inset: f32,
+    /// Idea bulb base width, in egui logical points.
+    pub idea_base_width: f32,
 }
 
 /// Crosshair sizing defaults in egui logical points.

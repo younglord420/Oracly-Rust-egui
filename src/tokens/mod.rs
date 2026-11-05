@@ -235,6 +235,11 @@ pub static DESIGN_TOKENS: DesignTokens = DesignTokens {
             signpost_padding_y: 4.0,
             signpost_bracket: 12.0,
             text_padding_y: 5.0,
+            pin_head_radius: 5.0,
+            pin_needle: 12.0,
+            flag_pole: 30.0,
+            flag_width: 22.0,
+            flag_height: 14.0,
         },
         media: MediaSizingTokens {
             image_min_width: 60.0,
@@ -247,6 +252,8 @@ pub static DESIGN_TOKENS: DesignTokens = DesignTokens {
             idea_card_width: 200.0,
             idea_card_height: 80.0,
             profile_radius: 18.0,
+            idea_text_inset: 60.0,
+            idea_base_width: 12.0,
         },
         crosshair: CrosshairSizingTokens {
             dot_radius: 4.0,

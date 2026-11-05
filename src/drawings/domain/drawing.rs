@@ -132,6 +132,14 @@ pub struct Drawing {
     /// Optional custom color for text annotations (None uses the drawing's primary color)
     #[serde(default)]
     pub text_color: Option<[u8; 4]>,
+    /// Whether a note, pin, or comment paints its text body. Selection and the
+    /// in-progress preview set this for one paint; hover is read from the pointer.
+    /// Not saved.
+    #[serde(skip, default)]
+    pub(crate) annotation_open: bool,
+    /// The painted glyphs stay hidden while the inline editor is showing them.
+    #[serde(skip, default)]
+    pub(crate) text_editing: bool,
     /// Vertical placement of line/shape labels relative to the line (Top / Middle / Bottom)
     #[serde(default)]
     pub text_v_align: TextVerticalAlign,
@@ -288,17 +296,17 @@ impl Drawing {
             },
             locked: false,
             visible: true,
-            font_size: if matches!(
-                tool_type,
-                DrawingToolType::FontIcon | DrawingToolType::Sticker
-            ) {
-                32.0
-            } else {
-                12.0
+            font_size: match tool_type {
+                DrawingToolType::FontIcon | DrawingToolType::Sticker => 32.0,
+                DrawingToolType::TextLabel | DrawingToolType::AnchoredText => 18.0,
+                DrawingToolType::FlagNote => 22.0,
+                _ => 12.0,
             },
             font_weight: FontWeight::Normal,
             font_italic: false,
             text_color: None,
+            annotation_open: false,
+            text_editing: false,
             text_v_align: if matches!(
                 tool_type,
                 DrawingToolType::FlatTopBottom | DrawingToolType::DisjointChannel

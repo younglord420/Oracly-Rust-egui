@@ -3,28 +3,22 @@
 use crate::drawings::manager::TextEditState;
 use crate::drawings::{DrawingManager, DrawingToolType};
 use crate::localization as l10n;
+use crate::theme::ThemeExt;
 use egui::{Id, Key, Modifiers, Rect, Ui};
 
 pub(super) fn begin_edit(manager: &mut DrawingManager, id: usize) {
-    let Some(drawing) = manager
-        .drawings
-        .iter()
-        .find(|d| d.id == id && !d.locked && d.is_visible_on_timeframe(&manager.curr_timeframe))
-    else {
+    let Some(index) = manager.drawings.iter().position(|d| {
+        d.id == id && !d.locked && d.is_visible_on_timeframe(&manager.curr_timeframe)
+    }) else {
         return;
     };
+    let tool = manager.drawings[index].tool_type;
+    // Note, pin, comment, signpost, and flag text is edited in the properties dialog.
     if !matches!(
-        drawing.tool_type,
+        tool,
         DrawingToolType::TextLabel
             | DrawingToolType::AnchoredText
-            | DrawingToolType::Note
-            | DrawingToolType::AnchoredNote
             | DrawingToolType::Callout
-            | DrawingToolType::Comment
-            | DrawingToolType::FlagNote
-            | DrawingToolType::Signpost
-            | DrawingToolType::PriceLabel
-            | DrawingToolType::PriceNote
             | DrawingToolType::Table
             | DrawingToolType::Image
             | DrawingToolType::Tweet
@@ -32,17 +26,29 @@ pub(super) fn begin_edit(manager: &mut DrawingManager, id: usize) {
     ) {
         return;
     }
+    if inline(tool) {
+        manager.drawings[index].text_editing = true;
+    }
+    let draft = if tool == DrawingToolType::Table {
+        manager.drawings[index].table_text()
+    } else {
+        manager.drawings[index].text.clone().unwrap_or_default()
+    };
     manager.text_editor = Some(TextEditState {
         id,
-        draft: if drawing.tool_type == DrawingToolType::Table {
-            drawing.table_text()
-        } else {
-            drawing.text.clone().unwrap_or_default()
-        },
+        draft,
         focus: true,
         opened_frame: None,
     });
     manager.select(id);
+}
+
+/// Tools whose text is typed straight onto the chart, over the glyphs they paint.
+fn inline(tool: DrawingToolType) -> bool {
+    matches!(
+        tool,
+        DrawingToolType::TextLabel | DrawingToolType::AnchoredText | DrawingToolType::Callout
+    )
 }
 
 pub(super) fn show_editor(ui: &mut Ui, manager: &mut DrawingManager, chart_id: Id, pane: Rect) {
@@ -52,20 +58,71 @@ pub(super) fn show_editor(ui: &mut Ui, manager: &mut DrawingManager, chart_id: I
     let Some(drawing) = manager.drawings.iter().find(|d| {
         d.id == editor.id && !d.locked && d.is_visible_on_timeframe(&manager.curr_timeframe)
     }) else {
+        if let Some(drawing) = manager.drawings.iter_mut().find(|d| d.id == editor.id) {
+            drawing.text_editing = false;
+        }
         return;
     };
-    let Some(mut pos) = drawing
-        .points
-        .get(usize::from(drawing.tool_type == DrawingToolType::Callout))
-        .copied()
-    else {
+    let tool = drawing.tool_type;
+    let current = drawing.text.clone();
+    let plain = matches!(
+        tool,
+        DrawingToolType::TextLabel | DrawingToolType::AnchoredText
+    );
+    let bubble = tool == DrawingToolType::Callout;
+    let anchor = if bubble {
+        drawing.box_anchor()
+    } else {
+        drawing.points.first().copied()
+    };
+    let Some(mut pos) = anchor else {
+        if let Some(drawing) = manager.drawings.iter_mut().find(|d| d.id == editor.id) {
+            drawing.text_editing = false;
+        }
         return;
     };
-    let width = 260.0_f32.min(pane.width());
+    let table = tool == DrawingToolType::Table;
+    let font_size = crate::styles::typography::font_size(drawing.font_size);
+    let theme = ui.ctx().active_theme();
+    let border = egui::Stroke::new(drawing.stroke_width, drawing.color32());
+    let bubble_fill = drawing
+        .annotation_box_fill(theme.chart.bg_axis)
+        .unwrap_or(theme.chart.bg_axis);
+    let ink = drawing
+        .text_color
+        .map_or(theme.ui.text, |c| {
+            egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
+        });
+    let (width, height) = if plain || bubble {
+        let sample = if editor.draft.is_empty() {
+            if bubble { "Callout" } else { "Enter Text" }
+        } else {
+            editor.draft.as_str()
+        };
+        let lines = sample.split('\n').count().max(1) as f32;
+        let cols = sample
+            .split('\n')
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(1)
+            .max(1) as f32;
+        let size = egui::vec2(
+            (cols * font_size * 0.62 + 24.0).clamp(72.0, pane.width()),
+            (lines * font_size * 1.4 + 14.0).clamp(28.0, pane.height()),
+        );
+        if bubble {
+            pos -= size * 0.5;
+        } else {
+            pos += egui::vec2(2.0 - 5.0, 2.0 - 3.0);
+        }
+        (size.x, size.y)
+    } else {
+        (
+            260.0_f32.min(pane.width()),
+            (if table { 240.0_f32 } else { 160.0 }).min(pane.height()),
+        )
+    };
     pos.x = pos.x.min(pane.right() - width).max(pane.left());
-    let table = drawing.tool_type == DrawingToolType::Table;
-    // A table editor shows about six rows of cells above its buttons.
-    let height = if table { 240.0_f32 } else { 160.0 }.min(pane.height());
     pos.y = pos.y.min(pane.bottom() - height).max(pane.top());
     let id = chart_id.with(("drawing_text", editor.id));
     let (cancel, commit) = ui.input_mut(|input| {
@@ -78,11 +135,13 @@ pub(super) fn show_editor(ui: &mut Ui, manager: &mut DrawingManager, chart_id: I
     let frame = ui.ctx().cumulative_frame_nr();
     let opened_frame = *editor.opened_frame.get_or_insert(frame);
     let request_focus = std::mem::take(&mut editor.focus);
-    let font_size = crate::styles::typography::font_size(drawing.font_size);
-    let hint = match drawing.tool_type {
+    let hint = match tool {
         DrawingToolType::Image => "Image address (https://… or file://…)",
         DrawingToolType::Tweet => "Author on the first line, then the post",
         DrawingToolType::Idea => "Title on the first line, then the idea",
+        DrawingToolType::TextLabel | DrawingToolType::AnchoredText | DrawingToolType::Callout => {
+            "Enter Text"
+        }
         _ => "",
     };
     let mut outside = false;
@@ -97,43 +156,87 @@ pub(super) fn show_editor(ui: &mut Ui, manager: &mut DrawingManager, chart_id: I
                 editor.focus = request_focus;
                 ui.ctx().request_discard("inline text editor layout");
             }
-            let popup = egui::Frame::popup(ui.style());
+            let popup = if plain {
+                egui::Frame::new()
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, ink.gamma_multiply(0.3)))
+                    .corner_radius(4.0)
+                    .inner_margin(egui::Margin::symmetric(5, 3))
+            } else if bubble {
+                egui::Frame::new()
+                    .fill(bubble_fill)
+                    .stroke(border)
+                    .corner_radius(5.0)
+                    .inner_margin(egui::Margin::symmetric(9, 6))
+            } else {
+                egui::Frame::popup(ui.style())
+            };
             let response = popup.show(ui, |ui| {
                 ui.set_width((width - popup.total_margin().sum().x).max(1.0));
                 let field_id = id.with("field");
                 if request_focus {
                     ui.memory_mut(|memory| memory.request_focus(field_id));
                 }
-                let field = egui::ScrollArea::vertical()
-                    .max_height((height - 48.0).max(1.0))
-                    .show(ui, |ui| {
-                        if table {
-                            crate::drawings::Drawing::edit_table(ui, &mut editor.draft, field_id)
-                        } else {
+                let field = if plain || bubble {
+                    let lines = editor.draft.split('\n').count().max(1);
+                    egui::ScrollArea::vertical()
+                        .max_height((height - popup.total_margin().sum().y).max(1.0))
+                        .show(ui, |ui| {
                             ui.add(
                                 egui::TextEdit::multiline(&mut editor.draft)
                                     .id(field_id)
+                                    .frame(egui::Frame::NONE)
                                     .hint_text(l10n::text(ui.ctx(), hint))
+                                    .text_color(ink)
                                     .font(egui::FontId::proportional(font_size))
-                                    .desired_width((width - 16.0).max(1.0))
-                                    .desired_rows(3),
+                                    .desired_width(ui.available_width())
+                                    .desired_rows(lines),
                             )
-                        }
-                    })
-                    .inner;
+                        })
+                        .inner
+                } else {
+                    egui::ScrollArea::vertical()
+                        .max_height((height - 48.0).max(1.0))
+                        .show(ui, |ui| {
+                            if table {
+                                crate::drawings::Drawing::edit_table(
+                                    ui,
+                                    &mut editor.draft,
+                                    field_id,
+                                )
+                            } else {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut editor.draft)
+                                        .id(field_id)
+                                        .hint_text(l10n::text(ui.ctx(), hint))
+                                        .font(egui::FontId::proportional(font_size))
+                                        .desired_width((width - 16.0).max(1.0))
+                                        .desired_rows(3),
+                                )
+                            }
+                        })
+                        .inner
+                };
                 if request_focus {
                     field.request_focus();
                 }
-                ui.small(l10n::text(
-                    ui.ctx(),
-                    "Ctrl/Cmd+Enter to save, Esc to cancel",
-                ));
+                if !plain && !bubble {
+                    ui.small(l10n::text(
+                        ui.ctx(),
+                        "Ctrl/Cmd+Enter to save, Esc to cancel",
+                    ));
+                }
             });
             outside = frame > opened_frame && response.response.clicked_elsewhere();
         });
     if cancel || commit || outside {
         ui.memory_mut(|memory| memory.surrender_focus(id.with("field")));
-        if !cancel && drawing.text.as_deref() != Some(editor.draft.as_str()) {
+        if let Some(drawing) = manager.drawings.iter_mut().find(|d| d.id == editor.id) {
+            drawing.text_editing = false;
+        }
+        if !cancel && plain && editor.draft.trim().is_empty() {
+            manager.delete_drawing(editor.id);
+        } else if !cancel && current.as_deref() != Some(editor.draft.as_str()) {
             manager.edit_drawing(editor.id, |drawing| drawing.text = Some(editor.draft));
         }
     } else {
@@ -228,6 +331,55 @@ mod tests {
         }
     }
 
+    /// Note, pin, comment, signpost, and flag text is edited in the properties dialog, not in a
+    /// popup over the chart; a text label left empty is removed.
+    #[test]
+    fn dialog_edited_annotations_open_no_editor_and_empty_text_is_dropped() {
+        use crate::drawings::{Drawing, DrawingManager};
+        for tool in [
+            DrawingToolType::Note,
+            DrawingToolType::AnchoredNote,
+            DrawingToolType::Comment,
+            DrawingToolType::Signpost,
+            DrawingToolType::FlagNote,
+        ] {
+            let mut manager = DrawingManager::new();
+            let mut drawing = Drawing::new(7, tool);
+            drawing.points.push(pos2(50.0, 50.0));
+            manager.drawings.push(drawing);
+            super::begin_edit(&mut manager, 7);
+            assert!(manager.text_editor.is_none(), "{tool:?}");
+            assert!(!manager.drawings[0].text_editing, "{tool:?}");
+        }
+
+        let ctx = Context::default();
+        let mut manager = DrawingManager::new();
+        let mut drawing = Drawing::new(7, DrawingToolType::TextLabel);
+        drawing.points.push(pos2(50.0, 50.0));
+        manager.drawings.push(drawing);
+        super::begin_edit(&mut manager, 7);
+        assert!(manager.drawings[0].text_editing, "glyphs hide under the editor");
+        let pane = egui::Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(400.0, 300.0));
+        for events in [vec![], vec![Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::COMMAND,
+        }]] {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(pane),
+                    events,
+                    ..Default::default()
+                },
+                |ui| super::show_editor(ui, &mut manager, egui::Id::NULL, pane),
+            )
+            .drop_without_applying_deltas();
+        }
+        assert!(manager.drawings.is_empty(), "an empty text label is removed");
+    }
+
     /// Completing an annotation focuses its inline editor. Commit is one undoable
     /// edit; double-click reopens it, and Escape discards the draft without deselecting.
     #[test]
@@ -235,8 +387,6 @@ mod tests {
         for (tool, pane) in [
             DrawingToolType::TextLabel,
             DrawingToolType::AnchoredText,
-            DrawingToolType::Note,
-            DrawingToolType::AnchoredNote,
             DrawingToolType::Callout,
             DrawingToolType::Table,
             DrawingToolType::Image,
@@ -285,7 +435,7 @@ mod tests {
             };
             step(&mut chart, vec![Event::PointerMoved(from)]);
             step(&mut chart, vec![button(from, true)]);
-            if tool == DrawingToolType::Callout {
+            if matches!(tool, DrawingToolType::Callout | DrawingToolType::Image) {
                 step(
                     &mut chart,
                     vec![Event::PointerMoved(from + egui::vec2(8.0, 0.0))],
@@ -339,9 +489,21 @@ mod tests {
             assert!(chart.redo());
             step(&mut chart, vec![]);
             let id = chart.drawings().drawings[0].id;
-            let on_text = chart.drawings().drawings[0].points
-                [usize::from(tool == DrawingToolType::Callout)]
-                + egui::vec2(10.0, 10.0);
+            // The pin's text sits on the head above the anchor; the needle tip is the anchor.
+            let on_text = if tool == DrawingToolType::AnchoredNote {
+                chart.drawings().drawings[0].points[0]
+                    - egui::vec2(
+                        0.0,
+                        crate::tokens::DESIGN_TOKENS.sizing.annotation.pin_needle
+                            + crate::tokens::DESIGN_TOKENS
+                                .sizing
+                                .annotation
+                                .pin_head_radius,
+                    )
+            } else {
+                chart.drawings().drawings[0].points[usize::from(tool == DrawingToolType::Callout)]
+                    + egui::vec2(10.0, 10.0)
+            };
             assert_eq!(
                 chart.drawings().hit_test(on_text),
                 Some(id),

@@ -789,6 +789,7 @@ mod tests {
         for tool in [
             DrawingToolType::TrendLine,
             DrawingToolType::Rect,
+            DrawingToolType::Image,
             DrawingToolType::FibonacciChannel,
         ] {
             for (locked, multi, centre, dy, tight) in

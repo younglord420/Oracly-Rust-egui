@@ -447,6 +447,7 @@ mod tests {
             TimeCycles,
             SineLine,
             Callout,
+            Image,
             Arrow,
             TrendLine,
         ] {

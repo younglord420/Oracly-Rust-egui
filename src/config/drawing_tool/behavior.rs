@@ -87,6 +87,10 @@ impl DrawingToolType {
                 | Self::CyclicLines
                 | Self::SineLine
                 | Self::AnchoredNote
+                | Self::PriceLabel
+                | Self::TextLabel
+                | Self::AnchoredText
+                | Self::FlagNote
                 | Self::FontIcon
                 | Self::Sticker
         )
@@ -134,7 +138,6 @@ impl DrawingToolType {
                 | Self::AnchoredNote
                 | Self::Callout
                 | Self::Comment
-                | Self::PriceNote
                 | Self::FlagNote
                 | Self::Signpost
                 | Self::Table
@@ -230,10 +233,7 @@ impl DrawingToolType {
             | Self::AnchoredVWAP
             | Self::AnchoredVolumeProfile
             | Self::Table
-            | Self::Comment
-            | Self::Signpost
             | Self::FontIcon
-            | Self::Image
             | Self::Tweet
             | Self::Idea
             | Self::FairValueGap
@@ -265,6 +265,9 @@ impl DrawingToolType {
             | Self::TimeCycles
             | Self::SineLine
             | Self::Callout
+            | Self::Comment
+            | Self::Signpost
+            | Self::Image
             | Self::Arrow
             | Self::LongPos
             | Self::ShortPos
@@ -467,6 +470,7 @@ mod tests {
             (GartleyPattern, DrawingInteractionMode::MultiPoint, 5),
             (SharkPattern, DrawingInteractionMode::MultiPoint, 5),
             (PriceNote, DrawingInteractionMode::ClickClick, 2),
+            (Image, DrawingInteractionMode::DragToDraw, 2),
             (ArrowMarker, DrawingInteractionMode::ClickClick, 2),
             (LongPos, DrawingInteractionMode::DragToDraw, 2),
             (ShortPos, DrawingInteractionMode::DragToDraw, 2),
@@ -498,11 +502,16 @@ mod tests {
             if required.is_none() {
                 assert_eq!(manager.drawings[0].chart_points.len(), count, "{tool:?}");
             }
-            // Position and channel handles can sit away from their stored anchors;
-            // `HandleService`'s `get_handles_by_tool` covers them.
+            // Position and channel handles can sit away from their stored anchors, and a price
+            // note's box moves by its body; `HandleService`'s `get_handles_by_tool` covers them.
             if matches!(
                 tool,
-                LongPos | ShortPos | ParallelChannel | FlatTopBottom | DisjointChannel
+                LongPos
+                    | ShortPos
+                    | ParallelChannel
+                    | FlatTopBottom
+                    | DisjointChannel
+                    | PriceNote
             ) {
                 continue;
             }

@@ -182,6 +182,19 @@ impl DrawingManager {
             if let Some(tool) = self.registry.get(id) {
                 tool.implementation.render(drawing, painter, rect, view);
             }
+            return;
+        }
+        let reveal = matches!(
+            drawing.tool_type,
+            DrawingToolType::AnchoredNote
+                | DrawingToolType::TextLabel
+                | DrawingToolType::AnchoredText
+        ) && self.selection.is_selected(drawing.id)
+            && !drawing.annotation_open;
+        if reveal {
+            let mut open = drawing.clone();
+            open.annotation_open = true;
+            open.render_with_selection(painter, rect, view);
         } else {
             drawing.render_with_selection(painter, rect, view);
         }
@@ -279,7 +292,13 @@ impl DrawingManager {
             // A drawing still being placed reads lighter than the placed ones.
             let mut preview = painter.clone();
             preview.multiply_opacity(0.7);
-            self.render_drawing(drawing, &preview, price_rect, view);
+            if drawing.tool_type == DrawingToolType::AnchoredNote {
+                let mut open = drawing.clone();
+                open.annotation_open = true;
+                self.render_drawing(&open, &preview, price_rect, view);
+            } else {
+                self.render_drawing(drawing, &preview, price_rect, view);
+            }
             if drawing.tool_type == DrawingToolType::Rect {
                 drawing.render_rect_guides(painter);
                 self.render_handles(painter, drawing);

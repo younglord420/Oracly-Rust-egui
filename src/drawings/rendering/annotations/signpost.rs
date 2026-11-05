@@ -1,114 +1,106 @@
 //! Signpost rendering
 
+use super::contrast_ink;
 use crate::drawings::domain::Drawing;
-use crate::drawings::rendering::utils::draw_dashed_line;
+use crate::drawings::rendering::ChartView;
 use crate::painting::pixel_snap::PixelSnap;
+use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
-use egui::{Color32, Pos2, Rect, Stroke};
+use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind};
 
 impl Drawing {
-    /// Renders a vertical signpost with label at top.
-    /// Features: vertical line to chart top, sign plate, date/event text.
-    pub(crate) fn render_signpost(&self, painter: &egui::Painter, rect: Rect) {
+    /// A sign plate centred on the second anchor, on a pole rising from the first.
+    pub(crate) fn render_signpost(&self, painter: &egui::Painter, _rect: Rect, _view: &ChartView) {
         if self.points.is_empty() {
             return;
         }
         let snap = PixelSnap::of(painter);
-        let pos = Pos2::new(
-            snap.line_center(self.points[0].x, 1.5),
+        let width = self.stroke_width.max(DESIGN_TOKENS.stroke.hairline);
+        let base = Pos2::new(
+            snap.line_center(self.points[0].x, width),
             snap.edge(self.points[0].y),
         );
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        let dash = DESIGN_TOKENS.sizing.annotation.signpost_padding_x;
-        let gap = DESIGN_TOKENS.sizing.annotation.signpost_padding_y;
-        if rect.min.y < pos.y {
-            draw_dashed_line(
-                painter,
-                Pos2::new(pos.x, rect.min.y),
-                pos,
-                Stroke::new(1.5, color),
-                dash,
-                gap,
-            );
-        }
-
-        let text = self.text.as_deref().unwrap_or("Event");
-        let lum = 0.2126 * f32::from(color.r())
-            + 0.7152 * f32::from(color.g())
-            + 0.0722 * f32::from(color.b());
-        let text_fg = if lum > 165.0 {
-            Color32::from_rgb(18, 20, 24)
-        } else {
-            Color32::WHITE
+        let color = self.color32();
+        painter.circle_filled(base, 3.5, color);
+        let Some(plate_at) = self.box_anchor() else {
+            return;
         };
-        let font = self.annotation_font();
-        let galley = painter.layout_no_wrap(text.to_string(), font, text_fg);
-        let text_size = galley.size();
-        let padding = egui::vec2(
-            DESIGN_TOKENS.sizing.annotation.callout_padding_x,
-            DESIGN_TOKENS.sizing.annotation.text_padding_y,
-        );
-        let sign_min = Pos2::new(
-            snap.edge(pos.x - text_size.x * 0.5 - padding.x),
-            snap.edge(rect.min.y + DESIGN_TOKENS.spacing.lg),
-        );
-        let sign_rect = Rect::from_min_max(
-            sign_min,
-            Pos2::new(
-                snap.edge(sign_min.x + text_size.x + padding.x * 2.0),
-                snap.edge(sign_min.y + text_size.y + padding.y * 2.0),
-            ),
-        );
-
-        painter.rect_filled(sign_rect, DESIGN_TOKENS.rounding.md, color);
-
-        let arrow_size = 6.0;
-        let arrow_points = vec![
-            Pos2::new(pos.x, sign_rect.max.y + arrow_size),
-            Pos2::new(pos.x - arrow_size, sign_rect.max.y),
-            Pos2::new(pos.x + arrow_size, sign_rect.max.y),
-        ];
-        painter.add(egui::epaint::PathShape::convex_polygon(
-            arrow_points,
-            color,
-            Stroke::NONE,
-        ));
-
-        painter.galley(
-            Pos2::new(
-                snap.edge(sign_rect.center().x - text_size.x * 0.5),
-                snap.edge(sign_rect.center().y - text_size.y * 0.5),
-            ),
-            galley,
-            text_fg,
-        );
-
-        if !self.chart_points.is_empty() {
-            let bar_idx = self.chart_points[0].bar_idx as i64;
-            let date_text = format!("Bar {bar_idx}");
-            let date_font = self.annotation_font();
-            painter.text(
-                Pos2::new(
-                    snap.edge(pos.x),
-                    snap.edge(
-                        sign_rect.max.y
-                            + arrow_size
-                            + DESIGN_TOKENS.sizing.annotation.signpost_bracket,
-                    ),
-                ),
-                egui::Align2::CENTER_TOP,
-                date_text,
-                date_font,
-                Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 170),
-            );
+        let plate_at = Pos2::new(snap.edge(plate_at.x), snap.edge(plate_at.y));
+        if self.stroke_width > 0.0 {
+            painter.line_segment([base, plate_at], Stroke::new(width, color));
         }
+        let theme = painter.ctx().active_theme();
+        let fill = self
+            .annotation_box_fill(theme.chart.bg_axis)
+            .unwrap_or(theme.chart.bg_axis);
+        let text = self
+            .text
+            .as_deref()
+            .filter(|text| !text.is_empty())
+            .unwrap_or("Signpost");
+        let ink = self
+            .text_color
+            .map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+            .unwrap_or_else(|| contrast_ink(fill));
+        let galley = painter.layout_no_wrap(text.to_string(), self.annotation_font(), ink);
+        let pad = egui::vec2(9.0, 6.0);
+        let sign_rect = Rect::from_center_size(plate_at, galley.size() + pad * 2.0);
+        painter.rect_filled(sign_rect, 5.0, fill);
+        if let Some(border) = self.annotation_border() {
+            painter.rect_stroke(sign_rect, 5.0, border, StrokeKind::Outside);
+        }
+        painter.galley(sign_rect.min + pad, galley, ink);
+    }
+}
 
-        painter.circle_filled(pos, 3.5, color);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drawings::domain::DrawingToolType;
+    use egui::{Context, LayerId, Painter, Pos2, RawInput, Shape};
+
+    fn labels(drawing: &Drawing) -> Vec<String> {
+        let ctx = Context::default();
+        let pane = Rect::from_min_size(Pos2::ZERO, egui::vec2(400.0, 300.0));
+        let view = ChartView {
+            instrument: None,
+            bars: &[],
+            revision: 0,
+            bar_to_x: &|b| b,
+            price_to_y: &|p| p as f32,
+            y_to_price: &f64::from,
+            time_axis: true,
+            executions: None,
+        };
+        let output = ctx.run_ui(RawInput::default(), |_| {
+            drawing.render_original(
+                &Painter::new(ctx.clone(), LayerId::background(), pane),
+                pane,
+                &view,
+            );
+        });
+        fn walk(shape: &Shape, out: &mut Vec<String>) {
+            match shape {
+                Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+                Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        for shape in &output.shapes {
+            walk(&shape.shape, &mut out);
+        }
+        output.drop_without_applying_deltas();
+        out
+    }
+
+    /// The plate carries the signpost text and sits on the second anchor.
+    #[test]
+    fn signpost_plate_uses_its_text() {
+        let mut drawing = Drawing::new(1, DrawingToolType::Signpost);
+        drawing.points = vec![Pos2::new(80.0, 180.0), Pos2::new(140.0, 60.0)];
+        drawing.text = Some("Event".into());
+        let painted = labels(&drawing);
+        assert_eq!(painted, vec!["Event".to_string()]);
     }
 }

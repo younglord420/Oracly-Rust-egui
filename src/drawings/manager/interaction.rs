@@ -5,6 +5,17 @@ use crate::drawings::domain::{ChartPoint, Drawing, DrawingToolType, HandlePos};
 use crate::drawings::services::HandleService;
 use egui::Pos2;
 
+/// Callout, comment, signpost, and price note keep their first anchor pinned when the body moves.
+fn keeps_pinned_tip(tool: DrawingToolType) -> bool {
+    matches!(
+        tool,
+        DrawingToolType::Callout
+            | DrawingToolType::Comment
+            | DrawingToolType::Signpost
+            | DrawingToolType::PriceNote
+    )
+}
+
 impl DrawingManager {
     // === Handle delegation ===
 
@@ -274,15 +285,27 @@ impl DrawingManager {
                         .iter_mut()
                         .find(|d| d.id == old.id && !d.locked)
                     {
-                        for (point, before) in
-                            drawing.chart_points.iter_mut().zip(&old.chart_points)
+                        let pinned = keeps_pinned_tip(drawing.tool_type);
+                        for (index, (point, before)) in drawing
+                            .chart_points
+                            .iter_mut()
+                            .zip(&old.chart_points)
+                            .enumerate()
                         {
+                            if pinned && index == 0 {
+                                continue;
+                            }
                             *point = ChartPoint::new(
                                 before.bar_idx + bars,
                                 translate_price(before.price, origin.y, snapped.y),
                             );
                         }
-                        for (point, before) in drawing.points.iter_mut().zip(&old.points) {
+                        for (index, (point, before)) in
+                            drawing.points.iter_mut().zip(&old.points).enumerate()
+                        {
+                            if pinned && index == 0 {
+                                continue;
+                            }
                             *point = *before + (snapped - origin);
                         }
                         if let Some([x, y]) = old.screen_anchor {
@@ -297,13 +320,24 @@ impl DrawingManager {
             if let Some(drawing) = self.drawings.iter_mut().find(|d| d.id == id && !d.locked) {
                 if let (Some(origin), Some(old)) = (self.drag_origin, &self.drag_old_state) {
                     let bars = x_to_bar(snapped.x) - x_to_bar(origin.x);
-                    for (point, before) in drawing.chart_points.iter_mut().zip(&old.chart_points) {
+                    let pinned = keeps_pinned_tip(drawing.tool_type);
+                    for (index, (point, before)) in
+                        drawing.chart_points.iter_mut().zip(&old.chart_points).enumerate()
+                    {
+                        if pinned && index == 0 {
+                            continue;
+                        }
                         *point = ChartPoint::new(
                             before.bar_idx + bars,
                             translate_price(before.price, origin.y, snapped.y),
                         );
                     }
-                    for (point, before) in drawing.points.iter_mut().zip(&old.points) {
+                    for (index, (point, before)) in
+                        drawing.points.iter_mut().zip(&old.points).enumerate()
+                    {
+                        if pinned && index == 0 {
+                            continue;
+                        }
                         *point = *before + (snapped - origin);
                     }
                 } else {

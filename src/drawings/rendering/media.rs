@@ -13,24 +13,11 @@ use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind, load::TexturePoll};
 
 impl Drawing {
-    /// Renders the image whose URI is the drawing's text, fitted inside the frame between its
-    /// anchors, or the empty frame with a line saying that the image is missing, loading or could
-    /// not be loaded.
-    pub(crate) fn render_image(&self, painter: &egui::Painter) {
-        if self.points.is_empty() {
-            return;
-        }
-        let pos = self.points[0];
-        let color = Color32::from_rgba_unmultiplied(
-            self.color[0],
-            self.color[1],
-            self.color[2],
-            self.color[3],
-        );
-
-        // Calculate frame size from two points if available
-        let (width, height) = if self.points.len() >= 2 {
-            let p2 = self.points[1];
+    /// The image frame: the rectangle between two anchors, at least the minimum size, or the
+    /// default frame when an older drawing has only the first anchor.
+    pub(crate) fn image_frame(&self) -> Option<Rect> {
+        let pos = *self.points.first()?;
+        let (width, height, origin) = if let Some(p2) = self.points.get(1) {
             (
                 (p2.x - pos.x)
                     .abs()
@@ -38,18 +25,27 @@ impl Drawing {
                 (p2.y - pos.y)
                     .abs()
                     .max(DESIGN_TOKENS.sizing.media.image_min_height),
+                Pos2::new(pos.x.min(p2.x), pos.y.min(p2.y)),
             )
         } else {
             (
                 DESIGN_TOKENS.sizing.media.image_default_width,
                 DESIGN_TOKENS.sizing.media.image_default_height,
-            ) // Default 4:3 aspect ratio
+                pos,
+            )
         };
-        let origin = self
-            .points
-            .get(1)
-            .map_or(pos, |p2| Pos2::new(pos.x.min(p2.x), pos.y.min(p2.y)));
-        let frame_rect = Rect::from_min_size(origin, egui::vec2(width, height));
+        Some(Rect::from_min_size(origin, egui::vec2(width, height)))
+    }
+
+    /// Renders the image whose URI is the drawing's text, fitted inside the frame between its
+    /// anchors, or the empty frame with a line saying that the image is missing, loading or could
+    /// not be loaded.
+    pub(crate) fn render_image(&self, painter: &egui::Painter) {
+        let Some(frame_rect) = self.image_frame() else {
+            return;
+        };
+        let width = frame_rect.width();
+        let height = frame_rect.height();
 
         // The host's image loaders resolve the URI; they repaint once a pending load finishes.
         let uri = self
@@ -75,12 +71,9 @@ impl Drawing {
                     Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                     Color32::WHITE,
                 );
-                painter.rect_stroke(
-                    rect,
-                    0.0,
-                    Stroke::new(stroke::HAIRLINE, color),
-                    StrokeKind::Outside,
-                );
+                if let Some(border) = self.annotation_border() {
+                    painter.rect_stroke(rect, 0.0, border, StrokeKind::Outside);
+                }
                 return;
             }
             None => "Double-click to add",
@@ -89,15 +82,16 @@ impl Drawing {
         };
 
         // Background with subtle pattern (checkerboard for transparency indication)
-        painter.rect_filled(
-            frame_rect,
-            DESIGN_TOKENS.rounding.md,
+        let frame_fill = self.annotation_box_fill(
             DESIGN_TOKENS
                 .semantic
                 .extended
                 .chart_axis_bg
                 .gamma_multiply(0.9),
         );
+        if let Some(fill) = frame_fill {
+            painter.rect_filled(frame_rect, DESIGN_TOKENS.rounding.md, fill);
+        }
 
         // Checkerboard pattern (simplified), only the squares the painter can show: the anchors may
         // make the frame far larger than the screen.
@@ -130,13 +124,14 @@ impl Drawing {
             }
         }
 
-        // Border
-        painter.rect_stroke(
-            frame_rect,
-            DESIGN_TOKENS.rounding.md,
-            Stroke::new(stroke::THICK, color),
-            StrokeKind::Outside,
-        );
+        if let Some(border) = self.annotation_border() {
+            painter.rect_stroke(
+                frame_rect,
+                DESIGN_TOKENS.rounding.md,
+                border,
+                StrokeKind::Outside,
+            );
+        }
 
         // Image icon (landscape with sun and mountains)
         let icon_rect = Rect::from_center_size(frame_rect.center(), egui::vec2(50.0, 35.0));
@@ -200,39 +195,67 @@ impl Drawing {
         let theme = painter.ctx().active_theme();
         let card_width = DESIGN_TOKENS.sizing.media.tweet_card_width;
         let padding = DESIGN_TOKENS.spacing.lg;
+        let gap = DESIGN_TOKENS.spacing.sm;
+        let avatar_radius = DESIGN_TOKENS.sizing.media.profile_radius;
+        let text_left = padding + avatar_radius * 2.0 + gap;
+        let wrap = (card_width - text_left - padding).max(1.0);
         let (author, body) = self.content(
             painter.ctx(),
             "Post",
             "Double-click to add the author on the first line, then the post",
         );
+        let initial = Self::author_initial(&author);
         let author = painter.layout(
             author,
             egui::FontId::proportional(typography::LG),
             theme.ui.text,
-            card_width - 2.0 * padding,
+            wrap,
         );
         let body = painter.layout(
             body,
             egui::FontId::proportional(typography::SM),
             theme.ui.text_secondary,
-            card_width - 2.0 * padding,
+            wrap,
         );
-        let gap = DESIGN_TOKENS.spacing.sm;
+        let text_block = author.size().y + gap + body.size().y;
         let card_height = DESIGN_TOKENS
             .sizing
             .media
             .tweet_card_height
-            .max(2.0 * padding + author.size().y + gap + body.size().y);
+            .max(padding + text_block.max(avatar_radius * 2.0) + padding);
         let card_rect = Rect::from_min_size(pos, egui::vec2(card_width, card_height));
+        let background = self
+            .annotation_box_fill(theme.ui.panel_bg)
+            .unwrap_or(Color32::TRANSPARENT);
 
-        painter.rect_filled(card_rect, DESIGN_TOKENS.rounding.xl, theme.ui.panel_bg);
+        if background.a() > 0 {
+            painter.rect_filled(card_rect, DESIGN_TOKENS.rounding.xl, background);
+        }
         painter.rect_stroke(
             card_rect,
             DESIGN_TOKENS.rounding.xl,
             Stroke::new(stroke::HAIRLINE, theme.ui.border),
             StrokeKind::Outside,
         );
-        let text = card_rect.min + egui::vec2(padding, padding);
+        let avatar_center = Pos2::new(
+            card_rect.min.x + padding + avatar_radius,
+            card_rect.min.y + padding + avatar_radius,
+        );
+        painter.circle_filled(avatar_center, avatar_radius, theme.ui.accent);
+        let badge = painter.layout_no_wrap(
+            initial,
+            egui::FontId::proportional(typography::LG),
+            theme.ui.text,
+        );
+        painter.galley(
+            Pos2::new(
+                avatar_center.x - badge.size().x * 0.5,
+                avatar_center.y - badge.size().y * 0.5,
+            ),
+            badge,
+            theme.ui.text,
+        );
+        let text = Pos2::new(card_rect.min.x + text_left, card_rect.min.y + padding);
         let below = text + egui::vec2(0.0, author.size().y + gap);
         painter.galley(text, author, theme.ui.text);
         painter.galley(below, body, theme.ui.text);
@@ -246,11 +269,20 @@ impl Drawing {
         }
         let pos = self.points[0];
         let theme = painter.ctx().active_theme();
-        let accent = theme.ui.accent;
+        let accent = if [
+            crate::drawings::manager::DEFAULT_DRAWING_COLOR_DARK,
+            crate::drawings::manager::DEFAULT_DRAWING_COLOR_LIGHT,
+        ]
+        .contains(&self.color)
+        {
+            theme.ui.accent
+        } else {
+            self.color32()
+        };
         let card_width = DESIGN_TOKENS.sizing.media.idea_card_width;
-        let text_left = 60.0;
+        let text_left = DESIGN_TOKENS.sizing.media.idea_text_inset;
         let padding = DESIGN_TOKENS.spacing.lg;
-        let wrap = card_width - text_left - padding;
+        let wrap = (card_width - text_left - padding).max(1.0);
         let (title, description) = self.content(
             painter.ctx(),
             "Idea",
@@ -277,36 +309,39 @@ impl Drawing {
         let card_rect = Rect::from_min_size(pos, egui::vec2(card_width, card_height));
 
         // Card background
-        painter.rect_filled(card_rect, DESIGN_TOKENS.rounding.lg, theme.ui.panel_bg);
-        painter.rect_stroke(
-            card_rect,
-            DESIGN_TOKENS.rounding.lg,
-            Stroke::new(stroke::THICK, accent),
-            StrokeKind::Outside,
-        );
+        if let Some(background) = self.annotation_box_fill(theme.ui.panel_bg) {
+            painter.rect_filled(card_rect, DESIGN_TOKENS.rounding.lg, background);
+        }
+        if let Some(border) = self.annotation_border() {
+            painter.rect_stroke(
+                card_rect,
+                DESIGN_TOKENS.rounding.lg,
+                Stroke::new(border.width, accent),
+                StrokeKind::Outside,
+            );
+        }
 
-        // Lightbulb icon (left side)
-        let bulb_center = Pos2::new(card_rect.min.x + 30.0, card_rect.center().y);
+        // Lightbulb icon (left side), centred in the inset the text starts after.
+        let bulb_center = Pos2::new(card_rect.min.x + text_left * 0.5, card_rect.center().y);
         let bulb_radius = DESIGN_TOKENS.sizing.media.profile_radius;
+        let caution = DESIGN_TOKENS.semantic.extended.caution;
 
-        // Bulb glow effect
         painter.circle_filled(
             bulb_center,
-            bulb_radius + 4.0,
-            DESIGN_TOKENS.semantic.extended.caution.gamma_multiply(0.12), // Subtle glow
+            bulb_radius + DESIGN_TOKENS.spacing.sm,
+            caution.gamma_multiply(0.12),
         );
+        painter.circle_filled(bulb_center, bulb_radius, caution);
 
-        // Bulb body
-        painter.circle_filled(
-            bulb_center,
-            bulb_radius,
-            DESIGN_TOKENS.semantic.extended.caution,
-        );
-
-        // Bulb base
         let base_rect = Rect::from_center_size(
-            Pos2::new(bulb_center.x, bulb_center.y + bulb_radius + 5.0),
-            egui::vec2(12.0, 8.0),
+            Pos2::new(
+                bulb_center.x,
+                bulb_center.y + bulb_radius + DESIGN_TOKENS.sizing.annotation.text_padding_y,
+            ),
+            egui::vec2(
+                DESIGN_TOKENS.sizing.media.idea_base_width,
+                DESIGN_TOKENS.spacing.lg,
+            ),
         );
         painter.rect_filled(
             base_rect,
@@ -314,11 +349,14 @@ impl Drawing {
             DESIGN_TOKENS.semantic.extended.disabled,
         );
 
-        // Screw lines on base
         for i in 0..3 {
-            let y = base_rect.min.y + 2.0 + i as f32 * 2.5;
+            let y =
+                base_rect.min.y + DESIGN_TOKENS.spacing.xs + i as f32 * DESIGN_TOKENS.spacing.xs;
             painter.hline(
-                egui::Rangef::new(base_rect.min.x + 2.0, base_rect.max.x - 2.0),
+                egui::Rangef::new(
+                    base_rect.min.x + DESIGN_TOKENS.spacing.xs,
+                    base_rect.max.x - DESIGN_TOKENS.spacing.xs,
+                ),
                 y,
                 Stroke::new(stroke::HAIRLINE, theme.ui.text_secondary),
             );
@@ -328,6 +366,14 @@ impl Drawing {
         let below = text + egui::vec2(0.0, title.size().y + gap);
         painter.galley(text, title, theme.ui.text);
         painter.galley(below, description, theme.ui.text);
+    }
+
+    /// The first character of an author name, or "?" when the name is empty.
+    fn author_initial(author: &str) -> String {
+        match author.chars().next() {
+            Some(ch) if !ch.is_whitespace() => ch.to_string(),
+            _ => "?".into(),
+        }
     }
 
     /// The first line of the drawing's text and the lines after it, or `empty` and `prompt`
@@ -527,7 +573,7 @@ mod tests {
                 (
                     DrawingToolType::Tweet,
                     Some("Ada\nRates hold\nfor now"),
-                    vec!["Ada", "Rates hold\nfor now"],
+                    vec!["A", "Ada", "Rates hold\nfor now"],
                     None,
                 ),
                 (
@@ -572,7 +618,13 @@ mod tests {
                 )), "cards follow the theme");
                     for shape in &shapes {
                         if let Shape::Text(text) = &shape.shape {
-                            let expected = if text.galley.text() == texts[0] {
+                            let expected = if tool == DrawingToolType::Tweet {
+                                if text.galley.text() == texts[texts.len() - 1] {
+                                    theme.ui.text_secondary
+                                } else {
+                                    theme.ui.text
+                                }
+                            } else if text.galley.text() == texts[0] {
                                 theme.ui.text
                             } else {
                                 theme.ui.text_secondary
@@ -649,5 +701,49 @@ mod tests {
                 "{n} shapes for {dark_squares} visible squares"
             );
         }
+    }
+
+    /// The post card paints the author's first character, and "?" when there is no name.
+    #[test]
+    fn post_card_paints_the_author_initial() {
+        assert_eq!(Drawing::author_initial(""), "?");
+        assert_eq!(Drawing::author_initial("Ada"), "A");
+        let mut drawing = Drawing::new(1, DrawingToolType::Tweet);
+        drawing.points = vec![Pos2::ZERO];
+        drawing.text = Some("Ada\nRates hold".into());
+        let ctx = Context::default();
+        let mut output = ctx.run_ui(RawInput::default(), |_| {
+            drawing.render_post(&Painter::new(
+                ctx.clone(),
+                LayerId::background(),
+                Rect::EVERYTHING,
+            ));
+        });
+        let shapes = std::mem::take(&mut output.shapes);
+        output.drop_without_applying_deltas();
+        assert!(shapes.iter().any(|shape| {
+            matches!(&shape.shape, Shape::Text(text) if text.galley.text() == "A")
+        }));
+        assert!(
+            shapes
+                .iter()
+                .any(|shape| { matches!(&shape.shape, Shape::Circle(_)) })
+        );
+    }
+
+    /// An image saved with one anchor keeps the default frame.
+    #[test]
+    fn one_point_image_keeps_the_default_frame() {
+        let mut drawing = Drawing::new(1, DrawingToolType::Image);
+        drawing.points = vec![Pos2::new(12.0, 18.0)];
+        let frame = drawing.image_frame().unwrap();
+        assert_eq!(
+            frame.size(),
+            egui::vec2(
+                DESIGN_TOKENS.sizing.media.image_default_width,
+                DESIGN_TOKENS.sizing.media.image_default_height,
+            )
+        );
+        assert_eq!(frame.min, drawing.points[0]);
     }
 }

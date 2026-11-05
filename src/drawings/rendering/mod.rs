@@ -152,6 +152,12 @@ impl Drawing {
             outline.areas.push(glyph);
             return Some(outline);
         }
+        if self.tool_type == T::Image
+            && let Some(frame) = self.image_frame()
+        {
+            boxed(&mut outline, frame);
+            return Some(outline);
+        }
         match self.tool_type {
             T::HorizontalRay => outline.lines = vec![[first, Pos2::new(rect.max.x, first.y)]],
             T::CrossLine => {
@@ -480,7 +486,7 @@ impl Drawing {
             DrawingToolType::Note => self.render_note(painter),
             DrawingToolType::AnchoredNote => self.render_anchored_note(painter),
             DrawingToolType::Callout => self.render_callout(painter),
-            DrawingToolType::PriceLabel => self.render_price_label(painter),
+            DrawingToolType::PriceLabel => self.render_price_label(painter, view),
             DrawingToolType::FlagNote => self.render_flag_note(painter),
 
             // Brushes (2 tools)
@@ -500,10 +506,10 @@ impl Drawing {
             DrawingToolType::Sector => self.render_sector(painter),
             DrawingToolType::Path => self.render_path(painter),
             DrawingToolType::Curve => self.render_curve(painter),
-            DrawingToolType::PriceNote => self.render_price_note(painter, rect),
+            DrawingToolType::PriceNote => self.render_price_note(painter, rect, view),
             DrawingToolType::Table => self.render_table(painter),
             DrawingToolType::Comment => self.render_comment(painter),
-            DrawingToolType::Signpost => self.render_signpost(painter, rect),
+            DrawingToolType::Signpost => self.render_signpost(painter, rect, view),
             DrawingToolType::Image => self.render_image(painter),
             DrawingToolType::Tweet => self.render_post(painter),
             DrawingToolType::Idea => self.render_idea(painter),
@@ -799,6 +805,16 @@ mod tests {
                 drawing.chart_points[1].bar_idx = 6.0;
                 drawing.completed = true;
             }
+            if matches!(
+                tool,
+                DrawingToolType::Note
+                    | DrawingToolType::AnchoredNote
+                    | DrawingToolType::Comment
+                    | DrawingToolType::FlagNote
+            ) {
+                drawing.annotation_open = true;
+                drawing.text = Some("Sample".into());
+            }
             let mut filled = drawing.clone();
             filled.fill_color = Some([12, 34, 56, 80]);
             let fill = filled.fill_color32().unwrap();
@@ -941,6 +957,12 @@ mod tests {
             (DrawingToolType::ElliottTripleCombo, true),
         ] {
             let mut drawing = Drawing::new(7, tool);
+            if matches!(
+                tool,
+                DrawingToolType::Note | DrawingToolType::AnchoredNote | DrawingToolType::Comment
+            ) {
+                drawing.annotation_open = true;
+            }
             drawing.points = (0..tool.required_points().unwrap_or(2).max(2))
                 .map(|i| {
                     Pos2::new(
