@@ -54,8 +54,15 @@ impl TextTab {
         let tool = props.tool_settings.as_ref().map(|t| t.settings.tool_type);
         let has_editable_text = tool.is_none_or(|t| t.supports_text());
         let has_line_alignment = tool.is_some_and(|t| t.supports_line_label());
+        let stamp = tool.is_some_and(|tool| {
+            matches!(
+                tool,
+                crate::drawings::DrawingToolType::FontIcon
+                    | crate::drawings::DrawingToolType::Sticker
+            )
+        });
 
-        if has_editable_text {
+        if has_editable_text && !stamp {
             ui.scope(|ui| {
                 let visuals = ui.visuals_mut();
                 visuals.extreme_bg_color = theme.ui.panel_bg;
@@ -103,7 +110,7 @@ impl TextTab {
             };
             let align_w = ((row_w - 28.0 - size_w - 58.0 - gap * 5.0) * 0.5).clamp(48.0, 76.0);
 
-            if let Some(template) = &mut props.tool_settings {
+            if !stamp && let Some(template) = &mut props.tool_settings {
                 let current_text_color = template
                     .settings
                     .text_color
@@ -120,11 +127,15 @@ impl TextTab {
                 }
             }
 
-            let mut choices: Vec<f32> = NAMED_FONT_SIZES
-                .iter()
-                .map(|&(size, _)| size)
-                .filter(|s| VALID_FONT_SIZES.contains(s))
-                .collect();
+            let mut choices: Vec<f32> = if stamp {
+                vec![16.0, 22.0, 32.0, 44.0]
+            } else {
+                NAMED_FONT_SIZES
+                    .iter()
+                    .map(|&(size, _)| size)
+                    .filter(|s| VALID_FONT_SIZES.contains(s))
+                    .collect()
+            };
             if !choices
                 .iter()
                 .any(|s| (*s - props.font_size).abs() < f32::EPSILON)
@@ -143,7 +154,7 @@ impl TextTab {
                 control_h,
             );
 
-            if let Some(template) = &mut props.tool_settings {
+            if !stamp && let Some(template) = &mut props.tool_settings {
                 let bold = template.settings.font_weight == FontWeight::Bold;
                 if Button::new("B")
                     .ghost()

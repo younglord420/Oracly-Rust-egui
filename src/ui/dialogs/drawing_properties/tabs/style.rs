@@ -128,15 +128,33 @@ impl StyleTab {
                             {
                                 props.color = color;
                             }
-                            line_width_combo(ui, &mut props.line_width, width_chip_w, control_h);
-                            line_style_combo(
-                                ui,
-                                "drawing_props_line_style",
-                                "Line style",
-                                &mut props.line_style,
-                                style_chip_w,
-                                control_h,
-                            );
+                            let fixed_glyph = tool.is_some_and(|tool| {
+                                matches!(
+                                    tool,
+                                    DrawingToolType::FontIcon
+                                        | DrawingToolType::Sticker
+                                        | DrawingToolType::ArrowMarkUp
+                                        | DrawingToolType::ArrowMarkDown
+                                        | DrawingToolType::ArrowMarkLeft
+                                        | DrawingToolType::ArrowMarkRight
+                                )
+                            });
+                            if !fixed_glyph {
+                                line_width_combo(
+                                    ui,
+                                    &mut props.line_width,
+                                    width_chip_w,
+                                    control_h,
+                                );
+                                line_style_combo(
+                                    ui,
+                                    "drawing_props_line_style",
+                                    "Line style",
+                                    &mut props.line_style,
+                                    style_chip_w,
+                                    control_h,
+                                );
+                            }
                         },
                     );
                 });

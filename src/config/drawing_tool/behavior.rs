@@ -200,6 +200,8 @@ impl DrawingToolType {
                     | Self::OrderBlock
                     | Self::Liquidity
                     | Self::DedekindTessellation
+                    | Self::FontIcon
+                    | Self::Sticker
             )
     }
 

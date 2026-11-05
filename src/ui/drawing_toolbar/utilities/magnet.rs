@@ -18,8 +18,15 @@ pub struct MagnetButton;
 
 impl MagnetButton {
     /// Render the magnet button, filled while snapping is on. A click opens the dropdown.
-    pub fn show(ui: &mut Ui, is_active: bool) -> Response {
-        draw_latched_button(ui, &icons::DRAWING_MAGNET, "Magnet mode", is_active)
+    pub fn show(ui: &mut Ui, is_active: bool, kind: MagnetType) -> Response {
+        let tooltip = if !is_active {
+            "Magnet snap: Off"
+        } else if kind == MagnetType::Weak {
+            "Magnet snap: Weak"
+        } else {
+            "Magnet snap: Strong"
+        };
+        draw_latched_button(ui, &icons::DRAWING_MAGNET, tooltip, is_active)
     }
 
     /// Render the magnet dropdown rows, with a check on the current mode. "Off" returns
@@ -32,8 +39,8 @@ impl MagnetButton {
     ) -> Option<DrawingToolbarAction> {
         let is_current = |kind| magnet_on && magnet_type == kind;
         SubmenuBuilder::new(ui)
-            .add_text_item_with_action("Off", "Turn magnetic snapping off", || {
-                Some(DrawingToolbarAction::ToggleMagnet)
+            .add_text_item_with_action("Off", "Turn magnetic snapping off", move || {
+                magnet_on.then_some(DrawingToolbarAction::ToggleMagnet)
             })
             .icon(&icons::CLOSE)
             .checked(!magnet_on)
@@ -49,11 +56,6 @@ impl MagnetButton {
             )
             .icon(&icons::DRAWING_MAGNET)
             .checked(is_current(MagnetType::Strong))
-            .add_text_item_with_action("OHLC magnet", "Snap precisely to OHLC price values", || {
-                Some(DrawingToolbarAction::SetMagnetType(MagnetType::OHLC))
-            })
-            .icon(&icons::CHART_BARS)
-            .checked(is_current(MagnetType::OHLC))
             .add_text_item_with_action(
                 "Snap to indicators",
                 "Include visible study values",

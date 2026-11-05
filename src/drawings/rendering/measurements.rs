@@ -682,6 +682,116 @@ pub(super) fn format_duration(ms: i64) -> String {
     }
 }
 
+/// Paints the transient ruler above the drawings. Prices are read from the screen points.
+pub(crate) fn paint_ruler(
+    painter: &egui::Painter,
+    ruler: &crate::drawings::manager::Ruler,
+    pane: Rect,
+    x_to_bar: &impl Fn(f32) -> f32,
+    y_to_price: &impl Fn(f32) -> f64,
+    bars: &[Bar],
+    time_axis: bool,
+) {
+    let (start, end) = (ruler.start, ruler.end);
+    let up = y_to_price(end.y) >= y_to_price(start.y);
+    let color = if up {
+        DESIGN_TOKENS.semantic.extended.bullish
+    } else {
+        DESIGN_TOKENS.semantic.extended.bearish
+    };
+    painter.rect_filled(
+        Rect::from_two_pos(start, end),
+        0.0,
+        color.gamma_multiply(0.12),
+    );
+    let dash = Stroke::new(1.0, color);
+    let mid_x = (start.x + end.x) * 0.5;
+    let mid_y = (start.y + end.y) * 0.5;
+    crate::painting::dashed_line::draw_dashed_line(
+        painter,
+        Pos2::new(mid_x, start.y),
+        Pos2::new(mid_x, end.y),
+        dash,
+        4.0,
+        4.0,
+    );
+    crate::painting::dashed_line::draw_dashed_line(
+        painter,
+        Pos2::new(start.x, mid_y),
+        Pos2::new(end.x, mid_y),
+        dash,
+        4.0,
+        4.0,
+    );
+    let top = start.y.min(end.y);
+    let bottom = start.y.max(end.y);
+    let tip_y = if up { top } else { bottom };
+    let dir = if up { 1.0 } else { -1.0 };
+    painter.add(egui::Shape::convex_polygon(
+        vec![
+            Pos2::new(mid_x, tip_y),
+            Pos2::new(mid_x - 5.0, tip_y + dir * 7.0),
+            Pos2::new(mid_x + 5.0, tip_y + dir * 7.0),
+        ],
+        color,
+        Stroke::NONE,
+    ));
+    let change = y_to_price(end.y) - y_to_price(start.y);
+    let base = y_to_price(start.y);
+    let percent = if base != 0.0 {
+        change / base * 100.0
+    } else {
+        0.0
+    };
+    let bars_n = (x_to_bar(end.x) - x_to_bar(start.x)).round().abs() as i64;
+    let duration = elapsed_ms(bars, x_to_bar(start.x).round(), x_to_bar(end.x).round())
+        .filter(|_| time_axis)
+        .map(format_duration);
+    let price_line = format!("{change:+.2} ({percent:+.2}%)");
+    let time_line = if let Some(duration) = duration {
+        format!(
+            "{bars_n} {}, {duration}",
+            if bars_n == 1 { "bar" } else { "bars" }
+        )
+    } else {
+        format!("{bars_n} {}", if bars_n == 1 { "bar" } else { "bars" })
+    };
+    let lines = [price_line, time_line];
+    let font = FontId::proportional(12.0);
+    let theme = painter.ctx().active_theme();
+    let widths: Vec<_> = lines
+        .iter()
+        .map(|line| {
+            painter
+                .layout_no_wrap(line.clone(), font.clone(), theme.ui.text)
+                .size()
+                .x
+        })
+        .collect();
+    let width = widths.into_iter().fold(0.0, f32::max) + 16.0;
+    let line_h = 16.0;
+    let height = lines.len() as f32 * line_h + 8.0;
+    let mut y = bottom + 8.0;
+    if y + height > pane.bottom() {
+        y = top - height - 8.0;
+    }
+    let x = mid_x - width * 0.5;
+    let label = Rect::from_min_size(Pos2::new(x, y), egui::vec2(width, height));
+    painter.rect_filled(label, 4.0, theme.chart.bg);
+    painter.rect_stroke(label, 4.0, Stroke::new(1.0, color), StrokeKind::Inside);
+    for (i, line) in lines.iter().enumerate() {
+        let galley = painter.layout_no_wrap(line.clone(), font.clone(), theme.ui.text);
+        painter.galley(
+            Pos2::new(
+                label.center().x - galley.size().x * 0.5,
+                y + 8.0 + line_h * 0.5 + i as f32 * line_h - galley.size().y * 0.5,
+            ),
+            galley,
+            theme.ui.text,
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

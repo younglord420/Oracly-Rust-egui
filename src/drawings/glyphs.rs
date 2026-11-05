@@ -1,5 +1,6 @@
 //! Bundled drawing glyphs shared by chart rendering and the picker.
 
+use crate::theme::ThemeExt;
 use egui::{Color32, Painter, Rect, Shape, Stroke};
 
 #[cfg(feature = "ui")]
@@ -35,7 +36,7 @@ glyphs! {
 /// Emoji and legacy host strings return false so the caller can use the host font fallback.
 pub(crate) fn paint(painter: &Painter, id: &str, rect: Rect, color: Color32) -> bool {
     let color = if id.starts_with("sticker:") {
-        Color32::from_rgb(35, 39, 47)
+        painter.ctx().active_theme().ui.text
     } else {
         color
     };

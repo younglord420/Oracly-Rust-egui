@@ -2,7 +2,6 @@
 //!
 //! These are the action btns at the bottom of the left toolbar:
 //! - Measure tool
-//! - Zoom in/out
 //! - Magnet mode with dropdown
 //! - Keep drawing toggle
 //! - Lock drawings toggle
@@ -20,7 +19,6 @@ mod measure;
 mod remove_menu;
 mod stay_in_drawing;
 mod templates;
-mod zoom;
 
 pub use color::ColorButton;
 pub use favorites::FavoritesButton;
@@ -31,4 +29,3 @@ pub use measure::MeasureButton;
 pub use remove_menu::RemoveMenu;
 pub use stay_in_drawing::StayInDrawingButton;
 pub use templates::TemplatesButton;
-pub use zoom::{ZoomInButton, ZoomOutButton};

@@ -145,6 +145,16 @@ pub(crate) struct TextEditState {
     pub opened_frame: Option<u64>,
 }
 
+/// A transient measurement. It is not a drawing: nothing stores, selects or syncs it.
+pub(crate) struct Ruler {
+    pub start: Pos2,
+    pub end: Pos2,
+    pub press: Pos2,
+    pub finished: bool,
+    /// Bar spacing, scroll offset and price span when the ruler was last moved.
+    pub view: (u32, u64, u64, u64),
+}
+
 /// Central coordinator for chart drawings.
 ///
 /// `DrawingManager` owns the list of completed drawings and the in-progress
@@ -209,6 +219,9 @@ pub struct DrawingManager {
     pane_members: Vec<Option<usize>>,
     pane_clips: std::collections::HashMap<Option<usize>, Rect>,
     pub(crate) text_editor: Option<TextEditState>,
+    /// The measure button is armed. A finished ruler can remain after this turns off.
+    pub(crate) measure_mode: bool,
+    pub(crate) ruler: Option<Ruler>,
 
     // Services
     selection: SelectionService,
@@ -291,6 +304,8 @@ impl DrawingManager {
             pane_members: vec![None],
             pane_clips: std::collections::HashMap::new(),
             text_editor: None,
+            measure_mode: false,
+            ruler: None,
             selection: SelectionService::new(),
             history: HistoryService::new(),
             snap_service: SnapService::new(),
@@ -514,9 +529,18 @@ impl DrawingManager {
         });
     }
 
+    /// Effective magnet. Ctrl or Cmd forces strong snapping; otherwise the sticky mode applies.
     pub(crate) fn magnet_enabled(&self) -> bool {
-        self.options.magnet_mode
-            ^ (self.interaction_modifiers.ctrl || self.interaction_modifiers.command)
+        self.ctrl_magnet() || self.options.magnet_mode
+    }
+
+    /// Strong snapping: the Ctrl/Cmd override, or the sticky strong mode.
+    pub(crate) fn strong_magnet_effective(&self) -> bool {
+        self.ctrl_magnet() || (self.options.magnet_mode && self.options.strong_magnet)
+    }
+
+    fn ctrl_magnet(&self) -> bool {
+        self.interaction_modifiers.ctrl || self.interaction_modifiers.command
     }
 
     /// Applies snap behavior to a screen point, returning the snapped position.
@@ -525,8 +549,7 @@ impl DrawingManager {
     /// Targets keep their time and price paired. A dragged drawing cannot snap to itself.
     /// Drawing anchors are borrowed without flattening or cloning their geometry.
     pub fn snap_point(&self, point: Pos2, drawings: &[Drawing]) -> Pos2 {
-        if self.magnet_enabled()
-            && self.options.strong_magnet
+        if self.strong_magnet_effective()
             && let Some(target) = self
                 .snap_targets
                 .iter()
@@ -536,7 +559,7 @@ impl DrawingManager {
             return *target;
         }
         let mut service = self.snap_service.clone();
-        service.set_magnet_mode(self.magnet_enabled());
+        service.set_magnet_mode(self.magnet_enabled() && !self.strong_magnet_effective());
         service.snap_point_with_drawing_points(
             point,
             &[],

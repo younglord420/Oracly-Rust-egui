@@ -161,6 +161,24 @@ impl Drawing {
         let size = galley.size();
         let gap = (self.stroke_width * 0.5 + 5.0).max(6.0);
 
+        if matches!(
+            self.tool_type,
+            DrawingToolType::ArrowMarkUp
+                | DrawingToolType::ArrowMarkDown
+                | DrawingToolType::ArrowMarkLeft
+                | DrawingToolType::ArrowMarkRight
+        ) && let Some(glyph) = self.arrow_mark_glyph()
+        {
+            let bounds = Rect::from_points(&glyph);
+            let x = (bounds.center().x - size.x * 0.5).round();
+            let y = if self.tool_type == DrawingToolType::ArrowMarkDown {
+                bounds.top() - 4.0 - size.y
+            } else {
+                bounds.bottom() + 4.0
+            };
+            return Some((TextShape::new(Pos2::new(x, y.round()), galley, color), None));
+        }
+
         // Axis-aligned rectangle: place horizontally at top/middle/bottom and left/center/right.
         if self.tool_type == DrawingToolType::Rect
             && let [p1, p2, ..] = self.points.as_slice()
@@ -399,8 +417,17 @@ impl Drawing {
                                 | DrawingToolType::ArrowMarker
                         )
                         && let Shape::LineSegment { points, .. } = &mut s.shape
-                        && self.points.get(..2) == Some(points.as_slice())
-                        && let Some((a, b)) = self.trend_line_ends(rect)
+                        && self.points.len() >= 2
+                        && (*points == [self.points[0], self.points[1]]
+                            || *points == [self.points[1], self.points[0]])
+                        && let Some((a, b)) = if matches!(
+                            self.tool_type,
+                            DrawingToolType::Arrow | DrawingToolType::ArrowMarker
+                        ) {
+                            self.arrow_shaft(rect)
+                        } else {
+                            self.trend_line_ends(rect)
+                        }
                     {
                         *points = [a, b];
                     }
@@ -671,24 +698,30 @@ impl Drawing {
             return;
         }
         let color = self.color32();
+        let along_len = direction.length();
+        let dir = direction / along_len;
         let size = (self.stroke_width * style.size_multiplier()).max(4.0);
-        let along = direction.normalized() * size;
+        let along = dir * size;
         let across = egui::vec2(-along.y, along.x) / 2.0;
-        let base = tip - along;
         match style {
             ArrowStyle::None => {}
-            ArrowStyle::Arrow => {
-                painter.add(Shape::convex_polygon(
-                    vec![tip, base + across, base - across],
-                    color,
-                    Stroke::NONE,
-                ));
-            }
-            ArrowStyle::OpenArrow => {
-                painter.add(Shape::line(
-                    vec![base + across, tip, base - across],
-                    self.stroke(),
-                ));
+            ArrowStyle::Arrow | ArrowStyle::OpenArrow => {
+                let len = (self.stroke_width * 3.5).max(9.0);
+                let spread = std::f32::consts::PI / 7.0;
+                let angle = dir.angle();
+                let side =
+                    |turn: f32| tip - len * egui::vec2((angle + turn).cos(), (angle + turn).sin());
+                let left = side(-spread);
+                let right = side(spread);
+                if style == ArrowStyle::OpenArrow {
+                    painter.add(Shape::line(vec![left, tip, right], self.stroke()));
+                } else {
+                    painter.add(Shape::convex_polygon(
+                        vec![tip, right, left],
+                        color,
+                        Stroke::NONE,
+                    ));
+                }
             }
             ArrowStyle::Circle => {
                 painter.circle_filled(tip, size / 2.0, color);

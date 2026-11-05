@@ -238,7 +238,7 @@ mod tests {
     use egui::{Context, Event, Id, PointerButton, Pos2, RawInput, Sense};
 
     #[test]
-    fn modifier_placement_constrains_shapes_and_temporarily_inverts_magnet() {
+    fn modifier_placement_constrains_shapes_and_ctrl_forces_strong_magnet() {
         use egui::{Modifiers, pos2, vec2};
         for (tool, modifiers, magnet, expected) in [
             (
@@ -275,7 +275,7 @@ mod tests {
                 DrawingToolType::TrendLine,
                 Modifiers::COMMAND,
                 true,
-                pos2(250.0, 170.0),
+                pos2(251.0, 172.0),
             ),
         ] {
             let ctx = Context::default();

@@ -264,6 +264,8 @@ fn draw_rail_button(
             theme.ui.text_disabled
         } else if is_selected {
             selected_ink
+        } else if latched {
+            rail_icon_color(ui).gamma_multiply(0.5)
         } else {
             rail_icon_color(ui)
         };

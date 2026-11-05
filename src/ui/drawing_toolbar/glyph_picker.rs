@@ -29,6 +29,18 @@ impl Default for GlyphPicker {
 }
 
 impl GlyphPicker {
+    pub(crate) fn has_recent(&self) -> bool {
+        !self.recent.is_empty()
+    }
+
+    /// The glyph a rail click places: the latest one, or a star, at the picker size.
+    pub(crate) fn armed(&self) -> (&'static str, f32) {
+        (
+            self.recent.first().copied().unwrap_or("icon:star"),
+            self.size,
+        )
+    }
+
     pub(crate) fn show(
         &mut self,
         ui: &mut Ui,

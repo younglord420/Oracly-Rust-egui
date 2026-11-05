@@ -461,7 +461,7 @@ impl Drawing {
         stroke: Stroke,
     ) {
         if self.points.len() >= 2 {
-            if let Some((start, end)) = self.trend_line_ends(rect) {
+            if let Some((start, end)) = self.arrow_shaft(rect) {
                 painter.line_segment([start, end], stroke);
             }
         } else if self.points.len() == 1 {
@@ -490,18 +490,57 @@ impl Drawing {
             }
         }
         painter.add(egui::Shape::convex_polygon(
-            points,
+            vec![points[0], points[6], points[1]],
+            self.color32(),
+            Stroke::NONE,
+        ));
+        painter.add(egui::Shape::convex_polygon(
+            vec![points[2], points[5], points[4], points[3]],
             self.color32(),
             Stroke::NONE,
         ));
     }
 
+    /// The line an arrow strokes: its anchors, stopped at the base of each filled head so the
+    /// shaft's square end does not stick out beside the point.
+    pub(crate) fn arrow_shaft(&self, rect: Rect) -> Option<(Pos2, Pos2)> {
+        let (mut start, mut end) = self.trend_line_ends(rect)?;
+        let len = (self.stroke_width * 3.5).max(9.0);
+        let inset = len * (std::f32::consts::PI / 7.0).cos();
+        let pull = |tip: Pos2, other: Pos2| {
+            let delta = tip - other;
+            let distance = delta.length();
+            if distance <= inset {
+                other
+            } else {
+                tip - delta / distance * inset
+            }
+        };
+        let shorten = |start: &mut Pos2, end: &mut Pos2, tip: Pos2| {
+            if end.distance(tip) <= start.distance(tip) {
+                *end = pull(*end, *start);
+            } else {
+                *start = pull(*start, *end);
+            }
+        };
+        if self.arrow_end_style == crate::drawings::ArrowStyle::Arrow
+            && let Some(&tip) = self.points.get(1)
+        {
+            shorten(&mut start, &mut end, tip);
+        }
+        if self.arrow_start_style == crate::drawings::ArrowStyle::Arrow
+            && let Some(&tip) = self.points.first()
+        {
+            shorten(&mut start, &mut end, tip);
+        }
+        Some((start, end))
+    }
+
     /// The mark's polygon in screen space, tip first. `None` for other tools and with no anchor.
-    /// The glyph grows with the stroke width; at the default width of 2 it is the base size.
-    pub(super) fn arrow_mark_glyph(&self) -> Option<Vec<Pos2>> {
+    /// The glyph is a fixed pixel size and does not follow the line width.
+    pub(crate) fn arrow_mark_glyph(&self) -> Option<Vec<Pos2>> {
         let &tip = self.points.first()?;
-        let scale = (self.stroke_width / 2.0).max(0.25);
-        let (head, head_w, stem_w, len) = (11.0 * scale, 9.0 * scale, 3.5 * scale, 22.0 * scale);
+        let (head, head_w, stem_w, len) = (11.0, 9.0, 3.5, 22.0);
         // Base glyph points up in screen space: tip at the origin, body toward +y.
         let base = [
             [0.0, 0.0],

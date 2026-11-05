@@ -78,6 +78,8 @@ pub struct FloatingSelectionToolbar {
     alert_available: bool,
     /// Whether to offer the Text / Label action for the object
     text_available: bool,
+    /// Width and line-style chips. Fixed-size marks and glyphs have neither.
+    line_controls: bool,
     /// Last rendered rect (for hit testing)
     last_rect: Rect,
     /// Drawing id the toolbar was last anchored to (reposition when it changes)
@@ -107,6 +109,7 @@ impl FloatingSelectionToolbar {
             is_visible: true,
             alert_available: false,
             text_available: false,
+            line_controls: true,
             last_rect: Rect::NOTHING,
             anchored_to: None,
         }
@@ -139,12 +142,12 @@ impl FloatingSelectionToolbar {
         let button = DESIGN_TOKENS.sizing.floating_toolbar.button_size;
         let gap = 4.0;
         let colors = self.color_slots.len().max(1) as f32;
+        let chips = if self.line_controls { 56.0 + 52.0 } else { 0.0 };
         let action_icons = 4.0 + if self.text_available { 1.0 } else { 0.0 };
         Vec2::new(
             DESIGN_TOKENS.sizing.floating_toolbar.drag_handle_width
                 + colors * (button + gap)
-                + 56.0
-                + 52.0
+                + chips
                 + action_icons * (button + gap)
                 + 2.0 * (button + gap)
                 + 48.0,
@@ -198,6 +201,11 @@ impl FloatingSelectionToolbar {
     /// Set the line style shown in the style chip
     pub fn set_line_style(&mut self, style: LineStyle) {
         self.line_style = style;
+    }
+
+    /// Width and dash chips. Fixed-size marks and glyphs leave them off.
+    pub fn set_line_controls(&mut self, shown: bool) {
+        self.line_controls = shown;
     }
 
     /// Set locked state
@@ -276,6 +284,7 @@ impl FloatingSelectionToolbar {
         let text_available = self.text_available;
         let mut stroke_width = self.stroke_width;
         let mut line_style = self.line_style;
+        let line_controls = self.line_controls;
         let mut color_changes: Vec<(usize, Color32)> = Vec::new();
         let mut temp_colors: Vec<Color32> = self.color_slots.iter().map(|s| s.color).collect();
         let slot_labels: Vec<&'static str> = self.color_slots.iter().map(|s| s.label).collect();
@@ -321,10 +330,14 @@ impl FloatingSelectionToolbar {
                                 }
                             }
 
-                            if let Some(width) = Self::render_width_chip(ui, &mut stroke_width) {
+                            if line_controls
+                                && let Some(width) = Self::render_width_chip(ui, &mut stroke_width)
+                            {
                                 inner_action = Some(FloatingToolbarAction::SetLineWidth(width));
                             }
-                            if let Some(style) = Self::render_style_chip(ui, &mut line_style) {
+                            if line_controls
+                                && let Some(style) = Self::render_style_chip(ui, &mut line_style)
+                            {
                                 inner_action = Some(FloatingToolbarAction::SetLineStyle(style));
                             }
 
@@ -413,7 +426,7 @@ impl FloatingSelectionToolbar {
         let sep = DESIGN_TOKENS.sizing.floating_toolbar.separator_width;
         let drag = DESIGN_TOKENS.sizing.floating_toolbar.drag_handle_width;
         // width + style chips are wider than a plain icon.
-        let chips = 56.0 + 52.0;
+        let chips = if self.line_controls { 56.0 + 52.0 } else { 0.0 };
         // optional text, settings, more, lock, delete
         let icons = (4.0 + if self.text_available { 1.0 } else { 0.0 }) * (button + gap);
         Vec2::new(

@@ -207,7 +207,6 @@ pub fn get_category_sections(category: &str) -> Vec<(&'static str, Vec<DrawingTo
             (
                 "ARROWS",
                 vec![
-                    DrawingToolType::ArrowMarker,
                     DrawingToolType::Arrow,
                     DrawingToolType::ArrowMarkUp,
                     DrawingToolType::ArrowMarkDown,

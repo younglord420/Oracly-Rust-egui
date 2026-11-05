@@ -116,7 +116,6 @@ impl DrawingToolType {
             ],
             "brushes" => vec![Self::Brush, Self::Highlighter],
             "arrows" => vec![
-                Self::ArrowMarker,
                 Self::Arrow,
                 Self::ArrowMarkUp,
                 Self::ArrowMarkDown,

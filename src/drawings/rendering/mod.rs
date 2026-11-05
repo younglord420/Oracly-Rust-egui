@@ -14,6 +14,7 @@ mod gann;
 mod geometry;
 mod lines;
 mod measurements;
+pub(crate) use measurements::paint_ruler;
 mod media;
 mod patterns;
 mod pitchfork;
@@ -1048,7 +1049,20 @@ mod tests {
             let tip = drawing.points[1];
             let present = match style {
                 ArrowStyle::None => !shapes.iter().any(|s| matches!(s,Shape::Path(_))),
-                ArrowStyle::Arrow => shapes.iter().any(|s| matches!(s,Shape::Path(p) if p.points == [tip, Pos2::new(108.,96.), Pos2::new(108.,104.)])),
+                ArrowStyle::Arrow => {
+                    let len = 9.0;
+                    let spread = std::f32::consts::PI / 7.0;
+                    let angle = (tip - drawing.points[0]).angle();
+                    let side = |turn: f32| {
+                        tip - len * egui::vec2((angle + turn).cos(), (angle + turn).sin())
+                    };
+                    shapes.iter().any(|s| {
+                        matches!(s, Shape::Path(p) if p.points.len() == 3
+                            && p.points[0].distance(tip) < 0.01
+                            && p.points[1].distance(side(spread)) < 0.01
+                            && p.points[2].distance(side(-spread)) < 0.01)
+                    })
+                }
                 ArrowStyle::OpenArrow => shapes.iter().any(|s| matches!(s,Shape::Path(p) if p.points.get(1) == Some(&tip) && p.fill == egui::Color32::TRANSPARENT)),
                 ArrowStyle::Circle => shapes.iter().any(|s| matches!(s,Shape::Circle(c) if c.center == tip)),
                 ArrowStyle::Square => shapes.iter().any(|s| matches!(s,Shape::Rect(r) if r.rect.center() == tip)),
@@ -1067,8 +1081,18 @@ mod tests {
                 .iter()
                 .any(|s| matches!(s, Shape::Circle(c) if c.center == path.points[2]))
         );
-        // Final segment points down: the arrow base is eight pixels above the tip, four either side.
-        assert!(paint(&path).iter().any(|s| matches!(s, Shape::Path(p) if p.points == [Pos2::new(200.,200.), Pos2::new(196.,192.), Pos2::new(204.,192.)])));
+        // Final segment points down: the head is 9px with a π/7 spread.
+        let tip = Pos2::new(200., 200.);
+        let len = 9.0;
+        let spread = std::f32::consts::PI / 7.0;
+        let angle = std::f32::consts::FRAC_PI_2;
+        let side = |turn: f32| tip - len * egui::vec2((angle + turn).cos(), (angle + turn).sin());
+        assert!(paint(&path).iter().any(|s| {
+            matches!(s, Shape::Path(p) if p.points.len() == 3
+                && p.points[0].distance(tip) < 0.01
+                && p.points[1].distance(side(spread)) < 0.01
+                && p.points[2].distance(side(-spread)) < 0.01)
+        }));
         for tool in [
             DrawingToolType::InfoLine,
             DrawingToolType::TrendAngle,
@@ -1089,6 +1113,12 @@ mod tests {
                             Shape::LineSegment { points, .. } => {
                                 (points[0].x.min(points[1].x), points[0].x.max(points[1].x))
                             }
+                            Shape::Path(path) => path
+                                .points
+                                .iter()
+                                .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), p| {
+                                    (min.min(p.x), max.max(p.x))
+                                }),
                             _ => (min, max),
                         };
                         (min.min(a), max.max(b))

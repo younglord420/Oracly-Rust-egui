@@ -76,7 +76,7 @@ use super::{
     submenu_builder::{flyout_id, show_flyout},
     utilities::{
         FavoritesButton, HideMenu, LockButton, MagnetButton, MeasureButton, RemoveMenu,
-        StayInDrawingButton, TemplatesButton, ZoomInButton, ZoomOutButton,
+        StayInDrawingButton, TemplatesButton,
     },
 };
 
@@ -123,12 +123,6 @@ impl DrawingToolbar {
 
     /// Copy the host's drawing and cursor choices before [`Self::show_with_action`].
     pub fn sync_from_domain_state(&mut self, domain: &DrawingToolbarDomainState) {
-        if domain.sel_tool.is_some()
-            || domain.eraser_mode_enabled
-            || domain.current_cursor_type != self.state.current_cursor_type
-        {
-            self.state.zoom_mode_active = false;
-        }
         self.state.sel_tool = domain.sel_tool;
         self.state.magnet_mode = domain.magnet_mode;
         self.state.magnet_type = domain.magnet_type;
@@ -401,7 +395,7 @@ impl DrawingToolbar {
         };
 
         // Zoom is a mode of its own, so it takes the highlight from the cursor.
-        let is_selected = self.state.sel_tool.is_none() && !self.state.zoom_mode_active;
+        let is_selected = self.state.sel_tool.is_none();
 
         // Simple button without arrow
         let response = draw_tool_button(ui, cursor_icon, cursor_tooltip, is_selected);
@@ -449,7 +443,12 @@ impl DrawingToolbar {
     fn quick_pick_category(&mut self, category: &str) -> Option<DrawingToolbarAction> {
         let action = match category {
             "Cursors" => DrawingToolbarAction::SetCursorType(CursorType::Cross),
-            "Magnet" | "Hide" | "Remove" | "Icons/Emojis" => return None,
+            "Magnet" => DrawingToolbarAction::ToggleMagnet,
+            "Hide" | "Remove" => return None,
+            "Icons/Emojis" => {
+                let (icon_name, size) = self.state.glyph_picker.armed();
+                DrawingToolbarAction::InsertGlyph { icon_name, size }
+            }
             _ => DrawingToolbarAction::SelectTool(self.first_tool_in_category(category)?),
         };
         self.apply_pick(action)
@@ -535,6 +534,21 @@ impl DrawingToolbar {
 
             // Simple button without arrow
             let response = draw_tool_button(ui, tool_icon, tooltip, has_sel);
+            if is_icons {
+                let (glyph, _) = self.state.glyph_picker.armed();
+                if self.state.glyph_picker.has_recent() {
+                    let rect = egui::Rect::from_center_size(
+                        response.rect.center(),
+                        egui::vec2(18.0, 18.0),
+                    );
+                    crate::drawings::glyphs::paint(
+                        ui.painter(),
+                        glyph,
+                        rect,
+                        ui.visuals().text_color(),
+                    );
+                }
+            }
             if let Some(pick) = self.menu_button(ui, category, &response) {
                 action = pick;
             }
@@ -552,7 +566,7 @@ impl DrawingToolbar {
         let width = self.config.width;
 
         // Measure tool
-        let measure_active = self.state.sel_tool == Some(DrawingToolType::Measure);
+        let measure_active = self.state.measure_active;
         let measure = self.registry.availability(DrawingToolType::Measure);
         if measure.visible
             && let Some(a) = ui
@@ -561,20 +575,6 @@ impl DrawingToolbar {
                 })
                 .inner
         {
-            self.select_tool(DrawingToolType::Measure);
-            action = a;
-        }
-
-        // Zoom In
-        if let Some(a) = ZoomInButton::show(ui, self.state.zoom_mode_active) {
-            self.state.zoom_mode_active = !self.state.zoom_mode_active;
-            action = a;
-        }
-
-        // Zoom Out (only if history)
-        if self.state.has_zoom_history
-            && let Some(a) = ZoomOutButton::show(ui)
-        {
             action = a;
         }
 
@@ -582,7 +582,7 @@ impl DrawingToolbar {
         draw_separator_styled(ui, width);
 
         // Magnet button
-        let response = MagnetButton::show(ui, self.state.magnet_mode);
+        let response = MagnetButton::show(ui, self.state.magnet_mode, self.state.magnet_type);
         let _ = self.menu_button(ui, "Magnet", &response);
 
         // Keep Drawing
@@ -591,10 +591,15 @@ impl DrawingToolbar {
             action = a;
         }
 
-        // Lock All Drawings
-        if let Some(a) = LockButton::show(ui, self.state.lock_all) {
-            self.state.lock_all = !self.state.lock_all;
-            action = a;
+        // Lock All Drawings. Disabled with nothing to lock; the host reports the real state.
+        if self.state.drawings_present {
+            if let Some(a) = LockButton::show(ui, self.state.lock_all) {
+                action = a;
+            }
+        } else {
+            ui.add_enabled_ui(false, |ui| {
+                let _ = LockButton::show(ui, false);
+            });
         }
 
         // Hide dropdown
@@ -785,6 +790,7 @@ impl DrawingToolbar {
                 self.state.current_cursor_type = *cursor;
                 self.state.eraser_mode_enabled = false;
             }
+            A::ToggleMeasure => self.state.measure_active = !self.state.measure_active,
             A::ToggleEraserMode => {
                 self.clear_selection();
                 self.state.eraser_mode_enabled = !self.state.eraser_mode_enabled;
@@ -797,9 +803,10 @@ impl DrawingToolbar {
                 self.state.magnet_type = *kind;
                 self.state.magnet_mode = true;
             }
-            // "Off" while the magnet is already off changes nothing, and the host's toggle would
-            // switch it on.
-            A::ToggleMagnet if !self.state.magnet_mode => return None,
+            // "Off" while the magnet is already off changes nothing.
+            A::ToggleMagnet if !self.state.magnet_mode => {
+                self.state.magnet_mode = true;
+            }
             A::ToggleMagnet => self.state.magnet_mode = false,
             A::HideAllDrawings => self.state.hide_drawings = !self.state.hide_drawings,
             A::HideAllIndicators => self.state.hide_indicators = !self.state.hide_indicators,
@@ -1100,17 +1107,16 @@ mod tests {
     /// Host snapshots restore modes, clear conflicting zoom and retain menus and tool history.
     #[test]
     fn domain_snapshots_restore_magnet_cursor_and_eraser_modes() {
-        for (magnet, cursor, eraser, tool, zoom) in [
+        for (magnet, cursor, eraser, tool) in [
             (
                 MagnetType::Weak,
                 CursorType::Arrow,
                 false,
                 Some(DrawingToolType::HorizontalLine),
-                false,
             ),
-            (MagnetType::Strong, CursorType::Dot, false, None, false),
-            (MagnetType::OHLC, CursorType::Arrow, true, None, false),
-            (MagnetType::Strong, CursorType::Cross, false, None, true),
+            (MagnetType::Strong, CursorType::Dot, false, None),
+            (MagnetType::OHLC, CursorType::Arrow, true, None),
+            (MagnetType::Strong, CursorType::Cross, false, None),
         ] {
             let mut source = DrawingToolbar::new();
             source.state.magnet_mode = true;
@@ -1122,7 +1128,6 @@ mod tests {
             let mut target = DrawingToolbar::new();
             target.select_tool(DrawingToolType::TrendLine);
             target.clear_selection();
-            target.state.zoom_mode_active = true;
             target.state.snap_to_indicators = !source.state.snap_to_indicators;
             target.state.expanded_category = Some("Magnet".into());
             target.sync_from_domain_state(&source.get_domain_state());
@@ -1135,7 +1140,6 @@ mod tests {
             assert_eq!(target.state.eraser_mode_enabled, eraser);
             assert!(target.state.magnet_mode);
             assert_eq!(target.state.sel_tool, tool);
-            assert_eq!(target.state.zoom_mode_active, zoom);
             assert_eq!(target.state.expanded_category.as_deref(), Some("Magnet"));
             assert_eq!(
                 target.state.recent.front(),
@@ -1178,11 +1182,19 @@ mod tests {
         assert_eq!(toolbar.state.current_cursor_type, CursorType::Cross);
         assert!(toolbar.state.sel_tool.is_none());
 
-        assert!(
-            toolbar.quick_pick_category("Magnet").is_none(),
-            "utility menus only hover-open"
+        assert_eq!(
+            toolbar.quick_pick_category("Magnet"),
+            Some(DrawingToolbarAction::ToggleMagnet)
         );
-        assert!(toolbar.quick_pick_category("Icons/Emojis").is_none());
+        assert!(toolbar.state.magnet_mode);
+        assert_eq!(toolbar.state.magnet_type, MagnetType::Weak);
+        assert_eq!(
+            toolbar.quick_pick_category("Icons/Emojis"),
+            Some(DrawingToolbarAction::InsertGlyph {
+                icon_name: "icon:star",
+                size: 32.0,
+            })
+        );
     }
 
     /// Cursor, eraser and drawing picks leave the previous mode before a host synchronises.
@@ -1303,11 +1315,11 @@ mod tests {
                         _ => None,
                     })
                     .collect();
-                assert_eq!(icons.len(), 16);
+                assert_eq!(icons.len(), 15);
                 // Colour well removed from the rail — hide/favorites/remove sit one pitch higher.
                 for (i, y) in [
-                    22.0, 58.0, 94.0, 130.0, 166.0, 202.0, 238.0, 274.0, 323.0, 359.0, 408.0,
-                    444.0, 480.0, 516.0, 552.0, 601.0,
+                    22.0, 58.0, 94.0, 130.0, 166.0, 202.0, 238.0, 274.0, 323.0, 372.0, 408.0,
+                    444.0, 480.0, 516.0, 565.0,
                 ]
                 .into_iter()
                 .enumerate()
@@ -1315,12 +1327,16 @@ mod tests {
                     let colour = if (i == 0 && selected.is_none()) || (i == 1 && selected.is_some())
                     {
                         text
-                    } else if i == 10 && magnet {
+                    } else if i == 9 && magnet {
                         if theme.dark {
                             theme.ui.panel_bg
                         } else {
                             Color32::WHITE
                         }
+                    } else if i == 9 {
+                        text.gamma_multiply(0.5)
+                    } else if i == 11 {
+                        theme.ui.text_disabled.gamma_multiply(0.5)
                     } else {
                         text
                     };
@@ -1372,7 +1388,7 @@ mod tests {
                     assert!(shapes.iter().any(|s| matches!(
                         &s.shape,
                         Shape::Rect(r) if r.fill == fill
-                            && r.rect == pill.translate(origin.to_vec2() + vec2(7.5, 391.5))
+                            && r.rect == pill.translate(origin.to_vec2() + vec2(7.5, 355.5))
                     )));
                 }
                 let separator = crate::ui::top_toolbar::buttons::rule_color(&theme);

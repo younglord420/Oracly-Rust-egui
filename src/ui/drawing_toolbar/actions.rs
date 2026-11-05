@@ -58,10 +58,8 @@ pub enum DrawingToolbarAction {
     /// Include or exclude visible study plots from drawing magnet targets.
     /// Hosts set `DrawingManagerOptions::snap_to_indicators` to this value.
     SetSnapToIndicators(bool),
-    /// Zoom in (save current state to history)
-    ZoomIn,
-    /// Zoom out (restore previous state from history)
-    ZoomOut,
+    /// Arm or disarm the transient measure ruler.
+    ToggleMeasure,
     /// Toggle values tooltip on long press
     ToggleValuesTooltip,
     /// Lock all drawings

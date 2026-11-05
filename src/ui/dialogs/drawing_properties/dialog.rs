@@ -601,7 +601,14 @@ impl DrawingPropertiesDialog {
             .as_ref()
             .map(|t| t.settings.tool_type);
         let has_inputs = tool.is_some_and(InputsTab::available);
-        let has_text = tool.is_some_and(|t| t.supports_text_style());
+        let has_text = tool.is_some_and(|t| {
+            t.supports_text_style()
+                || matches!(
+                    t,
+                    crate::drawings::DrawingToolType::FontIcon
+                        | crate::drawings::DrawingToolType::Sticker
+                )
+        });
         let has_fill = tool.is_some_and(|t| t.supports_fill());
         let section_available = |tab: PropertiesTab| match tab {
             PropertiesTab::Inputs => has_inputs,

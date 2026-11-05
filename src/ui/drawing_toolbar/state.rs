@@ -61,6 +61,10 @@ pub struct ToolbarState {
     pub values_tooltip_on_long_press: bool,
     /// Whether eraser mode is currently active
     pub eraser_mode_enabled: bool,
+    /// Whether the measure ruler is armed. Hosts copy it from the drawing manager.
+    pub measure_active: bool,
+    /// Whether the chart has drawings, so Lock all can be disabled when it does not.
+    pub drawings_present: bool,
     /// Whether all drawings are locked; the lock button shows it.
     pub lock_all: bool,
     /// Whether the Hide menu has hidden drawings; the menu shows a check on each hidden group.
@@ -71,10 +75,6 @@ pub struct ToolbarState {
     pub hide_positions: bool,
     /// Whether the Hide menu has hidden orders.
     pub hide_orders: bool,
-    /// Whether zoom history exists (for showing/hiding Zoom Out button)
-    pub has_zoom_history: bool,
-    /// Whether zoom-in mode is currently active (for button highlighting)
-    pub zoom_mode_active: bool,
     /// Current cursor type (Cross, Dot, Arrow) - Arrow is default
     pub current_cursor_type: CursorType,
     /// Cached drawing templates loaded from the API
@@ -108,7 +108,7 @@ impl Default for ToolbarState {
             floating_pos: None,
             recent: VecDeque::with_capacity(5),
             magnet_mode: false,
-            magnet_type: MagnetType::Strong, // Default to strong magnet
+            magnet_type: MagnetType::Weak, // Last strength restored when the magnet is turned back on.
             snap_to_indicators: true,
             stay_in_drawing_mode: false,
             drawing_color: [255, 255, 255, 255], // Dark-theme default
@@ -119,13 +119,13 @@ impl Default for ToolbarState {
             glyph_picker: Default::default(),
             values_tooltip_on_long_press: false,
             eraser_mode_enabled: false,
+            measure_active: false,
+            drawings_present: false,
             lock_all: false,
             hide_drawings: false,
             hide_indicators: false,
             hide_positions: false,
             hide_orders: false,
-            has_zoom_history: false,
-            zoom_mode_active: false,
             // Matches the chart's default `CrosshairStyle::Full`.
             current_cursor_type: CursorType::Cross,
             templates: Vec::new(),
@@ -145,7 +145,6 @@ impl ToolbarState {
     pub fn select_tool(&mut self, tool: DrawingToolType) {
         self.sel_tool = Some(tool);
         self.eraser_mode_enabled = false;
-        self.zoom_mode_active = false;
         self.add_to_recent(tool);
 
         // Update last selected tool for this tool's category
@@ -169,7 +168,6 @@ impl ToolbarState {
     /// Clear tool selection (cursor mode)
     pub fn clear_selection(&mut self) {
         self.sel_tool = None;
-        self.zoom_mode_active = false;
     }
 
     /// Toggle favorite status of a tool

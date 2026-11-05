@@ -1108,15 +1108,26 @@ impl DemoApp {
                             .is_empty(),
                         d.tool_type.supports_text()
                             || d.tool_type == egui_charts::drawings::DrawingToolType::Image,
+                        !matches!(
+                            d.tool_type,
+                            egui_charts::drawings::DrawingToolType::FontIcon
+                                | egui_charts::drawings::DrawingToolType::Sticker
+                                | egui_charts::drawings::DrawingToolType::ArrowMarkUp
+                                | egui_charts::drawings::DrawingToolType::ArrowMarkDown
+                                | egui_charts::drawings::DrawingToolType::ArrowMarkLeft
+                                | egui_charts::drawings::DrawingToolType::ArrowMarkRight
+                        ),
                         bounds,
                     )
                 })
         });
-        let Some((id, stroke, fill, width, style, locked, visible, alert, text, bounds)) = selected
+        let Some((id, stroke, fill, width, style, locked, visible, alert, text, lines, bounds)) =
+            selected
         else {
             self.selection_toolbar.hide();
             return;
         };
+        self.selection_toolbar.set_line_controls(lines);
         let size = self.selection_toolbar.estimated_size();
         let clip = if chart_rect == egui::Rect::NOTHING {
             ui.max_rect()
@@ -1997,10 +2008,6 @@ impl DemoApp {
     }
 
     fn show_drawing_toolbar(&mut self, ui: &mut egui::Ui, bg: egui::Color32) {
-        if self.chart.zoom_was_applied() {
-            self.drawing_toolbar.state.zoom_mode_active = false;
-        }
-        self.drawing_toolbar.state.has_zoom_history = self.chart.state().has_zoom_history();
         use egui_charts::config::CrosshairStyle;
         use egui_charts::ui::drawing_toolbar::{
             DrawingToolbarDomainState, MagnetType, categories::cursors::CursorType,
@@ -2008,9 +2015,6 @@ impl DemoApp {
         let dm = self.chart.drawings();
         let magnet_type = if !dm.options.strong_magnet {
             MagnetType::Weak
-        } else if self.drawing_toolbar.state.magnet_type == MagnetType::OHLC {
-            // OHLC is an alias of strong snapping; retain the user's menu choice.
-            MagnetType::OHLC
         } else {
             MagnetType::Strong
         };
@@ -2032,8 +2036,10 @@ impl DemoApp {
                 drawing_color: dm.options.default_color,
             });
         let drawings = &self.chart.drawings().drawings;
+        self.drawing_toolbar.state.drawings_present = !drawings.is_empty();
         self.drawing_toolbar.state.lock_all =
             !drawings.is_empty() && drawings.iter().all(|d| d.locked);
+        self.drawing_toolbar.state.measure_active = self.chart.drawings().is_measuring();
         egui::Panel::left("drawing_toolbar")
             .resizable(false)
             .exact_size(egui_charts::ui::drawing_toolbar::config::TOOLBAR_WIDTH)
@@ -2053,18 +2059,6 @@ impl DemoApp {
     }
 
     pub(crate) fn handle_drawing_toolbar(&mut self, action: DrawingToolbarAction) {
-        match action {
-            DrawingToolbarAction::ZoomIn => {
-                self.chart
-                    .set_zoom_mode(self.drawing_toolbar.state.zoom_mode_active);
-                return;
-            }
-            DrawingToolbarAction::ZoomOut => {
-                self.chart.zoom_back();
-                return;
-            }
-            _ => {}
-        }
         self.user_action(|app| app.handle_drawing_toolbar_edit(action));
     }
 
@@ -2171,7 +2165,14 @@ impl DemoApp {
                 dm.clear_all()
             }
             DrawingToolbarAction::HideAllDrawings => dm.toggle_visibility_all(),
-            DrawingToolbarAction::LockAllDrawings => dm.toggle_lock_all(),
+            DrawingToolbarAction::LockAllDrawings => {
+                let lock = dm.drawings.is_empty() || dm.drawings.iter().any(|drawing| !drawing.locked);
+                dm.set_lock_all(lock);
+            }
+            DrawingToolbarAction::ToggleMeasure => {
+                let on = !dm.is_measuring();
+                dm.set_measure_mode(on);
+            }
             DrawingToolbarAction::InsertGlyph { icon_name, size } => {
                 dm.start_icon_insertion(icon_name.to_string());
                 if let Some(drawing) = &mut dm.curr_drawing {
@@ -2192,9 +2193,7 @@ impl DemoApp {
             | DrawingToolbarAction::RemoveAllStudies
             | DrawingToolbarAction::HideAllIndicators
             | DrawingToolbarAction::SetCursorType(_)
-            | DrawingToolbarAction::ToggleValuesTooltip
-            | DrawingToolbarAction::ZoomIn
-            | DrawingToolbarAction::ZoomOut => {}
+            | DrawingToolbarAction::ToggleValuesTooltip => {}
             _ => {}
         }
     }
@@ -5308,8 +5307,7 @@ mod tests {
             .map(|drawing| (drawing.id, drawing.chart_points.clone()))
             .collect();
         app.chart.end_user_action();
-        app.drawing_toolbar.state.zoom_mode_active = true;
-        app.handle_drawing_toolbar(DrawingToolbarAction::ZoomIn);
+        app.chart.set_zoom_mode(true);
         ctx.run_ui(egui::RawInput::default(), |ui| {
             app.chart.show(ui);
         })
@@ -5324,7 +5322,7 @@ mod tests {
         ));
         for restore in [false, true] {
             if restore {
-                app.handle_drawing_toolbar(DrawingToolbarAction::ZoomOut);
+                assert!(app.chart.zoom_back());
                 assert_eq!(app.chart.get_time_scale_state(), before);
             } else {
                 assert!(app.chart.get_time_scale_state().0 > before.0);
@@ -6517,10 +6515,7 @@ mod tests {
                 ));
         });
         app.handle_top_toolbar(&ctx, TopToolbarAction::Undo);
-        app.drawing_toolbar.state.zoom_mode_active = true;
-        app.handle_drawing_toolbar(DrawingToolbarAction::ZoomIn);
-        assert!(app.chart.drawings().drawings.is_empty());
-        assert!(app.chart.can_redo());
+        app.chart.set_zoom_mode(true);
         ctx.run_ui(egui::RawInput::default(), |ui| {
             app.chart.show(ui);
         })
@@ -6533,12 +6528,7 @@ mod tests {
             rect,
             rect.width()
         ));
-        ctx.run_ui(egui::RawInput::default(), |ui| {
-            app.show_drawing_toolbar(ui, egui::Color32::BLACK);
-        })
-        .drop_without_applying_deltas();
-        assert!(app.drawing_toolbar.state.has_zoom_history);
-        app.handle_drawing_toolbar(DrawingToolbarAction::ZoomOut);
+        assert!(app.chart.zoom_back());
         assert_eq!(app.chart.get_time_scale_state(), before);
         assert!(!app.chart.state().has_zoom_history());
         assert!(app.chart.drawings().drawings.is_empty());

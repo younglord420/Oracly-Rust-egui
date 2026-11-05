@@ -3,7 +3,6 @@
 //! Activates the measurement tool for measuring price ranges,
 //! time ranges, and percentage changes on the chart.
 
-use crate::drawings::DrawingToolType;
 use crate::icons::icons;
 use crate::ui::drawing_toolbar::DrawingToolbarAction;
 use crate::ui::drawing_toolbar::components::draw_tool_button;
@@ -19,7 +18,7 @@ impl MeasureButton {
 
         if response.clicked() {
             log::info!("Measure tool clicked");
-            Some(DrawingToolbarAction::SelectTool(DrawingToolType::Measure))
+            Some(DrawingToolbarAction::ToggleMeasure)
         } else {
             None
         }

@@ -437,17 +437,17 @@ impl DrawingManager {
 
     /// Toggles the lock state of all drawings. If all are locked, unlocks them
     /// all; otherwise locks them all.
-    pub fn toggle_lock_all(&mut self) {
-        let all_locked = self.drawings.iter().all(|d| d.locked);
+    /// Locks or unlocks every drawing as one undo step. Returns whether anything changed.
+    pub fn set_lock_all(&mut self, locked: bool) -> bool {
         let mut before = Vec::new();
         for (index, drawing) in self
             .drawings
             .iter_mut()
             .enumerate()
-            .filter(|(_, d)| d.locked == all_locked)
+            .filter(|(_, drawing)| drawing.locked != locked)
         {
             before.push((index, drawing.clone()));
-            drawing.locked = !all_locked;
+            drawing.locked = locked;
             if self.sync_enabled
                 && drawing.saveable
                 && let Ok(mut sync) = self.pending_sync.lock()
@@ -459,7 +459,15 @@ impl DrawingManager {
                 );
             }
         }
+        let changed = !before.is_empty();
         self.history.push_snapshot(before);
+        changed
+    }
+
+    /// Locks every drawing when any is unlocked, and unlocks them when all are locked.
+    pub fn toggle_lock_all(&mut self) {
+        let all_locked = !self.drawings.is_empty() && self.drawings.iter().all(|d| d.locked);
+        self.set_lock_all(!all_locked);
     }
 
     /// Adds a completed drawing with validated chart coordinates and properties as one undo

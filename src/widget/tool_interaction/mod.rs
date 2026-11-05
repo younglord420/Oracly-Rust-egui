@@ -12,6 +12,7 @@
 
 mod effects;
 mod interaction;
+mod measure;
 mod selection;
 mod text;
 
@@ -22,6 +23,7 @@ use crate::drawings::DrawingInteractionMode;
 use crate::drawings::DrawingManager;
 use crate::drawings::rendering::ChartView;
 use crate::scales::PriceMap;
+use crate::theme::ThemeExt;
 use crate::widget::Chart;
 use egui::{Painter, Pos2, Rect, Response, Ui};
 
@@ -118,8 +120,7 @@ impl Chart {
             |x: f32| -> f32 { timescale.coord_to_idx(x, rect_min_x, rect_width) };
         let price_to_y = |price: f64| -> f32 { price_map.price_to_y(price) };
         // A strong snap keeps the actual OHLC even beyond a manual price range.
-        let strong_magnet =
-            drawing_manager.magnet_enabled() && drawing_manager.options.strong_magnet;
+        let strong_magnet = drawing_manager.strong_magnet_effective();
         let y_to_price = |y: f32| -> f64 {
             price_map.y_to_price(if strong_magnet {
                 y
@@ -225,6 +226,17 @@ impl Chart {
             }
         };
         let count_before = drawing_manager.drawings.len();
+        let price_span = (
+            y_to_price(price_rect.top()).to_bits(),
+            y_to_price(price_rect.bottom()).to_bits(),
+        );
+        let view = (
+            self.state.time_scale().bar_spacing().to_bits(),
+            self.state.time_scale().right_offset_precise().to_bits(),
+            price_span.0,
+            price_span.1,
+        );
+        let measuring = measure::handle(ui, drawing_manager, response, price_rect, view);
         let owns_gesture = drawing_manager
             .curr_drawing
             .as_ref()
@@ -235,7 +247,7 @@ impl Chart {
                     .and_then(|(id, _)| drawing_manager.drawings.iter().find(|d| d.id == id))
             })
             .is_none_or(|d| drawing_manager.owns_pane(d));
-        if !owns_gesture || drawing_manager.text_editor.is_some() {
+        if measuring || !owns_gesture || drawing_manager.text_editor.is_some() {
             // The editor owns this frame's pointer input, including its outside commit click.
         } else if let Some(active_tool) = drawing_manager.active_tool {
             let uses_precise = active_tool.interaction_mode()
@@ -324,6 +336,34 @@ impl Chart {
                 .and_then(|link| link.footprint.as_ref()),
         };
         drawing_manager.render_all(painter, price_rect, &view);
+        if let Some(ruler) = drawing_manager.ruler.as_ref() {
+            crate::drawings::rendering::paint_ruler(
+                painter,
+                ruler,
+                price_rect,
+                &x_to_bar_snapped,
+                &y_to_price,
+                self.state.shown(),
+                self.horizontal_scale.is_none(),
+            );
+        }
+        if drawing_manager.magnet_enabled()
+            && (drawing_manager.active_tool.is_some()
+                || drawing_manager.dragging_handle.is_some()
+                || drawing_manager.measure_mode)
+            && let Some(pointer) = response
+                .hover_pos()
+                .or_else(|| response.interact_pointer_pos())
+        {
+            let snapped = drawing_manager.snap_point(pointer, &drawing_manager.drawings);
+            if snapped.distance(pointer) > 0.5 {
+                painter.circle_stroke(
+                    snapped,
+                    5.5,
+                    egui::Stroke::new(1.5, ui.ctx().active_theme().ui.text.gamma_multiply(0.9)),
+                );
+            }
+        }
         self.paint_horizontal_drawing_tags(painter, price_rect, price_map, drawing_manager);
         if drawing_manager.text_editor.as_ref().is_some_and(|editor| {
             drawing_manager

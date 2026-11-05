@@ -431,6 +431,8 @@ impl DrawingManager {
         self.cancel_curr_drawing();
         if tool.is_some() {
             self.eraser_mode = false;
+            self.measure_mode = false;
+            self.ruler = None;
         }
     }
 
@@ -483,7 +485,26 @@ impl DrawingManager {
             self.active_custom_tool = None;
             self.active_tool = None;
             self.cancel_curr_drawing();
+            self.measure_mode = false;
+            self.ruler = None;
         }
+    }
+
+    /// Arms or clears the transient ruler. Arming leaves the pointer and clears the selection.
+    pub fn set_measure_mode(&mut self, on: bool) {
+        self.measure_mode = on;
+        self.ruler = None;
+        if on {
+            self.set_active_tool(None);
+            self.eraser_mode = false;
+            self.selection.deselect_all();
+            self.measure_mode = true;
+        }
+    }
+
+    /// Whether the measure button is armed.
+    pub fn is_measuring(&self) -> bool {
+        self.measure_mode
     }
 
     /// Start text annotation mode
@@ -693,7 +714,12 @@ impl DrawingManager {
             self.queue(DrawingSyncAction::SaveDrawing(id));
             // Select so the floating property bar opens immediately after place.
             self.select(id);
-            if !self.stay_in_drawing_mode {
+            let stays = self.stay_in_drawing_mode
+                || matches!(
+                    self.active_tool,
+                    Some(DrawingToolType::Brush | DrawingToolType::Highlighter)
+                );
+            if !stays {
                 self.active_tool = None;
                 self.active_custom_tool = None;
             } else if let Some(icon) = icon {

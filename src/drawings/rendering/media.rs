@@ -408,7 +408,7 @@ impl Drawing {
         );
 
         // Default icon if none specified
-        let icon = self.text.as_deref().unwrap_or("*");
+        let icon = self.text.as_deref().unwrap_or("icon:star");
 
         let icon_size = crate::styles::typography::font_size(self.font_size);
         let rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(icon_size));
@@ -416,26 +416,6 @@ impl Drawing {
             return;
         }
 
-        // Optional background circle
-        let has_bg = self.stroke_width > 2.0;
-        if has_bg {
-            painter.circle_filled(
-                pos,
-                icon_size / 2.0 + DESIGN_TOKENS.rounding.lg,
-                DESIGN_TOKENS
-                    .semantic
-                    .extended
-                    .chart_axis_bg
-                    .gamma_multiply(0.78),
-            );
-            painter.circle_stroke(
-                pos,
-                icon_size / 2.0 + DESIGN_TOKENS.rounding.lg,
-                Stroke::new(stroke::MEDIUM, color),
-            );
-        }
-
-        // Icon
         painter.text(
             pos,
             egui::Align2::CENTER_CENTER,

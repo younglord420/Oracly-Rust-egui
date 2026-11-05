@@ -132,15 +132,26 @@ impl Terminal {
                             !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
                                 .is_empty(),
                             d.tool_type.supports_text() || d.tool_type == DrawingToolType::Image,
+                            !matches!(
+                                d.tool_type,
+                                DrawingToolType::FontIcon
+                                    | DrawingToolType::Sticker
+                                    | DrawingToolType::ArrowMarkUp
+                                    | DrawingToolType::ArrowMarkDown
+                                    | DrawingToolType::ArrowMarkLeft
+                                    | DrawingToolType::ArrowMarkRight
+                            ),
                             bounds,
                         )
                     })
             });
-        let Some((id, stroke, fill, width, style, locked, visible, alert, text, bounds)) = selected
+        let Some((id, stroke, fill, width, style, locked, visible, alert, text, lines, bounds)) =
+            selected
         else {
             self.drawings.selection.hide();
             return;
         };
+        self.drawings.selection.set_line_controls(lines);
         let size = self.drawings.selection.estimated_size();
         let clip = if self.chart_area == egui::Rect::NOTHING {
             ui.max_rect()
@@ -343,16 +354,9 @@ impl Terminal {
     fn show_drawing_toolbar(&mut self, ui: &mut egui::Ui) {
         let chart = &self.charts[self.active];
         let toolbar = &mut self.drawings.toolbar;
-        if chart.zoom_was_applied() {
-            toolbar.state.zoom_mode_active = false;
-        }
-        toolbar.state.has_zoom_history = chart.state().has_zoom_history();
         let manager = chart.drawings();
         let magnet_type = if !manager.options.strong_magnet {
             MagnetType::Weak
-        } else if toolbar.state.magnet_type == MagnetType::OHLC {
-            // OHLC is an alias of strong snapping; retain the user's menu choice.
-            MagnetType::OHLC
         } else {
             MagnetType::Strong
         };
@@ -374,6 +378,8 @@ impl Terminal {
         });
         let drawings = &manager.drawings;
         toolbar.state.lock_all = !drawings.is_empty() && drawings.iter().all(|d| d.locked);
+        toolbar.state.drawings_present = !drawings.is_empty();
+        toolbar.state.measure_active = manager.is_measuring();
         toolbar.state.hide_drawings = !drawings.is_empty() && drawings.iter().all(|d| !d.visible);
         let bg = ui.style().visuals.panel_fill;
         let mut action = DrawingToolbarAction::None;
@@ -402,13 +408,6 @@ impl Terminal {
     /// actions on studies, positions, orders and templates are left for their groups.
     fn perform_drawing_toolbar(&mut self, action: DrawingToolbarAction) -> Option<Action> {
         match action {
-            DrawingToolbarAction::ZoomIn => {
-                let active = self.drawings.toolbar.state.zoom_mode_active;
-                self.chart_mut().set_zoom_mode(active);
-            }
-            DrawingToolbarAction::ZoomOut => {
-                self.chart_mut().zoom_back();
-            }
             DrawingToolbarAction::OpenTemplateMenu
             | DrawingToolbarAction::ManageTemplates
             | DrawingToolbarAction::SaveTemplate { .. }
@@ -429,7 +428,7 @@ impl Terminal {
         let state = &self.drawings.toolbar.state;
         let (magnet_type, values_tooltip) = (state.magnet_type, state.values_tooltip_on_long_press);
         // The toolbar has already flipped these two, so they hold the state the user asked for.
-        let (lock_all, hide_all) = (state.lock_all, state.hide_drawings);
+        let hide_all = state.hide_drawings;
         let chart = &mut self.charts[self.active];
         match action {
             DrawingToolbarAction::SetCursorType(cursor) => {
@@ -491,13 +490,14 @@ impl Terminal {
             }
             DrawingToolbarAction::LockAllDrawings => {
                 let manager = chart.drawings_mut();
-                let ids: Vec<_> = manager
-                    .drawings
-                    .iter()
-                    .filter(|drawing| drawing.locked != lock_all)
-                    .map(|drawing| drawing.id)
-                    .collect();
-                manager.edit_drawings(&ids, |drawing| drawing.locked = lock_all);
+                let lock =
+                    manager.drawings.is_empty() || manager.drawings.iter().any(|d| !d.locked);
+                manager.set_lock_all(lock);
+            }
+            DrawingToolbarAction::ToggleMeasure => {
+                let manager = chart.drawings_mut();
+                let on = !manager.is_measuring();
+                manager.set_measure_mode(on);
             }
             DrawingToolbarAction::InsertGlyph { icon_name, size } => {
                 let manager = chart.drawings_mut();
@@ -839,8 +839,7 @@ mod tests {
         };
         let kept = drawings(&terminal);
         assert_eq!(kept.len(), 1);
-        terminal.drawings.toolbar.state.zoom_mode_active = true;
-        run(&mut terminal, DrawingToolbarAction::ZoomIn);
+        terminal.chart_mut().set_zoom_mode(true);
         frame(&mut terminal, SIZE, vec![]);
         let before = terminal.chart().get_time_scale_state();
         let rect = terminal.chart().get_rendered_price_rect();
@@ -852,8 +851,7 @@ mod tests {
         ));
         assert!(terminal.chart().get_time_scale_state().0 > before.0);
         frame(&mut terminal, SIZE, vec![]);
-        assert!(terminal.drawings.toolbar.state.has_zoom_history);
-        run(&mut terminal, DrawingToolbarAction::ZoomOut);
+        assert!(terminal.chart_mut().zoom_back());
         assert_eq!(terminal.chart().get_time_scale_state(), before);
         assert!(!terminal.chart().state().has_zoom_history());
         // Zooming is no edit: the drawings are as they were, the undone one can still be
