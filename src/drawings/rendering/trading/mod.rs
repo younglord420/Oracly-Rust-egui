@@ -6,9 +6,11 @@
 //! - `ghost_feed` - Ghost feed rendering
 //! - `projection` - Projection tool rendering
 //! - `bars_pattern` - Bars pattern rendering
+//! - `candles` - Candles shaped like the chart's own
 //! - `volume_profile` - VWAP and volume profile rendering
 
 mod bars_pattern;
+mod candles;
 mod forecast;
 mod ghost_feed;
 mod position;

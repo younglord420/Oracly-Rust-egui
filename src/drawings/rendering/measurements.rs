@@ -27,36 +27,12 @@ impl Drawing {
             let cp1 = &self.chart_points[0];
             let cp2 = &self.chart_points[1];
 
-            // Calculate price change to determine color (RED for down, BLUE for up)
             let price_diff = cp2.price - cp1.price;
-            let is_measuring_down = price_diff < 0.0;
-
-            // The default line colour reads as direction: red down, blue up.
-            let default_color = [
-                crate::drawings::manager::DEFAULT_DRAWING_COLOR_DARK,
-                crate::drawings::manager::DEFAULT_DRAWING_COLOR_LIGHT,
-            ]
-            .contains(&self.color);
-            let base_color = if !default_color {
-                self.color32().to_opaque()
-            } else if is_measuring_down {
-                DESIGN_TOKENS.semantic.extended.bearish
-            } else {
-                DESIGN_TOKENS.semantic.extended.accent
-            };
-
-            // Draw SEMI-TRANSPARENT RECTANGLE filling the area from start to cursor
-            // Color changes based on direction: red down, blue up
+            let base_color = self.measure_color();
             let rect = egui::Rect::from_two_pos(start, end);
-            let fill_color = self.fill_color32().unwrap_or_else(|| {
-                Color32::from_rgba_unmultiplied(
-                    base_color.r(),
-                    base_color.g(),
-                    base_color.b(),
-                    30, // Very transparent
-                )
-            });
-            painter.rect_filled(rect, 0.0, fill_color);
+            if let Some(fill) = self.painted_fill() {
+                painter.rect_filled(rect, 0.0, fill);
+            }
 
             // Draw thin border lines around the rect
             let border_color = Color32::from_rgba_unmultiplied(
@@ -192,9 +168,7 @@ impl Drawing {
 
     /// The box a range tool shades: its fill, or its line colour faintly.
     fn range_fill(&self) -> Color32 {
-        self.fill_color32().unwrap_or_else(|| {
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 30)
-        })
+        self.painted_fill().unwrap_or(Color32::TRANSPARENT)
     }
 
     /// A line from `from` to `to` with a filled head at `to`.
@@ -319,16 +293,16 @@ impl Drawing {
         self.render_range_box(painter, view, true, true);
     }
 
-    pub(crate) fn render_info_line(&self, painter: &egui::Painter, view: &ChartView) {
+    pub(crate) fn render_info_line(&self, painter: &egui::Painter, rect: Rect, view: &ChartView) {
         let &[start, end, ..] = self.points.as_slice() else {
             return;
         };
-        self.styled_segment(
-            painter,
-            start,
-            end,
-            Stroke::new(self.stroke_width, self.color32()),
-        );
+        if let Some((line_start, line_end)) = self.trend_line_ends(rect) {
+            painter.line_segment(
+                [line_start, line_end],
+                Stroke::new(self.stroke_width, self.color32()),
+            );
+        }
 
         let Some(stats) = self.info_line_stats(view.bars, view.instrument, view.time_axis) else {
             return;

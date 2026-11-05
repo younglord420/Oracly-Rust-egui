@@ -223,7 +223,9 @@ impl Drawing {
         left: f32,
         right: f32,
     ) {
-        let config = self.volume_profile.unwrap_or_default();
+        let config = self
+            .volume_profile
+            .unwrap_or_else(crate::data::VolumeProfileConfig::drawing_default);
         let profile = self.span_profile(view, first, bars);
         let Some(profile) = profile.as_ref() else {
             return;
@@ -279,7 +281,9 @@ impl Drawing {
                 return Rc::new(Some(profile));
             }
         }
-        let config = self.volume_profile.unwrap_or_default();
+        let config = self
+            .volume_profile
+            .unwrap_or_else(crate::data::VolumeProfileConfig::drawing_default);
         span_profile(view, config.rows(), config.row_size(), first, bars)
     }
 

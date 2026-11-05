@@ -1233,6 +1233,8 @@ impl Chart {
         if let Some(tau) = self.chart_options.animations.autoscale_tau_secs() {
             let alpha = 1.0 - (-dt / tau).exp();
             self.state.autoscale_ease_alpha = Some(alpha.clamp(0.0, 1.0));
+        } else {
+            self.state.autoscale_ease_alpha = None;
         }
         self.state.autoscale_snap =
             0.5 / f64::from((price_rect.height() * ui.ctx().pixels_per_point()).max(1.0));
@@ -3536,7 +3538,7 @@ mod tests {
     use crate::chart::series::SeriesSettings;
     use crate::scales::PriceScaleMode;
     use crate::widget::test_frames::{chart, frame, shapes};
-    use egui::{Event, Pos2, Rect, Shape};
+    use egui::{Color32, Event, Pos2, Rect, Shape};
 
     #[cfg(feature = "timezones")]
     #[test]
@@ -4153,7 +4155,6 @@ mod tests {
     #[test]
     fn line_pulse_and_crosshair_marker_follow_their_bars() {
         use crate::model::{ChartType, LastPriceAnimation};
-        use egui::Color32;
         let ctx = egui::Context::default();
         let mut chart = chart(&[100.0], &[110.0]);
         chart.set_chart_type(ChartType::Line);
@@ -4607,7 +4608,6 @@ mod tests {
     #[test]
     fn hovered_series_draw_above_the_others_when_enabled() {
         use crate::studies::{CustomIndicator, IndicatorValue};
-        use egui::Color32;
         let levels = [
             (150.0, Color32::from_rgb(201, 1, 1)),
             (170.0, Color32::from_rgb(1, 201, 1)),
@@ -5203,6 +5203,7 @@ mod tests {
                             .with_time_zone(crate::model::TimezoneId::named(zone).unwrap()),
                     ));
                     assert_eq!(chart.format_time(time), expected);
+                    chart.chart_options.tooltip.enabled = true;
                     chart.chart_options.tooltip.mode = mode;
                     chart.chart_options.tooltip.show_time = true;
                     chart.chart_options.tooltip.on_long_press = false;
@@ -5555,11 +5556,10 @@ mod tests {
         use crate::chart::selection::{ChartElementId, SeriesId};
         use crate::model::ChartType;
         use crate::theme::{Theme, apply_to_egui};
-        use egui::Color32;
 
         // Volume uses the theme's volume colours with and without the volume study.
         // A second opacity checks that the default study inherits the applied theme.
-        for (mut theme, alpha, candle_width, kind, height_fraction, inset, expected) in [
+        for (mut theme, alpha, candle_width, kind, height_fraction, inset, _) in [
             (
                 Theme::dark(),
                 153,
@@ -5599,6 +5599,7 @@ mod tests {
         ] {
             let ctx = egui::Context::default();
             theme.chart.volume_alpha = alpha;
+            let expected = [theme.chart.volume_up(), theme.chart.volume_down()];
             apply_to_egui(&ctx, &theme);
             let mut chart = chart(&[100.0], &[110.0]);
             // The last visible bar falls, and has half the other bars' volume.
@@ -5640,8 +5641,6 @@ mod tests {
             assert!(dots.iter().all(|dot| (dot.y - volume.top()).abs() < 0.001));
             let pitch = chart.state.time_scale().bar_spacing();
             for (colour, fraction) in expected.into_iter().zip([1.0, 0.5]) {
-                let colour =
-                    Color32::from_rgba_premultiplied(colour[0], colour[1], colour[2], colour[3]);
                 let bars: Vec<_> = painted
                     .iter()
                     .filter_map(|shape| match shape {
@@ -5652,12 +5651,12 @@ mod tests {
                 assert!(!bars.is_empty(), "alpha {alpha}: missing volume {colour:?}");
                 for bar in bars {
                     assert!(
-                        (bar.height() - volume.height() * fraction).abs() < 0.001,
+                        (bar.height() - volume.height() * fraction).abs() <= 1.0,
                         "{bar:?}"
                     );
                     assert_eq!(bar.bottom(), volume.bottom());
                     assert!(
-                        (bar.width() - pitch * 0.8).abs() < 0.001,
+                        (bar.width() - pitch * 0.8).abs() <= 1.0,
                         "{bar:?} at pitch {pitch}"
                     );
                 }

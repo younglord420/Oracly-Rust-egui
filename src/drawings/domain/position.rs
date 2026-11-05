@@ -268,7 +268,9 @@ mod tests {
         let mut drawing = Drawing::new(1, DrawingToolType::LongPos);
         drawing.points = vec![Pos2::new(100.0, 500.0), Pos2::new(160.0, 400.0)];
         drawing.chart_points = vec![ChartPoint::new(10.0, price(500.0))];
-        drawing.chart_points.push(ChartPoint::new(16.0, price(400.0)));
+        drawing
+            .chart_points
+            .push(ChartPoint::new(16.0, price(400.0)));
         drawing.lay_out_position(|x| x / 10.0, price);
         let (entry, target, stop) = drawing.position_prices().unwrap();
         assert!(((target - entry) / (entry - stop) - 2.0).abs() < 1e-9);

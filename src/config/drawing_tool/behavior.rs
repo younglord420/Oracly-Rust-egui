@@ -66,6 +66,7 @@ impl DrawingToolType {
                 | Self::InsidePitchfork
                 | Self::RegressionTrend
                 | Self::GhostFeed
+                | Self::BarsPattern
                 | Self::Forecast
                 | Self::LongPos
                 | Self::ShortPos
@@ -299,7 +300,6 @@ impl DrawingToolType {
             | Self::ElliottTriangle
             | Self::ElliottDoubleCombo
             | Self::ElliottTripleCombo
-            | Self::BarsPattern
             | Self::GhostFeed => DrawingInteractionMode::MultiPoint,
 
             // Click-click tools
@@ -309,7 +309,8 @@ impl DrawingToolType {
             | Self::Ray
             | Self::InfoLine
             | Self::ExtendedLine
-            | Self::TrendAngle => DrawingInteractionMode::ClickClick,
+            | Self::TrendAngle
+            | Self::BarsPattern => DrawingInteractionMode::ClickClick,
         }
     }
 
@@ -387,7 +388,6 @@ impl DrawingToolType {
                     | Self::FlatTopBottom
                     | Self::DisjointChannel
                     | Self::FibonacciChannel
-                    | Self::BarsPattern
                     | Self::Triangle
                     | Self::ParallelChannel
                     | Self::Pitchfork

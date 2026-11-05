@@ -1005,6 +1005,7 @@ mod tests {
             drawing.ghost_feed = Some(crate::drawings::GhostFeedConfig {
                 average_range_ticks: 2.5,
                 noise_ticks: 0.5,
+                ..Default::default()
             });
             drawing.update_screen_coords(bar_to_x, price_to_y);
             let mut fork = crate::drawings::PitchforkConfig::default();

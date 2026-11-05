@@ -502,7 +502,7 @@ mod tests {
     /// Lines, labels, bands and selection share the configured price on either axis.
     #[test]
     fn fib_level_hits_follow_the_price_scale() {
-        use crate::drawings::{FibonacciConfig, FibonacciLevel};
+        use crate::drawings::{FibonacciConfig, FibonacciLevel, TextVerticalAlign};
         let interaction = DrawingInteraction::new();
         for (tool, logarithmic, ratio, want) in [
             (DrawingToolType::FibonacciRetracement, false, 0.5, 505.0),
@@ -538,15 +538,24 @@ mod tests {
                     (10.0, 1000.0)
                 };
                 fib.chart_points = vec![ChartPoint::new(0.0, start), ChartPoint::new(10.0, end)];
+                if tool == DrawingToolType::FibonacciExtension {
+                    fib.chart_points.push(ChartPoint::new(0.0, start));
+                }
                 // An unlabelled level must not suppress the nearby price label.
                 let mut unlabelled = FibonacciLevel::new(ratio - 0.001, "", [33, 150, 243, 255]);
                 unlabelled.show_price = false;
+                let mut labelled = FibonacciLevel::new(ratio, "level", [33, 150, 243, 255]);
+                labelled.show_price = true;
                 fib.fib_config = Some(FibonacciConfig {
                     logarithmic,
                     show_background: true,
+                    show_prices: None,
+                    show_levels: None,
+                    levels_as_percent: true,
+                    label_v_align: TextVerticalAlign::Top,
                     levels: vec![
                         unlabelled,
-                        FibonacciLevel::new(ratio, "level", [33, 150, 243, 255]),
+                        labelled,
                         FibonacciLevel::new(1.0, "end", [33, 150, 243, 255]),
                     ],
                     ..Default::default()
@@ -573,7 +582,7 @@ mod tests {
                 let label = output.shapes.iter().any(|s| {
                     matches!(&s.shape,
                     egui::Shape::Text(t) if t.galley.text() == format!("level ({want:.2})")
-                        && t.pos.y + t.galley.size().y < y)
+                        && t.pos.y + t.galley.size().y <= y + 0.5)
                 });
                 let band = output.shapes.iter().any(|s| matches!(&s.shape,
                     egui::Shape::Rect(r) if (r.rect.top()-y).abs() < 1e-3 || (r.rect.bottom()-y).abs() < 1e-3));
@@ -589,7 +598,7 @@ mod tests {
                 output.drop_without_applying_deltas();
                 assert!(
                     line && label && band,
-                    "{tool:?}, log levels {logarithmic}, log scale {log_scale}"
+                    "{tool:?}, log levels {logarithmic}, log scale {log_scale}: line {line}, label {label}, band {band}"
                 );
             }
         }

@@ -227,6 +227,9 @@ impl Indicator for GhostPivots {
     }
 
     fn update(&mut self, data: &[Bar], _from: usize) {
+        // Projection-only studies still keep one missing output row per source bar, like every
+        // other indicator, so incremental updates and hostile bars preserve index alignment.
+        self.values = IndicatorValues::missing(data.len());
         if let Some(mut clock) = self.period.clock() {
             clock = clock.with_timezone(self.zone.clone());
             self.update_clock(data, &clock);

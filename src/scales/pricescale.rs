@@ -371,6 +371,10 @@ impl PriceScale {
         if self.manual && old != transform {
             let rebased = |value| transform.to_scale(old.to_price(value));
             self.range = PriceRange::new(rebased(self.range.min), rebased(self.range.max));
+        } else if old != transform {
+            // An automatic fit in the old transform cannot be eased into one in different
+            // units (for example price into logarithms or percentages).
+            self.level = 0.0;
         }
     }
 
@@ -506,6 +510,7 @@ impl PriceScale {
     pub fn reset(&mut self) {
         self.manual = false;
         self.bar_ratio = None;
+        self.level = 0.0;
     }
 
     /// Mapping for one series for one frame, given the pane's vertical extent in points.

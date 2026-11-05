@@ -1,237 +1,144 @@
-//! Bars pattern rendering
+//! Bars pattern rendering.
 
-use crate::drawings::domain::{ChartPoint, Drawing};
-use crate::drawings::rendering::utils::draw_dashed_line;
-use crate::drawings::rendering::{ChartView, bars_between};
-use crate::model::Bar;
+use super::candles::paint_column;
+use crate::drawings::domain::{BarsPatternMode, Drawing};
+use crate::drawings::rendering::ChartView;
 use crate::styles::stroke;
-use egui::{Color32, Pos2, Rect, Stroke, epaint::StrokeKind};
+use crate::tokens::DESIGN_TOKENS;
+use egui::{Color32, Pos2, Stroke};
 
 impl Drawing {
-    /// Renders Bars Pattern: the bars between the first two anchors, copied
-    /// to start at the third anchor's bar and shifted by its price distance
-    /// from the first anchor.
+    /// Draws the copied bars from the first anchor's bar on, in the chart's candle width as the
+    /// mode's columns or as a line through one price of each bar.
     pub(crate) fn render_bars_pattern(&self, painter: &egui::Painter, view: &ChartView) {
-        let (&[source_start, source_end, ..], &[from, to, ..]) =
-            (self.points.as_slice(), self.chart_points.as_slice())
-        else {
+        let Some(from) = self.chart_points.first() else {
             return;
         };
-        let color = self.color32();
-
-        // Source region box around the selected bars
-        let source = bars_between(view.bars, from.bar_idx, to.bar_idx);
-        let source_rect = source.map_or_else(
-            || Rect::from_two_pos(source_start, source_end),
-            |(first, bars)| bars_rect(view, first as f32, bars),
-        );
-        self.draw_source_region(painter, source_rect, color);
-
-        // If we have a third point, draw the projection
-        if let Some(&at) = self.chart_points.get(2)
-            && let Some((start, projected)) = projected_bars(view.bars, [from, to, at])
-        {
-            self.draw_pattern_projection(painter, view, source_rect, start, &projected);
+        let bars = self.bars_pattern_bars(view.bars);
+        if bars.is_empty() {
+            return;
+        }
+        let color = self.bars_pattern_color();
+        let first = from.bar_idx.round();
+        let mode = self.bars_pattern_config().mode;
+        let price = |bar: &[f64; 4]| match mode {
+            BarsPatternMode::LineOpen => bar[0],
+            BarsPatternMode::LineHigh => bar[1],
+            BarsPatternMode::LineLow => bar[2],
+            _ => bar[3],
+        };
+        match mode {
+            BarsPatternMode::HlBars | BarsPatternMode::OcBars => {
+                for (i, bar) in bars.iter().enumerate() {
+                    let span = if mode == BarsPatternMode::HlBars {
+                        [bar[1], bar[2]]
+                    } else {
+                        [bar[0], bar[3]]
+                    };
+                    paint_column(painter, view, first + i as f32, span, color);
+                }
+            }
+            _ => {
+                let points: Vec<Pos2> = bars
+                    .iter()
+                    .enumerate()
+                    .map(|(i, bar)| {
+                        Pos2::new(
+                            (view.bar_to_x)(first + i as f32),
+                            (view.price_to_y)(price(bar)),
+                        )
+                    })
+                    .filter(|p| p.x.is_finite() && p.y.is_finite())
+                    .collect();
+                let width = self.stroke_width.max(stroke::HAIRLINE);
+                painter.add(egui::Shape::line(points, Stroke::new(width, color)));
+            }
         }
     }
 
-    fn draw_source_region(&self, painter: &egui::Painter, source_rect: Rect, color: Color32) {
-        let source_fill = self.fill_color32().unwrap_or_else(|| {
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 20)
-        });
-        painter.rect_filled(source_rect, 0.0, source_fill);
-        painter.rect_stroke(
-            source_rect,
-            0.0,
-            Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color),
-            StrokeKind::Outside,
-        );
-        self.label_box_on(
-            painter,
-            egui::Align2::CENTER_BOTTOM,
-            Pos2::new(source_rect.center().x, source_rect.min.y - 4.0),
-            "SOURCE".to_owned(),
-            color.to_opaque(),
-        );
+    /// The colour of the copy: the line colour, or the accent while that is the default
+    /// drawing colour, at the line colour's opacity and translucent so the chart shows through.
+    fn bars_pattern_color(&self) -> Color32 {
+        let default = [
+            crate::drawings::manager::DEFAULT_DRAWING_COLOR_DARK,
+            crate::drawings::manager::DEFAULT_DRAWING_COLOR_LIGHT,
+        ]
+        .contains(&self.color);
+        let base = if default {
+            DESIGN_TOKENS.semantic.extended.accent
+        } else {
+            self.color32()
+        };
+        base.gamma_multiply(0.6)
     }
-
-    fn draw_pattern_projection(
-        &self,
-        painter: &egui::Painter,
-        view: &ChartView,
-        source_rect: Rect,
-        start: f32,
-        projected: &[Bar],
-    ) {
-        let proj_rect = bars_rect(view, start, projected);
-
-        // Projected region (more transparent)
-        let proj_fill = self.fill_color32().unwrap_or_else(|| {
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 40)
-        });
-        painter.rect_filled(proj_rect, 0.0, proj_fill);
-
-        // Projected bars as OHLC bars: open tick left, close tick right
-        let bar_color =
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 150);
-        let bar_stroke = Stroke::new(self.stroke_width.max(stroke::HAIRLINE), bar_color);
-        let tick = ((view.bar_to_x)(1.0) - (view.bar_to_x)(0.0)).abs() * 0.3;
-        for (i, bar) in projected.iter().enumerate() {
-            let x = (view.bar_to_x)(start + i as f32);
-            let y = |price| (view.price_to_y)(price);
-            painter.line_segment(
-                [Pos2::new(x, y(bar.high)), Pos2::new(x, y(bar.low))],
-                bar_stroke,
-            );
-            painter.line_segment(
-                [Pos2::new(x - tick, y(bar.open)), Pos2::new(x, y(bar.open))],
-                bar_stroke,
-            );
-            painter.line_segment(
-                [
-                    Pos2::new(x, y(bar.close)),
-                    Pos2::new(x + tick, y(bar.close)),
-                ],
-                bar_stroke,
-            );
-        }
-
-        // Dashed border for projection
-        let proj_color =
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 180);
-        self.draw_dashed_rect(painter, proj_rect, proj_color);
-
-        // Projection label
-        self.label_box_on(
-            painter,
-            egui::Align2::CENTER_BOTTOM,
-            Pos2::new(proj_rect.center().x, proj_rect.min.y - 4.0),
-            "PROJECTION".to_owned(),
-            proj_color.to_opaque(),
-        );
-
-        // Connection arrow from source to projection
-        self.draw_connection_arrow(painter, source_rect, proj_rect);
-    }
-
-    fn draw_dashed_rect(&self, painter: &egui::Painter, rect: Rect, color: Color32) {
-        let dash = 6.0;
-        let gap = 4.0;
-
-        let stroke = Stroke::new(self.stroke_width.max(stroke::HAIRLINE), color);
-        let corners = [
-            rect.left_top(),
-            rect.right_top(),
-            rect.right_bottom(),
-            rect.left_bottom(),
-        ];
-        for (i, &corner) in corners.iter().enumerate() {
-            draw_dashed_line(painter, corner, corners[(i + 1) % 4], stroke, dash, gap);
-        }
-    }
-
-    fn draw_connection_arrow(&self, painter: &egui::Painter, source_rect: Rect, proj_rect: Rect) {
-        let arrow_start = Pos2::new(source_rect.max.x + 10.0, source_rect.center().y);
-        let arrow_end = Pos2::new(proj_rect.min.x - 10.0, proj_rect.center().y);
-        let arrow_color =
-            Color32::from_rgba_unmultiplied(self.color[0], self.color[1], self.color[2], 100);
-
-        // Dashed arrow line
-        let dash = 6.0;
-        let gap = 4.0;
-        if arrow_start.x < arrow_end.x - 10.0 {
-            draw_dashed_line(
-                painter,
-                arrow_start,
-                Pos2::new(arrow_end.x - 10.0, arrow_start.y),
-                Stroke::new(self.stroke_width.max(stroke::HAIRLINE), arrow_color),
-                dash,
-                gap,
-            );
-        }
-
-        // Arrow head
-        let arrow_size = 8.0;
-        painter.line_segment(
-            [
-                arrow_end,
-                Pos2::new(arrow_end.x - arrow_size, arrow_end.y - arrow_size * 0.6),
-            ],
-            Stroke::new(stroke::MEDIUM, arrow_color),
-        );
-        painter.line_segment(
-            [
-                arrow_end,
-                Pos2::new(arrow_end.x - arrow_size, arrow_end.y + arrow_size * 0.6),
-            ],
-            Stroke::new(stroke::MEDIUM, arrow_color),
-        );
-    }
-}
-
-/// Screen rect around `bars` drawn from bar index `first` on.
-fn bars_rect(view: &ChartView, first: f32, bars: &[Bar]) -> Rect {
-    let high = bars
-        .iter()
-        .map(|bar| bar.high)
-        .fold(f64::NEG_INFINITY, f64::max);
-    let low = bars.iter().map(|bar| bar.low).fold(f64::INFINITY, f64::min);
-    Rect::from_two_pos(
-        Pos2::new((view.bar_to_x)(first - 0.5), (view.price_to_y)(high)),
-        Pos2::new(
-            (view.bar_to_x)(first + bars.len() as f32 - 0.5),
-            (view.price_to_y)(low),
-        ),
-    )
-}
-
-/// The bars between the first two anchors, moved to start at the third
-/// anchor's bar and shifted by the third anchor's price minus the first's.
-/// Returns the first projected bar index and the shifted copies.
-fn projected_bars(bars: &[Bar], anchors: [ChartPoint; 3]) -> Option<(f32, Vec<Bar>)> {
-    let [from, to, at] = anchors;
-    let (_, source) = bars_between(bars, from.bar_idx, to.bar_idx)?;
-    let shift = at.price - from.price;
-    let projected = source
-        .iter()
-        .map(|bar| Bar {
-            open: bar.open + shift,
-            high: bar.high + shift,
-            low: bar.low + shift,
-            close: bar.close + shift,
-            ..bar.clone()
-        })
-        .collect();
-    Some((at.bar_idx.round(), projected))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::drawings::rendering::sample_bars;
+    use crate::drawings::rendering::{ChartView, sample_bars};
+    use crate::drawings::{ChartPoint, Drawing, DrawingToolType};
+    use egui::{Rect, Shape};
 
-    /// Anchors between bars snap to the nearest bar: bars 1..=3 of the sample
-    /// move to bars 8..=10 and up by 14 - 12 = 2 (values added by hand).
+    /// Each copied bar is one column from its high to its low, centred on its bar; a line mode
+    /// draws one line through the chosen price.
     #[test]
-    fn projected_bars_copy_source_bars() {
-        let anchors = [
-            ChartPoint::new(0.6, 12.0),
-            ChartPoint::new(3.4, 13.0),
-            ChartPoint::new(8.4, 14.0),
-        ];
-        let (start, projected) = projected_bars(&sample_bars(), anchors).unwrap();
-        assert_eq!(start, 8.0);
-        let ohlc: Vec<_> = projected
-            .iter()
-            .map(|b| (b.open, b.high, b.low, b.close))
+    fn copies_draw_columns_or_a_line_on_their_bars() {
+        let bars = sample_bars();
+        let mut drawing = Drawing::new(1, DrawingToolType::BarsPattern);
+        drawing.chart_points = vec![ChartPoint::new(1.0, 12.0), ChartPoint::new(3.0, 15.0)];
+        drawing.completed = true;
+        drawing.capture_bars_pattern(&bars);
+        drawing.chart_points[0] = ChartPoint::new(8.0, 12.0);
+        drawing.chart_points[1] = ChartPoint::new(10.0, 12.0);
+        let bar_to_x = |b: f32| 20.0 + b * 10.0;
+        let price_to_y = |p: f64| 400.0 - p as f32 * 10.0;
+        drawing.update_screen_coords(bar_to_x, price_to_y);
+        let view = ChartView {
+            instrument: None,
+            bars: &bars,
+            revision: 0,
+            bar_to_x: &bar_to_x,
+            price_to_y: &price_to_y,
+            y_to_price: &|y| f64::from((400.0 - y) / 10.0),
+            time_axis: true,
+            executions: None,
+        };
+        let shapes = |drawing: &Drawing| {
+            let ctx = egui::Context::default();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                drawing.render(
+                    ui.painter(),
+                    Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(600.0, 500.0)),
+                    &view,
+                );
+            });
+            output.textures_delta.clear();
+            output
+                .shapes
+                .into_iter()
+                .map(|s| s.shape)
+                .collect::<Vec<_>>()
+        };
+        let columns: Vec<_> = shapes(&drawing)
+            .into_iter()
+            .filter_map(|s| match s {
+                Shape::Rect(r) => Some(r.rect),
+                _ => None,
+            })
             .collect();
-        assert_eq!(
-            ohlc,
-            [
-                (13.0, 15.0, 12.0, 14.0),
-                (14.0, 14.5, 13.0, 13.0),
-                (13.5, 16.0, 13.0, 15.5)
-            ]
-        );
+        assert_eq!(columns.len(), 3);
+        for (i, (column, bar)) in columns.iter().zip(&bars[1..=3]).enumerate() {
+            assert!((column.center().x - bar_to_x(8.0 + i as f32)).abs() <= 1.0);
+            assert!((column.top() - price_to_y(bar.high)).abs() <= 1.0);
+            assert!((column.bottom() - price_to_y(bar.low)).abs() <= 1.0);
+        }
+        let mut config = drawing.bars_pattern_config();
+        config.mode = crate::drawings::BarsPatternMode::LineClose;
+        drawing.bars_pattern = Some(config);
+        let lines: Vec<_> = shapes(&drawing)
+            .into_iter()
+            .filter(|s| matches!(s, Shape::Path(_) | Shape::LineSegment { .. }))
+            .collect();
+        assert_eq!(lines.len(), 1);
     }
 }

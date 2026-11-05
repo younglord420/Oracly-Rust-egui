@@ -299,6 +299,8 @@ impl DrawingPropertiesDialog {
                 drawing.price_action = old.price_action;
                 drawing.geometry = old.geometry;
                 drawing.ghost_feed = old.ghost_feed;
+                drawing.forecast = old.forecast;
+                drawing.bars_pattern = old.bars_pattern;
                 drawing.position_size = old.position_size;
                 drawing.position_sizing = old.position_sizing;
                 drawing.position_display = old.position_display;
@@ -375,12 +377,12 @@ impl DrawingPropertiesDialog {
         d.color = self.props.color.to_srgba_unmultiplied();
         d.stroke_width = self.props.line_width;
         d.line_style = self.props.line_style;
-        d.fill_color = self.props.fill_enabled.then(|| {
+        let fill = self.props.fill_enabled.then(|| {
             self.props
                 .fill_color
                 .unwrap_or(self.props.color.gamma_multiply(0.2))
-                .to_srgba_unmultiplied()
         });
+        d.set_painted_fill(fill);
         d.extend_left = self.props.extend_left;
         d.extend_right = self.props.extend_right;
         d.text = (!self.props.label.is_empty()).then(|| self.props.label.clone());
@@ -403,8 +405,8 @@ impl DrawingPropertiesDialog {
         self.props.color = d.color32();
         self.props.line_width = d.stroke_width;
         self.props.line_style = d.line_style;
-        self.props.fill_color = d.fill_color32();
-        self.props.fill_enabled = d.fill_color.is_some();
+        self.props.fill_color = d.painted_fill();
+        self.props.fill_enabled = d.painted_fill().is_some();
         self.props.extend_left = d.extend_left;
         self.props.extend_right = d.extend_right;
         self.props.label = d.text.clone().unwrap_or_default();

@@ -60,6 +60,16 @@ impl Drawing {
 
         let up = change >= 0.0;
         let gap = DESIGN_TOKENS.spacing.md;
+        let config = self.forecast.unwrap_or_default();
+        let rgba = |c: [u8; 4]| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
+        let card = |set: Option<[u8; 4]>| {
+            set.map_or((chart.axis_text, chart.bg_axis), |c| {
+                let bg = rgba(c);
+                (self.label_text_on(bg), bg)
+            })
+        };
+        let (source_text, source_bg) = card(config.source_color);
+        let (target_text, target_bg) = card(config.target_color);
         self.label_box(
             painter,
             if up {
@@ -69,18 +79,24 @@ impl Drawing {
             },
             start + egui::vec2(0.0, if up { gap } else { -gap }),
             anchor_label(from),
-            chart.axis_text,
-            chart.bg_axis,
+            source_text,
+            source_bg,
         );
         let outcome = forecast_outcome(view.bars, from, to).map(|success| {
             if success {
-                ("SUCCESS", chart.candle_up)
+                (
+                    "SUCCESS",
+                    config.success_color.map_or(chart.candle_up, rgba),
+                )
             } else {
-                ("FAILED", chart.candle_down)
+                (
+                    "FAILED",
+                    config.failure_color.map_or(chart.candle_down, rgba),
+                )
             }
         });
-        let badge = |align, pos, status: &str, color| {
-            self.label_box(painter, align, pos, status.to_owned(), color, chart.bg_axis)
+        let badge = |align, pos, status: &str, bg: egui::Color32| {
+            self.label_box_on(painter, align, pos, status.to_owned(), bg.to_opaque())
         };
         let mut target_pos = end + egui::vec2(0.0, if up { -gap } else { gap });
         if up && let Some((status, color)) = outcome {
@@ -96,8 +112,8 @@ impl Drawing {
             },
             target_pos,
             target,
-            chart.axis_text,
-            chart.bg_axis,
+            target_text,
+            target_bg,
         );
         if !up && let Some((status, color)) = outcome {
             badge(

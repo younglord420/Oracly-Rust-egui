@@ -197,7 +197,7 @@ impl Chart {
     /// The view of a primitive drawn in the main pane, from the main pane's mapping. `None`
     /// when its series is hidden or a study in a pane of its own.
     fn main_view(&self, series: SeriesId, coords: &ChartMapping) -> Option<PrimitiveView<'_>> {
-        if self.in_pane(series) {
+        if self.series_pane(series) != Some(crate::widget::PaneId::MAIN) {
             return None;
         }
         let mapping = if series == SeriesId::MAIN {
@@ -269,6 +269,16 @@ impl Chart {
         let mut prices = Vec::new();
         if self.main_series_visible {
             prices.extend(self.primitive_prices(SeriesId::MAIN));
+        }
+        if !self.config.scale_price_chart_only {
+            for item in &self.price_series {
+                if item.visible
+                    && item.options.scale == self.main_series_scale
+                    && self.series_pane(item.id) == Some(crate::widget::PaneId::MAIN)
+                {
+                    prices.extend(self.primitive_prices(item.id));
+                }
+            }
         }
         for (idx, id) in self.study_ids.iter().enumerate() {
             if studies.get(idx).is_some_and(|study| {
@@ -368,6 +378,7 @@ mod tests {
     fn hooks_follow_attachment_bar_changes_and_removal() {
         let ctx = egui::Context::default();
         let mut chart = chart(&[10.0], &[20.0]);
+        crate::widget::test_frames::instant(&mut chart);
         let bars = chart.bars(SeriesId::MAIN).to_vec();
         let line = chart.add_series(SeriesOptions::default());
         chart.set_data(line, bars[..50].to_vec());
@@ -452,6 +463,7 @@ mod tests {
     fn passes_layer_around_series_and_studies_and_widen_the_scale() {
         let ctx = egui::Context::default();
         let mut chart = chart(&[10.0], &[20.0]);
+        crate::widget::test_frames::instant(&mut chart);
         let study = Color32::from_rgb(10, 11, 12);
         let study_id = chart.add_indicator(Box::new(
             CustomIndicator::new("Mid", |bars| {
@@ -519,6 +531,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let mut chart = chart(&[10.0], &[20.0]);
+        crate::widget::test_frames::instant(&mut chart);
         let color = Color32::from_rgb(10, 11, 12);
         let id = chart.add_series(SeriesOptions {
             chart_type: ChartType::Candles,
@@ -533,7 +546,11 @@ mod tests {
             assert!(chart.move_series_to_pane(id, destination));
             let painted = shapes(&ctx, &mut chart, 0.0, vec![]);
             let map = chart.series_price_map(id).unwrap();
-            assert!(map.range().contains(map.transform().to_scale(500.0)));
+            assert!(
+                map.range().contains(map.transform().to_scale(500.0)),
+                "{destination:?}: {:?}",
+                map.range()
+            );
             if destination != PaneId::MAIN {
                 assert!(chart.last_price_map.range().max < 100.0);
             }

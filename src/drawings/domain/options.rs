@@ -1279,6 +1279,20 @@ impl Default for VwapConfig {
     }
 }
 
+/// Card colours of a forecast; each `None` uses the chart's colour for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForecastConfig {
+    /// Background of the source card.
+    pub source_color: Option<[u8; 4]>,
+    /// Background of the target card.
+    pub target_color: Option<[u8; 4]>,
+    /// Background of the badge once the price reaches the target.
+    pub success_color: Option<[u8; 4]>,
+    /// Background of the badge once the target bar passes without it.
+    pub failure_color: Option<[u8; 4]>,
+}
+
 /// Which readouts the measure and range tools show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

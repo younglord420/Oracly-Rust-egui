@@ -91,6 +91,9 @@ impl Chart {
     }
 
     pub(super) fn replace_main_data(&mut self, bars: Vec<Bar>) {
+        if std::mem::take(&mut self.reset_price_scale_on_data) {
+            self.state.price_scale_mut().reset();
+        }
         let (mut bars, rejected) = clean(bars, &self.clock());
         retain_bars(&mut bars, self.bar_limit(SeriesId::MAIN));
         self.feed.rejected_bars += rejected;
@@ -1079,6 +1082,7 @@ mod tests {
             ] {
                 let ctx = egui::Context::default();
                 let mut chart = chart(&[100.0], &[110.0]);
+                crate::widget::test_frames::instant(&mut chart);
                 chart.config_mut().right_axis_scale_mode = mode;
                 frame(&ctx, &mut chart, 0.0, Vec::new());
                 chart.set_visible_bars(20);
@@ -1174,6 +1178,7 @@ mod tests {
                     #[cfg(feature = "ui")]
                     {
                         let mut menu = crate::ui::top_toolbar::SettingsMenu::new();
+                        menu.sync_from_config(chart.config());
                         menu.settings.scale_price_chart_only = true;
                         chart.update_config(menu.apply_to_config(chart.config().clone()));
                     }
@@ -1812,6 +1817,7 @@ mod tests {
         for theme in [crate::theme::Theme::light(), crate::theme::Theme::dark()] {
             let ctx = egui::Context::default();
             let mut chart = chart(&[100.0], &[110.0]);
+            crate::widget::test_frames::instant(&mut chart);
             chart.set_theme_override(Some(theme.clone()));
             chart.config.show_volume = false;
             chart.set_visible_bars(20);

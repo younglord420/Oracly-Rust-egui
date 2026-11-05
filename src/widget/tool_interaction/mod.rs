@@ -281,6 +281,10 @@ impl Chart {
             );
         }
 
+        if drawing_manager.drawings.len() > count_before {
+            drawing_manager.capture_bars_patterns(self.state.shown());
+        }
+
         let edit_id = if drawing_manager.text_editor.is_some() {
             None
         } else if drawing_manager.drawings.len() > count_before
@@ -346,7 +350,11 @@ impl Chart {
             .drawings
             .iter()
             .chain(drawing_manager.curr_drawing.iter())
-            .filter(|drawing| drawing.visible && drawing_manager.owns_pane(drawing))
+            .filter(|drawing| {
+                drawing.visible
+                    && drawing.is_visible_on_timeframe(&drawing_manager.curr_timeframe)
+                    && drawing_manager.owns_pane(drawing)
+            })
         {
             if !matches!(
                 drawing.tool_type,

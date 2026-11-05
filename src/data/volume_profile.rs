@@ -128,6 +128,20 @@ impl TryFrom<VolumeProfileFields> for VolumeProfileConfig {
 }
 
 impl VolumeProfileConfig {
+    /// Settings a volume profile drawing starts with: up and down volume in the bullish and
+    /// bearish colours, stronger inside the value area.
+    pub fn drawing_default() -> Self {
+        let tint = |c: egui::Color32, a: u8| [c.r(), c.g(), c.b(), a];
+        let tokens = &crate::tokens::DESIGN_TOKENS.semantic.extended;
+        Self {
+            display: ProfileDisplay::UpDown,
+            up_color: tint(tokens.bullish, 0x66),
+            down_color: tint(tokens.bearish, 0x66),
+            value_area_colors: Some([tint(tokens.bullish, 0xBF), tint(tokens.bearish, 0xBF)]),
+            ..Self::default()
+        }
+    }
+
     /// Price rows a profile may have.
     pub const ROWS: RangeInclusive<usize> = 1..=1000;
 

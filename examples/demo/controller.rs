@@ -1085,7 +1085,7 @@ impl DemoApp {
                     };
                     // An unfilled tool offers its line colour at 20% as the fill to start from.
                     let fill = d.tool_type.supports_fill().then(|| {
-                        d.fill_color32().unwrap_or_else(|| {
+                        d.painted_fill().unwrap_or_else(|| {
                             let [r, g, b, _] = d.color;
                             egui::Color32::from_rgba_unmultiplied(r, g, b, 51)
                         })
@@ -1710,6 +1710,9 @@ impl DemoApp {
         self.top_toolbar.state.can_redo = self.chart.can_redo();
         let mut brand_menu_action: Option<TopToolbarAction> = None;
         let mut open_shortcuts = false;
+        let mut compact_panel = None;
+        let mut compact_widget = None;
+        let compact = ui.ctx().input(|i| i.viewport_rect().width() < 600.0);
         // Same panel fill as left/right rails — separated from the workspace by a 1px hairline rule.
         egui::Panel::top("toolbar")
             .exact_size(self.top_toolbar.config.height)
@@ -1774,6 +1777,37 @@ impl DemoApp {
                                 ui.separator();
                                 use egui_charts::icons::icons as ic;
                                 use egui_charts::ui_kit::list_item::ListItem;
+                                if compact {
+                                    for (label, panel, icon) in [
+                                        ("Object Tree", SidePanel::ObjectTree, &ic::OBJECT_TREE),
+                                        ("Alerts", SidePanel::Alerts, &ic::ALERTS),
+                                        ("Data Window", SidePanel::DataWindow, &ic::TABLE),
+                                        ("Watchlist", SidePanel::Watchlist, &ic::WATCHLIST),
+                                    ] {
+                                        if ListItem::new()
+                                            .show_with_icon(ui, label, icon)
+                                            .clicked()
+                                        {
+                                            compact_panel = Some(panel);
+                                            ui.close();
+                                        }
+                                    }
+                                    if ListItem::new()
+                                        .show_with_icon(ui, "Time and sales", &ic::TIME_AND_SALES)
+                                        .clicked()
+                                    {
+                                        compact_panel = Some(SidePanel::TimeAndSales);
+                                        ui.close();
+                                    }
+                                    if ListItem::new()
+                                        .show_with_icon(ui, "Session notes", &ic::TEXT)
+                                        .clicked()
+                                    {
+                                        compact_widget = Some(2);
+                                        ui.close();
+                                    }
+                                    ui.separator();
+                                }
                                 if ListItem::new()
                                     .show_with_icon(ui, "Quick Search", &ic::COMMAND_SEARCH)
                                     .clicked()
@@ -1796,7 +1830,7 @@ impl DemoApp {
                                     ui.close();
                                 }
                                 if ListItem::new()
-                                    .show_with_icon(ui, "Keyboard Shortcuts", &ic::KEYBOARD)
+                                    .show_with_icon(ui, "Keyboard shortcuts", &ic::KEYBOARD)
                                     .clicked()
                                 {
                                     open_shortcuts = true;
@@ -1815,6 +1849,14 @@ impl DemoApp {
                     egui::Stroke::new(egui_charts::tokens::DESIGN_TOKENS.stroke.hairline, border),
                 );
                 self.handle_top_toolbar(ui.ctx(), brand_menu_action.unwrap_or(action));
+                if let Some(panel) = compact_panel {
+                    self.open_panel = Some(panel);
+                    self.widget_bar.active_widget = None;
+                }
+                if let Some(id) = compact_widget {
+                    self.open_panel = None;
+                    self.widget_bar.active_widget = Some(id);
+                }
                 if open_shortcuts {
                     self.keyboard_shortcuts.toggle();
                 }
@@ -3885,12 +3927,13 @@ mod tests {
         }
         app.handle_top_toolbar(&ctx, TopToolbarAction::Host("research".into()));
         let message = &app.toasts.toasts().last().unwrap().message;
+        let clicked_price = app.last_chart_click.as_ref().unwrap().price;
         assert!(
             message.contains(&time.to_rfc3339()),
             "{message}, expected {time}"
         );
         assert!(
-            message.contains(&format!("price: {:.4}", map.y_to_price(pos.y))),
+            message.contains(&format!("price: {clicked_price:.4}")),
             "{message}"
         );
         app.replay_selecting = true;
@@ -3916,9 +3959,10 @@ mod tests {
         assert_eq!(app.last_chart_click.as_ref().unwrap().time, time);
         app.handle_top_toolbar(&ctx, TopToolbarAction::Host("research".into()));
         let message = &app.toasts.toasts().last().unwrap().message;
+        let clicked_price = app.last_chart_click.as_ref().unwrap().price;
         assert!(message.contains(&time.to_rfc3339()), "{message}");
         assert!(
-            message.contains(&format!("price: {:.4}", map.y_to_price(pos.y))),
+            message.contains(&format!("price: {clicked_price:.4}")),
             "{message}"
         );
         app.switch_symbol("AAPL");
@@ -6011,13 +6055,13 @@ mod tests {
             (Tool::InsidePitchfork, "Pitchfork levels"),
             (Tool::Pitchfan, "Fan levels"),
             (Tool::GannBox, "Price divisions"),
-            (Tool::GannSquare, "Price divisions"),
+            (Tool::GannSquare, "Grid"),
             (Tool::GannFixed, "Price divisions"),
-            (Tool::LongPos, "Size by"),
-            (Tool::ShortPos, "Size by"),
+            (Tool::LongPos, "Account size"),
+            (Tool::ShortPos, "Account size"),
             (Tool::FixedRangeVolumeProfile, "Rows"),
             (Tool::AnchoredVolumeProfile, "Rows"),
-            (Tool::RegressionTrend, "Deviations"),
+            (Tool::RegressionTrend, "Source"),
         ] {
             app.chart.drawings_mut().drawings.clear();
             let mut drawing = Drawing::new(7, tool);
@@ -6375,6 +6419,7 @@ mod tests {
                 .push(egui_charts::drawings::ChartPoint::new(5.0, 75.0));
             app.chart.drawings_mut().drawings.push(peer);
             app.chart.drawings_mut().select_drawings([7, 8]);
+            let original_fib = app.chart.drawings().drawings[0].fib_config.clone();
             let mut props =
                 DrawingProps::from_drawing(&app.chart.drawings().drawings[0], &app.chart);
             let settings = &mut props.tool_settings.as_mut().unwrap().settings;
@@ -6424,7 +6469,11 @@ mod tests {
             assert!(app.chart.drawings().drawings[1].fib_config.is_none());
             assert_eq!(app.chart.drawings().drawings[1].chart_points[0].price, 75.0);
             assert!(app.chart.undo());
-            assert!(app.chart.drawings().drawings[0].fib_config.is_none());
+            assert_eq!(
+                app.chart.drawings().drawings[0].fib_config,
+                original_fib,
+                "undo restores the tool's initial settings"
+            );
             assert!(app.chart.redo());
             app.chart
                 .drawings_mut()
@@ -6433,6 +6482,10 @@ mod tests {
             props.apply_to_chart(DrawingId(7), &mut app.chart).unwrap();
             assert_eq!(app.chart.drawings().drawings[0].font_size, 12.0);
             assert_eq!(app.chart.drawings().drawings[1].font_size, 18.0);
+            let widths = [
+                app.chart.drawings().drawings[0].stroke_width,
+                app.chart.drawings().drawings[1].stroke_width,
+            ];
             // A malformed ratio cannot partially change common style or another selected tool.
             props
                 .tool_settings
@@ -6446,8 +6499,8 @@ mod tests {
                 .value = f32::NAN;
             props.line_width = 9.0;
             assert!(props.apply_to_chart(DrawingId(7), &mut app.chart).is_err());
-            assert_eq!(app.chart.drawings().drawings[0].stroke_width, 2.0);
-            assert_eq!(app.chart.drawings().drawings[1].stroke_width, 2.0);
+            assert_eq!(app.chart.drawings().drawings[0].stroke_width, widths[0]);
+            assert_eq!(app.chart.drawings().drawings[1].stroke_width, widths[1]);
         }
     }
 

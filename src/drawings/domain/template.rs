@@ -46,6 +46,10 @@ impl DrawingTemplate {
         {
             return Err("Invalid drawing template dimensions");
         }
+        let copied = drawing
+            .bars_pattern
+            .as_ref()
+            .map(|config| (config.bars.clone(), config.origin));
         *drawing = crate::drawings::Drawing {
             id: drawing.id,
             stored_id: drawing.stored_id.clone(),
@@ -66,6 +70,10 @@ impl DrawingTemplate {
             z_order: drawing.z_order,
             ..self.settings.clone()
         };
+        // A template carries a Bars Pattern's settings, never another pattern's bars.
+        if let Some(config) = &mut drawing.bars_pattern {
+            (config.bars, config.origin) = copied.unwrap_or_default();
+        }
         Ok(())
     }
 }

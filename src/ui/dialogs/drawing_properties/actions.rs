@@ -95,8 +95,8 @@ impl DrawingProps {
             color: drawing.color32(),
             line_width: drawing.stroke_width,
             line_style: drawing.line_style,
-            fill_color: drawing.fill_color32(),
-            fill_enabled: drawing.fill_color.is_some(),
+            fill_color: drawing.painted_fill(),
+            fill_enabled: drawing.painted_fill().is_some(),
             extend_left: drawing.extend_left,
             extend_right: drawing.extend_right,
             font_size: drawing.font_size,
@@ -207,8 +207,8 @@ impl DrawingProps {
             let fill = self
                 .fill_enabled
                 .then(|| self.fill_color.unwrap_or(self.color.gamma_multiply(0.2)));
-            if drawing.fill_color32() != fill {
-                drawing.fill_color = fill.map(|color| color.to_srgba_unmultiplied());
+            if drawing.painted_fill() != fill {
+                drawing.set_painted_fill(fill);
             }
             drawing.font_size = self.font_size;
             drawing.timeframe_visibility = TimeframeVisibility {
@@ -235,6 +235,13 @@ impl DrawingProps {
                 drawing.price_action = settings.price_action;
                 drawing.geometry = settings.geometry.clone();
                 drawing.ghost_feed = settings.ghost_feed;
+                drawing.forecast = settings.forecast;
+                if let Some(set) = &settings.bars_pattern {
+                    let config = drawing.bars_pattern.get_or_insert_with(Default::default);
+                    config.mode = set.mode;
+                    config.mirrored = set.mirrored;
+                    config.flipped = set.flipped;
+                }
                 drawing.position_size = settings.position_size;
                 drawing.position_sizing = settings.position_sizing;
                 drawing.position_display = settings.position_display;

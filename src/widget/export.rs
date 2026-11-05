@@ -350,8 +350,10 @@ impl Chart {
             .unwrap_or_else(|| ctx.active_theme());
         if options.transparent_background {
             theme.chart.bg = egui::Color32::TRANSPARENT;
+            chart.config.background_color = egui::Color32::TRANSPARENT;
         }
         chart.theme_override = Some(theme.clone());
+        chart.inherited_theme = Some(theme.clone());
         if let Some((time, price)) = self.last_crosshair.filter(|_| options.include_crosshair) {
             match price {
                 Some(price) => chart.set_crosshair_position(Some((time, price))),
@@ -1111,7 +1113,10 @@ mod tests {
             transparent_background: true,
             ..base.clone()
         });
-        assert!(!transparent.contains(&bg), "background was retained");
+        assert!(
+            opaque.matches(&bg).count() > transparent.matches(&bg).count(),
+            "background was retained"
+        );
         let callback = |ui: &mut egui::Ui, _: &mut Chart| {
             ui.painter().add(egui::PaintCallback {
                 rect: ui.max_rect(),

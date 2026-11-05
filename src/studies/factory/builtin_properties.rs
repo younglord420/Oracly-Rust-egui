@@ -768,7 +768,7 @@ fn degenerate_lengths_and_hostile_bars_are_survivable() {
                          at bar {i}: {:?} against {:?}",
                         study.name(),
                         hostile.get(i),
-                        clean[i - 1]
+                        clean.get(i - 1)
                     ));
                 } else if skipped.is_none() && seen.is_some() && !hostile.get(at).is_some_and(blank)
                 {

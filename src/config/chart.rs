@@ -578,8 +578,9 @@ mod tests {
 
     #[test]
     fn with_theme_recolours_session_breaks_and_watermark() {
-        let config = ChartConfig::default().with_theme(&Theme::light());
-        assert_eq!(config.session_break_color, Color32::from_rgb(209, 209, 209));
-        assert_eq!(config.watermark_color, Color32::from_rgb(209, 209, 209));
+        let theme = Theme::light();
+        let config = ChartConfig::default().with_theme(&theme);
+        assert_eq!(config.session_break_color, theme.chart.grid_line_major);
+        assert_eq!(config.watermark_color, theme.chart.grid_line);
     }
 }

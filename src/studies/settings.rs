@@ -960,14 +960,14 @@ mod tests {
         }
     }
 
-    /// Net Volume starts as a line; PPO and PVO keep columns for their differences.
+    /// Net Volume starts as columns; PPO and PVO keep columns for their differences.
     /// A saved plot type replaces each default.
     #[test]
     fn histogram_defaults_yield_to_a_saved_plot_type() {
         use super::super::{NetVolume, PercentageVolumeOscillator, PriceOscillator};
         let (line, columns) = (PlotType::Line, PlotType::Columns);
         let studies: [(Box<dyn Indicator>, &[PlotType]); 3] = [
-            (Box::new(NetVolume::default()), &[line]),
+            (Box::new(NetVolume::default()), &[columns]),
             (Box::new(PriceOscillator::default()), &[line, line, columns]),
             (
                 Box::new(PercentageVolumeOscillator::default()),

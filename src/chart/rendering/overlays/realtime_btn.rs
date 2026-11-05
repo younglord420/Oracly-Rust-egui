@@ -217,16 +217,24 @@ mod tests {
                     }],
                 );
             }
-            // A 400 ms linear animation from -20 to the configured live offset.
-            for (time, offset) in [(0.7, -20.0), (0.9, (-20.0 + live) / 2.0), (1.11, live)] {
+            // The configured exponential animation approaches the live offset without changing
+            // bar spacing, then snaps to it once it is visually indistinguishable.
+            let mut previous_distance = f32::INFINITY;
+            for time in [0.7, 0.9, 1.11] {
                 frame(&ctx, &mut chart, time, vec![]);
                 let (actual_spacing, actual_offset) = chart.get_time_scale_state();
+                let distance = (actual_offset - live).abs();
                 assert!(
-                    (actual_offset - offset).abs() < 1e-3,
-                    "{position:?}: {actual_offset} != {offset}"
+                    distance < previous_distance,
+                    "{position:?}: {actual_offset} did not approach {live}"
                 );
+                previous_distance = distance;
                 assert_eq!(actual_spacing, spacing);
             }
+            assert!(
+                previous_distance < 1.0,
+                "{position:?}: animation did not settle"
+            );
             assert!(
                 button(
                     shapes(&ctx, &mut chart, 1.2, vec![Event::PointerGone]),

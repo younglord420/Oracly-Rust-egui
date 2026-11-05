@@ -241,9 +241,9 @@ impl StyleTab {
                 egui::RichText::new(l10n::text(ui.ctx(), "Enable fill")).size(theme.text.body),
             );
             if props.fill_enabled {
-                let mut fill = props
+                let mut fill = *props
                     .fill_color
-                    .unwrap_or(theme.ui.accent.gamma_multiply(0.2));
+                    .get_or_insert(props.color.gamma_multiply(0.2));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing.sm;
                     let mut pct = f32::from(fill.a()) * 100.0 / 255.0;

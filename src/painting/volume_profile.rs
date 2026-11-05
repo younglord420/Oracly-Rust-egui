@@ -99,7 +99,7 @@ pub(crate) fn paint_profile(
             );
         };
         let rgba = |c: [u8; 4]| {
-            let alpha = if drawing && !in_value_area {
+            let alpha = if drawing && !in_value_area && config.value_area_colors.is_none() {
                 c[3] / 2
             } else {
                 c[3]

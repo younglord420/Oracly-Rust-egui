@@ -118,10 +118,9 @@ impl DrawingManager {
     pub fn painted_bounds(&self, id: usize) -> Option<egui::Rect> {
         let painted = self.painted.lock().unwrap_or_else(|e| e.into_inner());
         let paint = painted.iter().find(|p| p.id == id)?;
-        let bounds = paint
-            .shapes
-            .iter()
-            .fold(egui::Rect::NOTHING, |b, s| b.union(s.shape.visual_bounding_rect().intersect(s.clip_rect)));
+        let bounds = paint.shapes.iter().fold(egui::Rect::NOTHING, |b, s| {
+            b.union(s.shape.visual_bounding_rect().intersect(s.clip_rect))
+        });
         bounds.is_positive().then_some(bounds)
     }
 

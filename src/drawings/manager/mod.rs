@@ -555,6 +555,19 @@ impl DrawingManager {
         )
     }
 
+    /// Copies the bars of each newly placed Bars Pattern, so moving it keeps their shape, and
+    /// queues it to be saved with them.
+    pub(crate) fn capture_bars_patterns(&mut self, bars: &[crate::model::Bar]) {
+        let captured: Vec<usize> = self
+            .drawings
+            .iter_mut()
+            .filter_map(|d| d.capture_bars_pattern(bars).then_some(d.id))
+            .collect();
+        for id in captured {
+            self.queue_update(id);
+        }
+    }
+
     fn queue_edit(&self, old: &Drawing) {
         if let Some(drawing) = self.drawings.iter().find(|d| d.id == old.id) {
             self.queue(match (old.saveable, drawing.saveable) {

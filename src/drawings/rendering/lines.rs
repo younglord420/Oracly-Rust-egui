@@ -176,7 +176,9 @@ impl Drawing {
             g.get(painter.layer_id())
                 .map_or(0, |list| list.next_idx().0)
         });
-        painter.line_segment([start, end], stroke);
+        if let Some((start, end)) = self.trend_line_ends(rect) {
+            painter.line_segment([start, end], stroke);
+        }
 
         // Screen y grows downward, so a rising line has a positive angle.
         let angle = (start.y - end.y).atan2(end.x - start.x);
@@ -465,20 +467,25 @@ impl Drawing {
     }
 
     /// Render arrow - line with arrowhead
-    pub(crate) fn render_arrow(&self, painter: &egui::Painter, color: Color32, stroke: Stroke) {
+    pub(crate) fn render_arrow(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        color: Color32,
+        stroke: Stroke,
+    ) {
         if self.points.len() >= 2 {
-            let start = self.points[0];
-            let end = self.points[1];
-
-            painter.line_segment([start, end], stroke);
+            if let Some((start, end)) = self.trend_line_ends(rect) {
+                painter.line_segment([start, end], stroke);
+            }
         } else if self.points.len() == 1 {
             placed_anchor(painter, self.points[0], color);
         }
     }
 
     /// Arrow marker from its tail anchor to its head anchor
-    pub(crate) fn render_arrow_marker(&self, painter: &egui::Painter, color: Color32) {
-        self.render_arrow(painter, color, Stroke::new(self.stroke_width, color));
+    pub(crate) fn render_arrow_marker(&self, painter: &egui::Painter, rect: Rect, color: Color32) {
+        self.render_arrow(painter, rect, color, Stroke::new(self.stroke_width, color));
     }
 
     /// Render arrow mark up - upward pointing bullish arrow

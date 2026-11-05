@@ -727,6 +727,7 @@ mod tests {
                         chart.set_symbol(symbol);
                     }
                     let mut options = chart.chart_options().clone();
+                    options.tooltip.enabled = true;
                     options.tooltip.mode = mode;
                     if mode == TooltipMode::Tracking {
                         // The volume study's rows would keep the tracking text from being empty.

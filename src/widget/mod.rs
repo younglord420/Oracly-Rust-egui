@@ -204,6 +204,8 @@ pub struct Chart {
     /// Visual configuration controlling colors, padding, grid visibility, and more.
     pub(crate) config: ChartConfig,
     applied_config_scale_mode: crate::scales::PriceScaleMode,
+    /// The first main-series data supplied after a symbol change starts a fresh auto-scale fit.
+    reset_price_scale_on_data: bool,
     /// Whether the main price series and its volume are drawn.
     pub(crate) main_series_visible: bool,
     main_series_present: bool,
@@ -1080,6 +1082,16 @@ pub(crate) mod test_frames {
             })
             .collect();
         Chart::new(BarData::from_bars(bars))
+    }
+
+    /// Makes frames deterministic for tests that assert a fitted or navigated state immediately.
+    pub(crate) fn instant(chart: &mut Chart) {
+        let animations = &mut chart.chart_options.animations;
+        animations.zoom_ms = None;
+        animations.autoscale_ms = None;
+        animations.scroll_ms = None;
+        animations.price_zoom_ms = None;
+        animations.crosshair_ms = None;
     }
 
     /// Runs one frame at `time` seconds with `events` and returns the shapes it painted.

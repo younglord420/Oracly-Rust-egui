@@ -824,7 +824,7 @@ mod tests {
                         remaining = ui.available_rect_before_wrap();
                         assert_eq!(
                             before.right() - remaining.right(),
-                            if width < 600.0 { 0.0 } else { 49.0 }
+                            if width < 600.0 { 0.0 } else { 48.0 }
                         );
                     },
                 )
@@ -899,11 +899,13 @@ mod tests {
                     let rect = labels
                         .iter()
                         .find(|(text, _)| text == label)
-                        .unwrap_or_else(|| panic!("missing menu entry: {label}"))
+                        .unwrap_or_else(|| {
+                            panic!("missing menu entry at {width}px: {label}; got {labels:?}")
+                        })
                         .1;
                     click(&mut app, rect.center());
                     if let Some(panel) = panel {
-                        assert!(app.open_panel == Some(panel));
+                        assert!(app.open_panel == Some(panel), "{label}");
                         assert_eq!(app.widget_bar.active_widget, None);
                     } else if label == "Session notes" {
                         assert!(app.open_panel.is_none());

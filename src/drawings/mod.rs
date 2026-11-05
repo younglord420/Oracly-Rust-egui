@@ -36,14 +36,15 @@ pub(crate) mod validation;
 // Re-export domain types at module root for convenience
 pub use domain::{
     ArrowStyle, ChartPoint, Drawing, DrawingInteractionMode, DrawingOptions, DrawingTemplate,
-    DrawingToolType, FibPreset, FibonacciConfig, FibonacciLevel, FontWeight, GannConfig,
-    GannFanDirection, GannLevel, GhostCandle, GhostFeedConfig, HandlePos, HarmonicRule,
+    DrawingToolType, FibPreset, FibonacciConfig, FibonacciLevel, FontWeight, ForecastConfig,
+    GannConfig, GannFanDirection, GannLevel, GhostCandle, GhostFeedConfig, HandlePos, HarmonicRule,
     MeasureConfig, ParseToolTypeError, PatternConfig, PitchforkConfig, PitchforkLevel,
     PositionDisplay, PositionSize, PositionSizing, RatioBand, RegressionSource,
     RegressionTrendConfig, TextHorizontalAlign, TextVerticalAlign, TimeframeVisibility, VwapConfig,
     Wave, WaveDegree, WaveLabel, gann_fan_label, gann_square_fan_label, harmonic_rules,
     parse_gann_ratio,
 };
+pub use domain::{BarsPatternConfig, BarsPatternMode, MAX_PATTERN_BARS};
 pub use domain::{
     BlockState, DEDEKIND_CURVATURES, DedekindGeodesic, GapState, GeometryConfig, LiquidityState,
     MachCircle, MachFigure, PriceActionConfig, ZoneEnd, ZoneFormation, block_state,

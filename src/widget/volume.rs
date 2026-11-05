@@ -237,6 +237,7 @@ mod tests {
     fn volume_switch_and_pane_keep_volume_off_the_price_scale() {
         let ctx = Context::default();
         let mut chart = chart(&[100.0], &[110.0]);
+        crate::widget::test_frames::instant(&mut chart);
         let mut bars = chart.bars(crate::widget::SeriesId::MAIN).to_vec();
         for bar in &mut bars {
             bar.volume = 1_000_000.0;

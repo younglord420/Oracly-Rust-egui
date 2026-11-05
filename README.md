@@ -1,6 +1,7 @@
 # Oracly Chart
 
-Interactive financial charts for [egui](https://github.com/emilk/egui): historical and streaming bars, studies, drawing tools, and order flow.
+Interactive financial charts for [egui](https://github.com/emilk/egui), with 201 indicators.
+It also provides 111 drawing tools and supports 21 chart types plus order flow.
 
 | | |
 |---|---|

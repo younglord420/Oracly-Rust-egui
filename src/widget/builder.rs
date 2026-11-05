@@ -87,6 +87,7 @@ impl Chart {
             replay: None,
             config: ChartConfig::default(),
             applied_config_scale_mode: Default::default(),
+            reset_price_scale_on_data: false,
             start_idx: 0,
             chart_options,
             keyboard: super::keyboard::KeyboardState::default(),

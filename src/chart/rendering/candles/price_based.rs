@@ -490,6 +490,9 @@ mod tests {
             });
             chart.set_chart_type(kind);
             chart.set_visible_bars(300);
+            let mut options = chart.chart_options().clone();
+            options.animations.autoscale_ms = None;
+            chart.set_chart_options(options);
             let marker = Marker::new(source[16].time)
                 .with_pos(MarkerPos::InBar)
                 .with_text("element marker");

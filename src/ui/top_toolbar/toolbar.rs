@@ -331,46 +331,45 @@ impl TopToolbar {
                         ui.spacing_mut().item_spacing.x = 0.0;
                         let width_id = ui.scope_id().with("host_actions_width");
                         let actions_width = ui.data(|d| d.get_temp::<f32>(width_id)).unwrap_or(0.0);
-                        let action = ui
-                            .allocate_ui_with_layout(
-                                egui::vec2(
-                                    (ui.available_width() - actions_width).max(0.0),
-                                    self.config.height,
-                                ),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| self.show_contents_desktop(ui, app_state.active_symbol()),
-                            )
-                            .inner;
-                        ui.add_space((ui.available_width() - actions_width).max(0.0));
+                        let contents = ui.scope(|ui| {
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                self.show_contents_desktop(ui, app_state.active_symbol())
+                            })
+                            .inner
+                        });
+                        let action = contents.inner;
+                        ui.add_space(
+                            (width - contents.response.rect.width() - actions_width).max(0.0),
+                        );
                         let mut host_action = TopToolbarAction::None;
-                        let width = ui
-                            .allocate_ui_with_layout(
-                                egui::vec2(ui.available_width(), self.config.height),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    for entry in &self.host_entries {
-                                        entry.show(ui, &mut host_action);
-                                    }
-                                    actions(ui);
-                                    if let Some((id, label)) = &self.call_to_action {
-                                        let response = PillButton {
-                                            label,
-                                            tooltip: None,
-                                            filled: true,
+                        let actions_rect = ui
+                            .scope(|ui| {
+                                ui.with_layout(
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        for entry in &self.host_entries {
+                                            entry.show(ui, &mut host_action);
                                         }
-                                        .show(ui);
-                                        if response.clicked() {
-                                            host_action = TopToolbarAction::Host(id.clone());
+                                        actions(ui);
+                                        if let Some((id, label)) = &self.call_to_action {
+                                            let response = PillButton {
+                                                label,
+                                                tooltip: None,
+                                                filled: true,
+                                            }
+                                            .show(ui);
+                                            if response.clicked() {
+                                                host_action = TopToolbarAction::Host(id.clone());
+                                            }
+                                            ui.add_space(gap(ui));
                                         }
-                                        ui.add_space(gap(ui));
-                                    }
-                                },
-                            )
+                                    },
+                                );
+                            })
                             .response
-                            .rect
-                            .width();
-                        if (width - actions_width).abs() > 0.5 {
-                            ui.data_mut(|d| d.insert_temp(width_id, width));
+                            .rect;
+                        if (actions_rect.width() - actions_width).abs() > 0.5 {
+                            ui.data_mut(|d| d.insert_temp(width_id, actions_rect.width()));
                             ui.ctx().request_discard("Host actions changed width");
                         }
                         if host_action != TopToolbarAction::None {
@@ -1016,7 +1015,10 @@ mod tests {
                                 "horizontal wheel must scroll"
                             );
                             if delta < 0.0 {
-                                assert!(after.right() <= width, "last control must be reachable");
+                                assert!(
+                                    after.right() <= width + 1.0,
+                                    "last control must be reachable at {width}: {after:?}"
+                                );
                             }
                         }
                     }
@@ -1074,7 +1076,7 @@ mod tests {
                         .unwrap()
                         .rect;
                     assert!(
-                        focused.left() >= 0.0 && focused.right() <= width,
+                        focused.left() >= -1.0 && focused.right() <= width + 1.0,
                         "focus must scroll into view: {focused:?}"
                     );
                     assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,

@@ -284,6 +284,7 @@ impl Chart {
             link.instrument = None;
         }
         if symbol != self.symbol {
+            self.reset_price_scale_on_data = true;
             self.host_events
                 .push(super::ChartEvent::SymbolChanged(symbol.clone()));
             #[cfg(feature = "drawings")]

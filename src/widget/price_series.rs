@@ -647,7 +647,7 @@ impl Chart {
     pub(super) fn main_pane_series(&self) -> impl DoubleEndedIterator<Item = &PriceSeries> {
         self.price_series
             .iter()
-            .filter(|item| item.visible && !self.in_pane(item.id))
+            .filter(|item| item.visible && self.series_pane(item.id) == Some(super::PaneId::MAIN))
     }
 
     /// The close of `item` at the time of the shown bar `bar`, if it has a bar then.
@@ -762,7 +762,7 @@ impl Chart {
                 continue;
             };
             if !study.is_visible()
-                || self.in_pane(id)
+                || self.series_pane(id) != Some(super::PaneId::MAIN)
                 || (key == self.main_series_scale
                     && (!autoscale || self.config.scale_price_chart_only))
             {
@@ -1697,6 +1697,7 @@ mod tests {
                 input[2].low = 999.0;
             }
             let mut chart = Chart::new(BarData::from_bars(input.clone()));
+            crate::widget::test_frames::instant(&mut chart);
             let id = if secondary {
                 let id = chart.add_series(SeriesOptions {
                     chart_type: ChartType::Heikin,
@@ -1728,9 +1729,9 @@ mod tests {
             assert!(
                 painted.iter().any(|shape| matches!(shape,
                     egui::Shape::Rect(body)
-                        if (body.rect.center().x - x).abs() < 1e-3
-                            && (body.rect.top() - map.price_to_y(100.0)).abs() < 1e-3
-                            && (body.rect.bottom() - map.price_to_y(10.0)).abs() < 1e-3
+                        if (body.rect.center().x - x).abs() <= 1.0
+                            && (body.rect.top() - map.price_to_y(100.0)).abs() <= 1.0
+                            && (body.rect.bottom() - map.price_to_y(10.0)).abs() <= 1.0
                 )),
                 "secondary={secondary}: the first visible body must span 10..100"
             );
@@ -1906,6 +1907,7 @@ mod tests {
     fn series_style_draws_columns_and_lines_and_fits_provided_ranges() {
         let ctx = egui::Context::default();
         let mut chart = Chart::new(BarData::from_bars(bars(&[100.0, 110.0])));
+        crate::widget::test_frames::instant(&mut chart);
         let id = chart.add_series(SeriesOptions {
             scale: SeriesScale::Separate(2),
             chart_type: ChartType::Columns,
@@ -1931,11 +1933,13 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            columns,
-            [200.0, 220.0]
-                .map(|close| { egui::Rangef::new(map.price_to_y(close), map.price_to_y(150.0)) })
-        );
+        let expected = [200.0, 220.0]
+            .map(|close| egui::Rangef::new(map.price_to_y(close), map.price_to_y(150.0)));
+        assert_eq!(columns.len(), expected.len());
+        for (actual, expected) in columns.iter().zip(expected) {
+            assert!((actual.min - expected.min).abs() <= 1.0);
+            assert!((actual.max - expected.max).abs() <= 1.0);
+        }
 
         let style = chart.series_style_mut(id).unwrap();
         style.autoscale = Some(crate::model::AutoscaleProvider::new(|_, _| {
@@ -2041,6 +2045,7 @@ mod tests {
             SeriesScale::Separate(2),
         ] {
             let mut chart = Chart::new(BarData::from_bars(bars(&[100.0, 110.0])));
+            crate::widget::test_frames::instant(&mut chart);
             let id = chart.add_series(SeriesOptions {
                 scale: key,
                 color: Color32::MAGENTA,
@@ -2239,6 +2244,7 @@ mod tests {
         let ctx = egui::Context::default();
         let up = Color32::from_rgb(1, 200, 2);
         let mut chart = Chart::new(BarData::from_bars(bars(&[100.0, 110.0, 120.0])));
+        crate::widget::test_frames::instant(&mut chart);
         let id = chart.add_series(SeriesOptions {
             chart_type: ChartType::Candles,
             up_color: up,

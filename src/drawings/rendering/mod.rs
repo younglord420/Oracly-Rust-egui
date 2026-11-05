@@ -345,7 +345,7 @@ impl Drawing {
             DrawingToolType::TrendAngle => {
                 return self.render_trend_angle(painter, rect, color, stroke);
             }
-            DrawingToolType::InfoLine => self.render_info_line(painter, view),
+            DrawingToolType::InfoLine => self.render_info_line(painter, rect, view),
 
             // Shapes (8 tools)
             DrawingToolType::Rect => self.render_rect(painter, rect, color, stroke),
@@ -465,8 +465,8 @@ impl Drawing {
             DrawingToolType::Highlighter => self.render_highlighter(painter),
 
             // Arrows (6 tools)
-            DrawingToolType::Arrow => self.render_arrow(painter, color, stroke),
-            DrawingToolType::ArrowMarker => self.render_arrow_marker(painter, color),
+            DrawingToolType::Arrow => self.render_arrow(painter, rect, color, stroke),
+            DrawingToolType::ArrowMarker => self.render_arrow_marker(painter, rect, color),
             DrawingToolType::ArrowMarkUp => self.render_arrow_mark_up(painter),
             DrawingToolType::ArrowMarkDown => self.render_arrow_mark_down(painter),
             DrawingToolType::ArrowMarkLeft => self.render_horizontal_mark(painter, -1.0),

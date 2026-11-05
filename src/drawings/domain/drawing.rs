@@ -164,6 +164,9 @@ pub struct Drawing {
     /// Bands of the anchored VWAP.
     #[serde(default)]
     pub vwap: Option<VwapConfig>,
+    /// Card colours of a forecast.
+    #[serde(default)]
+    pub forecast: Option<super::ForecastConfig>,
     /// Customizable Fibonacci levels for Fib tools
     pub fib_config: Option<FibonacciConfig>,
     /// Rows and value area of the volume profile tools
@@ -180,6 +183,9 @@ pub struct Drawing {
     /// Average range and noise, in ticks, of the candles a Ghost Feed projects.
     #[serde(default)]
     pub ghost_feed: Option<GhostFeedConfig>,
+    /// Mode and copied bars of a Bars Pattern.
+    #[serde(default)]
+    pub bars_pattern: Option<super::BarsPatternConfig>,
     /// Whether a rectangle or parallel channel draws its dashed halfway line.
     #[serde(default)]
     pub channel_midline: bool,
@@ -327,6 +333,7 @@ impl Drawing {
             position_display: None,
             measure: None,
             vwap: None,
+            forecast: None,
             fib_config: matches!(
                 tool_type,
                 DrawingToolType::FibonacciRetracement
@@ -354,6 +361,7 @@ impl Drawing {
             price_action: None,
             geometry: None,
             ghost_feed: None,
+            bars_pattern: None,
             // Z-order (default: 0, higher values render on top)
             z_order: 0,
         }
@@ -862,6 +870,64 @@ impl Drawing {
     pub fn fill_color32(&self) -> Option<egui::Color32> {
         self.fill_color
             .map(|c| egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]))
+    }
+
+    /// Fill the tool paints while none is set, or `None` for tools that start unfilled.
+    pub fn default_fill(&self) -> Option<egui::Color32> {
+        let base = match self.tool_type {
+            DrawingToolType::Measure => self.measure_color(),
+            DrawingToolType::PriceRange
+            | DrawingToolType::DateRange
+            | DrawingToolType::DateAndPriceRange => self.color32(),
+            DrawingToolType::ProjectionTool => return Some(self.color32().gamma_multiply(0.2)),
+            _ => return None,
+        };
+        Some(egui::Color32::from_rgba_unmultiplied(
+            base.r(),
+            base.g(),
+            base.b(),
+            30,
+        ))
+    }
+
+    /// The fill this drawing paints: the one set, or the tool's default. A fully transparent
+    /// fill set on a tool with a default turns it off.
+    pub fn painted_fill(&self) -> Option<egui::Color32> {
+        match self.fill_color {
+            Some([_, _, _, 0]) => None,
+            Some(_) => self.fill_color32(),
+            None => self.default_fill(),
+        }
+    }
+
+    /// Sets the fill to paint, storing nothing while it is the tool's default and a fully
+    /// transparent fill when a tool with a default should paint none.
+    pub fn set_painted_fill(&mut self, fill: Option<egui::Color32>) {
+        let default = self.default_fill();
+        self.fill_color = match fill {
+            Some(color) if Some(color) == default => None,
+            Some(color) => Some(color.to_srgba_unmultiplied()),
+            None if default.is_some() => Some([0; 4]),
+            None => None,
+        };
+    }
+
+    /// Line colour of a Measure: the set colour, or red measuring down and blue up while it is
+    /// the default drawing colour.
+    pub fn measure_color(&self) -> egui::Color32 {
+        let default = [
+            crate::drawings::manager::DEFAULT_DRAWING_COLOR_DARK,
+            crate::drawings::manager::DEFAULT_DRAWING_COLOR_LIGHT,
+        ]
+        .contains(&self.color);
+        let down = matches!(self.chart_points.as_slice(), [a, b, ..] if b.price < a.price);
+        if !default {
+            self.color32().to_opaque()
+        } else if down {
+            crate::tokens::DESIGN_TOKENS.semantic.extended.bearish
+        } else {
+            crate::tokens::DESIGN_TOKENS.semantic.extended.accent
+        }
     }
 
     /// Get the text color as Color32, falling back to the primary drawing color when unset

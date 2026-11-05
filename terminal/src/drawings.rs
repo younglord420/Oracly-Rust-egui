@@ -121,7 +121,7 @@ impl Terminal {
                         (
                             d.id,
                             d.color32(),
-                            d.fill_color32(),
+                            d.painted_fill(),
                             d.stroke_width,
                             d.line_style,
                             d.locked,

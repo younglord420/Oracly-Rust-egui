@@ -638,6 +638,9 @@ impl DrawingManager {
             if drawing.is_position() {
                 drawing.add_position_stop();
             }
+            if let Some(config) = &mut drawing.bars_pattern {
+                config.bars.clear();
+            }
             drawing.update_pane_coords(self.pane_rect);
             let icon = matches!(
                 drawing.tool_type,

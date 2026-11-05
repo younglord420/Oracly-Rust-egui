@@ -17,6 +17,12 @@ pub struct GhostFeedConfig {
     /// Maximum close displacement from the path, and range variation, in ticks.
     /// Zero follows the path exactly. Must be nonnegative and finite.
     pub noise_ticks: f64,
+    /// Rising candle colour; absent uses the chart's rising candle colour.
+    pub up_color: Option<[u8; 4]>,
+    /// Falling candle colour; absent uses the chart's falling candle colour.
+    pub down_color: Option<[u8; 4]>,
+    /// Opacity of the candles, in percent.
+    pub opacity: u8,
 }
 
 impl Default for GhostFeedConfig {
@@ -24,6 +30,9 @@ impl Default for GhostFeedConfig {
         Self {
             average_range_ticks: 10.0,
             noise_ticks: 5.0,
+            up_color: None,
+            down_color: None,
+            opacity: 60,
         }
     }
 }
@@ -51,6 +60,7 @@ impl GhostFeedConfig {
             && self.average_range_ticks > 0.0
             && self.noise_ticks.is_finite()
             && self.noise_ticks >= 0.0
+            && self.opacity <= 100
     }
 
     /// One candle per whole bar from the first to the last anchor in bar order, up to
@@ -166,6 +176,7 @@ mod tests {
         let config = GhostFeedConfig {
             average_range_ticks: 48.0,
             noise_ticks: 0.0,
+            ..GhostFeedConfig::default()
         };
         let got = config.candles(&path, 0.25, "1404");
         let want = [

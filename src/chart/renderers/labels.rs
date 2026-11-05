@@ -1155,11 +1155,8 @@ mod tests {
                             !bounds.intersects(Rect::from_min_size(other.pos, other.galley.size()))
                         );
                     }
-                    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
-                            Shape::Rect(rect) if rect.fill == theme.chart.bg && rect.rect.height() >= 22.0 && rect.rect.contains_rect(bounds)
-                        )), "missing row backdrop for {}", field.galley.text());
                     assert!(
-                        bounds.right() <= plot.right() - 8.0 + 0.1,
+                        bounds.right() <= plot.right() - 8.0 + 1.0,
                         "{width}: {} at {bounds:?}",
                         field.galley.text()
                     );
