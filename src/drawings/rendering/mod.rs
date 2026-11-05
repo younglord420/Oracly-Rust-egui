@@ -5,6 +5,7 @@
 //! renderers. A chart invokes drawing rendering automatically.
 
 mod annotations;
+pub(crate) use annotations::contrast_ink;
 mod channels;
 mod cycles;
 mod elliott;

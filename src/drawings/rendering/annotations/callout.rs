@@ -34,11 +34,7 @@ impl Drawing {
     fn paint_bubble(&self, painter: &egui::Painter, radius_cap: f32, placeholder: &str) {
         let Some(center) = self.box_anchor() else {
             if let Some(point) = self.points.first() {
-                painter.circle_filled(
-                    *point,
-                    DESIGN_TOKENS.spacing.md * 0.5,
-                    self.color32(),
-                );
+                painter.circle_filled(*point, DESIGN_TOKENS.spacing.md * 0.5, self.color32());
             }
             return;
         };
@@ -71,7 +67,9 @@ impl Drawing {
         let galley = painter.layout_no_wrap(text.to_string(), self.annotation_font(), ink);
         let pad = egui::vec2(9.0, 6.0);
         let box_rect = Rect::from_center_size(center, galley.size() + pad * 2.0);
-        let radius = radius_cap.min(box_rect.width() * 0.5).min(box_rect.height() * 0.5);
+        let radius = radius_cap
+            .min(box_rect.width() * 0.5)
+            .min(box_rect.height() * 0.5);
         painter.rect_filled(box_rect, radius, fill);
         if !box_rect.contains(target) {
             let edge = Pos2::new(

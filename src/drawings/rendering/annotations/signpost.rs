@@ -29,6 +29,9 @@ impl Drawing {
         if self.stroke_width > 0.0 {
             painter.line_segment([base, plate_at], Stroke::new(width, color));
         }
+        if self.text_editing {
+            return;
+        }
         let theme = painter.ctx().active_theme();
         let fill = self
             .annotation_box_fill(theme.chart.bg_axis)

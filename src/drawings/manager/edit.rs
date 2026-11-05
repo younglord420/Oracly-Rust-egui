@@ -162,6 +162,61 @@ impl DrawingManager {
             });
     }
 
+    /// Opens the on-canvas text editor for a drawing whose text is typed.
+    ///
+    /// Accepts every tool that carries user text, plus image, table, post and idea, which keep
+    /// their own editors. A locked drawing, or one hidden on the current timeframe, does not open.
+    /// Returns whether the editor opened.
+    pub fn edit_text(&mut self, id: usize) -> bool {
+        let Some(index) = self.drawings.iter().position(|d| {
+            d.id == id && !d.locked && d.is_visible_on_timeframe(&self.curr_timeframe)
+        }) else {
+            return false;
+        };
+        let tool = self.drawings[index].tool_type;
+        let editable = tool.supports_text()
+            || matches!(
+                tool,
+                DrawingToolType::Image
+                    | DrawingToolType::Table
+                    | DrawingToolType::Tweet
+                    | DrawingToolType::Idea
+            );
+        if !editable {
+            return false;
+        }
+        // Table, image, post and idea edit in their own popup. Everything else is typed on the chart,
+        // so the painted glyphs stay hidden until the editor closes.
+        let on_canvas = !matches!(
+            tool,
+            DrawingToolType::Table
+                | DrawingToolType::Image
+                | DrawingToolType::Tweet
+                | DrawingToolType::Idea
+        );
+        if on_canvas {
+            self.drawings[index].text_editing = true;
+        }
+        let draft = if tool == DrawingToolType::Table {
+            self.drawings[index].table_text()
+        } else {
+            self.drawings[index].text.clone().unwrap_or_default()
+        };
+        self.text_editor = Some(super::TextEditState {
+            id,
+            draft,
+            focus: true,
+            opened_frame: None,
+        });
+        self.select(id);
+        true
+    }
+
+    /// Whether the on-canvas text editor is open.
+    pub fn is_editing_text(&self) -> bool {
+        self.text_editor.is_some()
+    }
+
     /// Applies `edit` to the drawing with the given ID, records it for undo and queues it to
     /// be saved. Edit a drawing through this rather than [`Self::drawings`] so the change is
     /// saved. A locked drawing accepts only visibility, name and folder changes, or an edit that unlocks it.

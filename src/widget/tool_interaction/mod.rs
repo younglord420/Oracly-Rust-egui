@@ -290,7 +290,12 @@ impl Chart {
         } else if drawing_manager.drawings.len() > count_before
             && drawing_manager.dragging_handle.is_none()
         {
-            drawing_manager.drawings.last().map(|d| d.id)
+            // A new line or shape must not pop an editor: finishing a path is a double click.
+            drawing_manager.drawings.last().and_then(|drawing| {
+                let tool = drawing.tool_type;
+                (tool.is_text_annotation() || tool == crate::drawings::DrawingToolType::Image)
+                    .then_some(drawing.id)
+            })
         } else if response.double_clicked() || response.triple_clicked() {
             response
                 .interact_pointer_pos()

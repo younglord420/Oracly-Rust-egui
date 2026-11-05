@@ -4,10 +4,10 @@ use super::{axis_background, contrast_ink, paint_label_box};
 use crate::drawings::domain::Drawing;
 use crate::drawings::rendering::ChartView;
 use crate::painting::pixel_snap::PixelSnap;
-use crate::theme::ThemeExt;
 use crate::scales::{
     DefaultPriceFormatter, PriceFormatter, instrument_price_precision, price_decimals,
 };
+use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Pos2, Rect, Stroke};
 
@@ -114,13 +114,7 @@ impl Drawing {
         let galley = painter.layout_no_wrap(price_text, self.annotation_font(), ink);
         let pad = egui::vec2(9.0, 6.0);
         let box_rect = Rect::from_center_size(center, galley.size() + pad * 2.0);
-        paint_label_box(
-            painter,
-            box_rect,
-            5.0,
-            Some(fill),
-            self.annotation_border(),
-        );
+        paint_label_box(painter, box_rect, 5.0, Some(fill), self.annotation_border());
         painter.galley(
             Pos2::new(
                 snap.edge(box_rect.center().x - galley.size().x * 0.5),

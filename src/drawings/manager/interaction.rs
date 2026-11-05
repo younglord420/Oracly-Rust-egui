@@ -321,8 +321,11 @@ impl DrawingManager {
                 if let (Some(origin), Some(old)) = (self.drag_origin, &self.drag_old_state) {
                     let bars = x_to_bar(snapped.x) - x_to_bar(origin.x);
                     let pinned = keeps_pinned_tip(drawing.tool_type);
-                    for (index, (point, before)) in
-                        drawing.chart_points.iter_mut().zip(&old.chart_points).enumerate()
+                    for (index, (point, before)) in drawing
+                        .chart_points
+                        .iter_mut()
+                        .zip(&old.chart_points)
+                        .enumerate()
                     {
                         if pinned && index == 0 {
                             continue;

@@ -7,6 +7,7 @@
 mod countdown;
 mod horizontal;
 mod price_formatter;
+#[cfg(feature = "widget")]
 mod price_tick_camera;
 mod pricescale;
 mod pricescale_marks;
@@ -30,6 +31,7 @@ pub use price_formatter::{
     PriceFormatter, PriceFormatterBuilder, ScientificFormatter, VolumeFormatter,
     instrument_price_precision,
 };
+#[cfg(feature = "widget")]
 pub(crate) use price_tick_camera::PriceTickCamera;
 #[cfg(feature = "widget")]
 pub(crate) use pricescale::auto_scale_span;

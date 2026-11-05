@@ -184,7 +184,7 @@ impl Drawing {
             (target_price - entry_price).abs() / risk
         };
         let (loss_amount, size) = self.position_loss_and_size();
-        let text_color = self.text_color.map_or(theme.chart.axis_text, |c| rgba(c));
+        let text_color = self.text_color.map_or(theme.chart.axis_text, rgba);
         let font = self.annotation_font();
         let small = egui::FontId::proportional((font.size - 1.0).max(10.0));
         let center_x = (entry.x + right) / 2.0;

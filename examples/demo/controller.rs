@@ -55,7 +55,7 @@ use egui_charts::ui::context_menu::{
 use egui_charts::ui::dialogs::DrawingContextMenuAction;
 use egui_charts::ui::dialogs::{
     AlertDialog, AlertDialogAction, DrawingId, DrawingPropertiesAction, DrawingPropertiesDialog,
-    KeyboardShortcutsDialog, PropertiesTab, SeriesContextMenuAction, StudyContextMenuAction,
+    KeyboardShortcutsDialog, SeriesContextMenuAction, StudyContextMenuAction,
 };
 use egui_charts::ui::drawing_toolbar::{DrawingToolbar, DrawingToolbarAction};
 use egui_charts::ui::export::{ExportDialog, ExportFormat, ExportResponse};
@@ -1062,9 +1062,9 @@ impl DemoApp {
             .open_for_chart(&self.chart, DrawingId(drawing_id));
     }
 
-    fn open_drawing_props_tab(&mut self, drawing_id: usize, tab: PropertiesTab) {
-        self.open_drawing_props_for(drawing_id);
-        self.drawing_props.active_tab = tab;
+    /// The label button types straight onto the chart.
+    fn edit_drawing_label(&mut self, id: usize) {
+        self.chart.drawings_mut().edit_text(id);
     }
 
     /// Floating selection property bar for the primary selected drawing.
@@ -1090,10 +1090,12 @@ impl DemoApp {
                             egui::Color32::from_rgba_unmultiplied(r, g, b, 51)
                         })
                     });
-                    let (width, style) = d.fib_config.as_ref().map_or(
-                        (d.stroke_width, d.line_style),
-                        |config| (config.levels_line_width, config.levels_line_style),
-                    );
+                    let (width, style) = d
+                        .fib_config
+                        .as_ref()
+                        .map_or((d.stroke_width, d.line_style), |config| {
+                            (config.levels_line_width, config.levels_line_style)
+                        });
                     (
                         d.id,
                         d.color32(),
@@ -1104,7 +1106,8 @@ impl DemoApp {
                         d.visible,
                         !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
                             .is_empty(),
-                        d.tool_type.supports_text_style(),
+                        d.tool_type.supports_text()
+                            || d.tool_type == egui_charts::drawings::DrawingToolType::Image,
                         bounds,
                     )
                 })
@@ -1152,9 +1155,7 @@ impl DemoApp {
         };
         match action {
             FloatingToolbarAction::OpenSettings => self.open_drawing_props_for(id),
-            FloatingToolbarAction::OpenText => {
-                self.open_drawing_props_tab(id, PropertiesTab::Text);
-            }
+            FloatingToolbarAction::OpenText => self.edit_drawing_label(id),
             FloatingToolbarAction::Duplicate => self.clone_drawing(id),
             FloatingToolbarAction::Delete => {
                 self.chart
@@ -1784,9 +1785,7 @@ impl DemoApp {
                                         ("Data Window", SidePanel::DataWindow, &ic::TABLE),
                                         ("Watchlist", SidePanel::Watchlist, &ic::WATCHLIST),
                                     ] {
-                                        if ListItem::new()
-                                            .show_with_icon(ui, label, icon)
-                                            .clicked()
+                                        if ListItem::new().show_with_icon(ui, label, icon).clicked()
                                         {
                                             compact_panel = Some(panel);
                                             ui.close();
@@ -7509,7 +7508,13 @@ mod tests {
                 buttons.push((category, at));
             }
         }
-        let categories = ["Lines", "Fibonacci", "Patterns", "Projection", "Brushes/Shapes"];
+        let categories = [
+            "Lines",
+            "Fibonacci",
+            "Patterns",
+            "Projection",
+            "Brushes/Shapes",
+        ];
         for category in categories {
             let button = buttons
                 .iter()
@@ -7517,13 +7522,16 @@ mod tests {
                 .unwrap_or_else(|| panic!("{category} rail button in {buttons:?}"))
                 .1;
             for (glide, batched) in [(false, false), (true, false), (false, true)] {
-                frame(&mut app, vec![Event::Key {
-                    key: egui::Key::Escape,
-                    physical_key: None,
-                    pressed: true,
-                    repeat: false,
-                    modifiers: egui::Modifiers::NONE,
-                }]);
+                frame(
+                    &mut app,
+                    vec![Event::Key {
+                        key: egui::Key::Escape,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                );
                 frame(&mut app, vec![Event::PointerMoved(button)]);
                 frame(&mut app, click(button));
                 frame(&mut app, vec![]);
@@ -7536,7 +7544,10 @@ mod tests {
                 if glide {
                     for i in 1..=8 {
                         let t = i as f32 / 8.0;
-                        frame(&mut app, vec![Event::PointerMoved(button + (row - button) * t)]);
+                        frame(
+                            &mut app,
+                            vec![Event::PointerMoved(button + (row - button) * t)],
+                        );
                     }
                 } else if !batched {
                     frame(&mut app, vec![Event::PointerMoved(row)]);
@@ -7560,5 +7571,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The label button types on the chart. It does not open the properties dialog.
+    #[test]
+    fn label_button_edits_text_on_the_chart() {
+        use egui_charts::drawings::{ChartPoint, Drawing, DrawingToolType};
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+        app.chart.set_feed_paused(true);
+        let mut drawing = Drawing::new(7, DrawingToolType::TrendLine);
+        drawing.completed = true;
+        drawing.chart_points = vec![ChartPoint::new(0.0, 100.0), ChartPoint::new(1.0, 110.0)];
+        app.chart.drawings_mut().drawings.push(drawing);
+        app.chart.drawings_mut().select(7);
+        assert!(DrawingToolType::TrendLine.supports_text());
+        assert!(!DrawingToolType::PriceLabel.supports_text());
+        assert!(!DrawingToolType::FibonacciRetracement.supports_text());
+        app.edit_drawing_label(7);
+        assert!(!app.drawing_props.is_open);
+        assert!(app.chart.drawings().is_editing_text());
     }
 }

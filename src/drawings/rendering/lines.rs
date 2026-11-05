@@ -937,7 +937,8 @@ mod tests {
                     [ys.map(|y| Pos2::new(500., y))]
                 );
             }
-            let cases: &[(bool, bool, [(f32, f32); 2], [(f32, f32); 2])] = &[
+            type Case = (bool, bool, [(f32, f32); 2], [(f32, f32); 2]);
+            let cases: &[Case] = &[
                 (
                     false,
                     false,

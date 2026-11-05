@@ -20,7 +20,7 @@ use crate::theme::ThemeExt;
 use egui::{Color32, Rect, Stroke, epaint::StrokeKind};
 
 /// Black or white ink that stays readable on `color`.
-pub(super) fn contrast_ink(color: Color32) -> Color32 {
+pub(crate) fn contrast_ink(color: Color32) -> Color32 {
     let lum = 0.2126 * f32::from(color.r())
         + 0.7152 * f32::from(color.g())
         + 0.0722 * f32::from(color.b());

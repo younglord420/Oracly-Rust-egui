@@ -2,16 +2,16 @@
 
 use super::{axis_background, body_open, contrast_ink, paint_label_box};
 use crate::drawings::domain::Drawing;
-use crate::theme::ThemeExt;
 use crate::painting::pixel_snap::PixelSnap;
 use crate::styles::stroke;
+use crate::theme::ThemeExt;
 use crate::tokens::DESIGN_TOKENS;
 use egui::{Color32, Pos2, Rect, Stroke};
 
 impl Drawing {
     /// A rounded plate of free text, its top-left on the anchor.
     pub(crate) fn render_note(&self, painter: &egui::Painter) {
-        if self.points.is_empty() {
+        if self.points.is_empty() || self.text_editing {
             return;
         }
         let snap = PixelSnap::of(painter);
@@ -74,7 +74,8 @@ impl Drawing {
             ),
             pos,
         );
-        if body_open(self, painter, marker)
+        if !self.text_editing
+            && body_open(self, painter, marker)
             && let Some(text) = &self.text
             && !text.is_empty()
         {
@@ -142,7 +143,9 @@ impl Drawing {
             egui::FontId::proportional(self.font_size),
             self.color32(),
         );
-        if let Some(text) = self.text.as_deref().filter(|text| !text.is_empty()) {
+        if !self.text_editing
+            && let Some(text) = self.text.as_deref().filter(|text| !text.is_empty())
+        {
             let galley = painter.layout_no_wrap(
                 text.to_string(),
                 egui::FontId::proportional(crate::styles::typography::LG),

@@ -72,7 +72,7 @@ impl Drawing {
     /// When `TextVerticalAlign::Middle` is active on a line tool, the underlying line segment
     /// is split around the label so the line does not strike through the text.
     pub(super) fn paint_optional_line_label(&self, painter: &Painter, start: usize, rect: Rect) {
-        if !self.tool_type.supports_line_label() {
+        if !self.tool_type.supports_line_label() || self.text_editing {
             return;
         }
         let Some(text) = self.text.as_deref().filter(|t| !t.is_empty()) else {
@@ -118,6 +118,38 @@ impl Drawing {
         } else {
             painter.add(Shape::Text(shape));
         }
+    }
+
+    /// Screen rect of the user label for `text`, as [`Self::paint_optional_line_label`] would
+    /// place it: the axis-aligned box at the start of the (possibly rotated) text.
+    /// `None` when the tool carries no line label or has no anchor.
+    pub(crate) fn line_label_rect(
+        &self,
+        ctx: &egui::Context,
+        text: &str,
+        pane: Rect,
+    ) -> Option<Rect> {
+        if !self.tool_type.supports_line_label() || self.points.is_empty() {
+            return None;
+        }
+        let color = self.text_color32();
+        let font = self.annotation_font();
+        let galley = ctx.fonts_mut(|fonts| {
+            let mut job = egui::text::LayoutJob::single_section(
+                text.to_owned(),
+                egui::TextFormat {
+                    font_id: font,
+                    color,
+                    italics: self.font_italic,
+                    ..Default::default()
+                },
+            );
+            job.wrap.max_width = f32::INFINITY;
+            fonts.layout_job(job)
+        });
+        let size = galley.size();
+        let (shape, _) = self.place_line_label_shape(galley, color, pane)?;
+        Some(Rect::from_min_size(shape.pos, size))
     }
 
     fn place_line_label_shape(

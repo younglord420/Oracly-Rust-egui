@@ -116,7 +116,10 @@ impl Terminal {
                         } else if chart != egui::Rect::NOTHING {
                             chart
                         } else {
-                            egui::Rect::from_min_size(egui::pos2(80.0, 80.0), egui::vec2(80.0, 40.0))
+                            egui::Rect::from_min_size(
+                                egui::pos2(80.0, 80.0),
+                                egui::vec2(80.0, 40.0),
+                            )
                         };
                         (
                             d.id,
@@ -128,11 +131,13 @@ impl Terminal {
                             d.visible,
                             !d.alert_levels(0.0, egui_charts::scales::PriceScaleMode::Normal)
                                 .is_empty(),
+                            d.tool_type.supports_text() || d.tool_type == DrawingToolType::Image,
                             bounds,
                         )
                     })
             });
-        let Some((id, stroke, fill, width, style, locked, visible, alert, bounds)) = selected else {
+        let Some((id, stroke, fill, width, style, locked, visible, alert, text, bounds)) = selected
+        else {
             self.drawings.selection.hide();
             return;
         };
@@ -168,6 +173,7 @@ impl Terminal {
         toolbar.set_locked(locked);
         toolbar.set_object_visible(visible);
         toolbar.set_alert_available(alert);
+        toolbar.set_text_available(text);
         let action = toolbar.show(ui);
         let Some(action) = action else {
             return;
@@ -175,9 +181,7 @@ impl Terminal {
         match action {
             FloatingToolbarAction::OpenSettings => self.open_drawing_properties(id),
             FloatingToolbarAction::OpenText => {
-                self.open_drawing_properties(id);
-                self.drawings.properties.active_tab =
-                    egui_charts::ui::dialogs::PropertiesTab::Text;
+                self.chart_mut().drawings_mut().edit_text(id);
             }
             FloatingToolbarAction::Duplicate => self.clone_drawing(id),
             FloatingToolbarAction::Delete => {
@@ -186,8 +190,11 @@ impl Terminal {
                 self.drawings.selection.hide();
             }
             FloatingToolbarAction::ToggleLock => {
-                self.chart_mut()
-                    .user_action(|chart| chart.drawings_mut().edit_drawing(id, |d| d.locked = !d.locked));
+                self.chart_mut().user_action(|chart| {
+                    chart
+                        .drawings_mut()
+                        .edit_drawing(id, |d| d.locked = !d.locked)
+                });
             }
             FloatingToolbarAction::ToggleVisibility => {
                 self.chart_mut().user_action(|chart| {

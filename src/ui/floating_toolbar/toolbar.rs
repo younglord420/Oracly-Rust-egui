@@ -467,7 +467,7 @@ impl FloatingSelectionToolbar {
         let theme = ui.active_theme();
         let size = Vec2::splat(DESIGN_TOKENS.sizing.floating_toolbar.button_size);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        let label = l10n::text(ui.ctx(), &format!("{name} color"));
+        let label = l10n::text(ui.ctx(), format!("{name} color"));
         response.widget_info(|| WidgetInfo::labeled(Role::ColorWell, ui.is_enabled(), &label));
 
         let open_id = ui.make_persistent_id(("floating_toolbar_color", slot));

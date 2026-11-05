@@ -506,12 +506,7 @@ mod tests {
             // note's box moves by its body; `HandleService`'s `get_handles_by_tool` covers them.
             if matches!(
                 tool,
-                LongPos
-                    | ShortPos
-                    | ParallelChannel
-                    | FlatTopBottom
-                    | DisjointChannel
-                    | PriceNote
+                LongPos | ShortPos | ParallelChannel | FlatTopBottom | DisjointChannel | PriceNote
             ) {
                 continue;
             }

@@ -822,11 +822,11 @@ mod tests {
             .collect();
         output.drop_without_applying_deltas();
         assert!(
-            fills.iter().any(|fill| *fill == theme.chart.bg_tooltip),
+            fills.contains(&theme.chart.bg_tooltip),
             "tooltip background missing: {fills:?}"
         );
         assert!(
-            fills.iter().any(|fill| *fill == theme.chart.candle_up),
+            fills.contains(&theme.chart.candle_up),
             "bullish accent missing: {fills:?}"
         );
         // Card chrome must include the dark tooltip panel; accent alone is not enough.
