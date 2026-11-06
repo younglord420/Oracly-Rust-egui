@@ -91,6 +91,10 @@ impl Default for ConnorsRSI {
 }
 
 impl Indicator for ConnorsRSI {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::bounded(0, 90.0, 10.0, 100.0, 0.0).with_midpoint_wash())
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

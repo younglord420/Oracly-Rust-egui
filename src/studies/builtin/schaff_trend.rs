@@ -84,6 +84,22 @@ impl Default for SchaffTrendCycle {
 }
 
 impl Indicator for SchaffTrendCycle {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 50.0)
+                .with_bear(palette::DOWN)
+                .with_levels(vec![75.0, 25.0]),
+        )
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

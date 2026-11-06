@@ -58,6 +58,10 @@ impl Default for TrendStrengthIndex {
 }
 
 impl Indicator for TrendStrengthIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(self.source))
     }

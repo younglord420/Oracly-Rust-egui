@@ -89,6 +89,10 @@ impl AccelerationBands {
 }
 
 impl Indicator for AccelerationBands {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::channel(0, 2, Some(1)))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX),
         factor: number("Factor", 0.0, f64::MAX)

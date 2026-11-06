@@ -92,6 +92,18 @@ impl Default for ADX {
 }
 
 impl Indicator for ADX {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::adx(0, 1, 2, 25.0))
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

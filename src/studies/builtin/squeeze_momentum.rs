@@ -182,6 +182,10 @@ impl SqueezeMomentum {
 }
 
 impl Indicator for SqueezeMomentum {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::momentum(0).with_faded_t(60))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         bb_period: length("Bb period", 1, usize::MAX),
         bb_mult: number("Bb mult", 0.0, f64::MAX),

@@ -44,6 +44,18 @@ impl Default for ForceIndex {
 }
 
 impl Indicator for ForceIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0).with_value_t(60))
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

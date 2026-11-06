@@ -137,6 +137,13 @@ impl Default for BollingerBands {
 }
 
 impl Indicator for BollingerBands {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::flat_channel(0, 2, 92)
+                .with_band_color(crate::studies::shading::transp(palette::INFO, 92)),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,
@@ -148,15 +155,6 @@ impl Indicator for BollingerBands {
         basis: choice("Basis MA type", [AverageType::Simple, AverageType::Exponential, AverageType::Weighted, AverageType::Smoothed, AverageType::VolumeWeighted]),
         std_dev: number("Std dev", 0.0, f64::MAX)
     ; {});
-
-    fn fills(&self) -> Vec<crate::studies::StudyFill> {
-        vec![crate::studies::StudyFill {
-            first: crate::studies::FillBoundary::Plot(0),
-            second: crate::studies::FillBoundary::Plot(2),
-            color: self.colors[3],
-            inverted_color: None,
-        }]
-    }
 
     fn name(&self) -> &str {
         "BB"

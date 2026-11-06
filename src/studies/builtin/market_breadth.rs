@@ -67,6 +67,14 @@ impl<const RATIO: bool, const VOLUME: bool> Default for MarketBreadth<RATIO, VOL
 }
 
 impl<const RATIO: bool, const VOLUME: bool> Indicator for MarketBreadth<RATIO, VOLUME> {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        if RATIO {
+            None
+        } else {
+            Some(crate::studies::StudyShading::slope(0))
+        }
+    }
+
     fn name(&self) -> &str {
         if RATIO {
             "Advance/Decline Ratio"

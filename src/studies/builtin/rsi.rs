@@ -157,6 +157,22 @@ impl Default for RSI {
 }
 
 impl Indicator for RSI {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::bounded(0, 70.0, 30.0, 100.0, 0.0)
+                .with_midline(50.0)
+                .with_band(true),
+        )
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn level_fill_color(&self) -> Color32 {
         self.fill_color
     }
@@ -224,7 +240,7 @@ impl Indicator for RSI {
                 (70.0, palette::MUTED, "Overbought"),
                 (30.0, palette::MUTED, "Oversold"),
             ],
-            fill_between_levels: true,
+            fill_between_levels: false,
         }
     }
 

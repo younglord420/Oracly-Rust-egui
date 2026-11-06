@@ -271,6 +271,10 @@ impl Default for VolumeWeightedAvgPrice {
 }
 
 impl Indicator for VolumeWeightedAvgPrice {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::price_side(0))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::HLC3,

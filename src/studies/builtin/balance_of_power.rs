@@ -72,6 +72,10 @@ impl Default for BalanceOfPower {
 }
 
 impl Indicator for BalanceOfPower {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0).with_value_t(60))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         smooth_period: length("Smooth period", 1, usize::MAX)
     ; {});

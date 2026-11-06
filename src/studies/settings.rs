@@ -154,6 +154,9 @@ pub struct StudySettings {
     /// every interval except those in `hidden_intervals`.
     #[serde(default)]
     pub interval_range: StudyIntervalRange,
+    /// Gradient colours. Absent saved settings use the study's own pattern.
+    #[serde(default)]
+    pub shading: Option<super::StudyShading>,
 }
 
 /// An owned settings and input snapshot without calculated study data.
@@ -272,6 +275,10 @@ pub struct ConfiguredStudy {
     clock: crate::model::BarClock,
     aligned: Option<IndicatorValues>,
     aligned_bars: Vec<Option<usize>>,
+    shade_colors: Vec<Option<Color32>>,
+    shade_stops: Vec<Option<super::GradientStop>>,
+    closes: Vec<f64>,
+    defaults: StudySettings,
 }
 
 impl ConfiguredStudy {
@@ -284,6 +291,7 @@ impl ConfiguredStudy {
         {
             plot.visible = true;
         }
+        let defaults = settings.clone();
         Self {
             study,
             settings,
@@ -301,6 +309,10 @@ impl ConfiguredStudy {
             clock: crate::model::BarClock::new(Timeframe::Min1),
             aligned: None,
             aligned_bars: Vec::new(),
+            shade_colors: Vec::new(),
+            shade_stops: Vec::new(),
+            closes: Vec::new(),
+            defaults,
         }
     }
     /// Whether the study can be calculated on another interval: it reads one source, or the bars
@@ -325,6 +337,38 @@ impl ConfiguredStudy {
             Some(super::StudySource::Study { .. }) => self.study.update_source(data, from, &[]),
             _ => self.study.update(data, from),
         }
+    }
+
+    fn rebuild_shade(&mut self, bars: &[Bar], from: usize) {
+        if !bars.is_empty() && (from == 0 || self.closes.len() != bars.len()) {
+            self.closes = bars.iter().map(|bar| bar.close).collect();
+        } else if !bars.is_empty() {
+            for (index, bar) in bars.iter().enumerate().skip(from) {
+                if let Some(close) = self.closes.get_mut(index) {
+                    *close = bar.close;
+                }
+            }
+        }
+        let Some(shading) = self.shading_now() else {
+            self.shade_colors.clear();
+            self.shade_stops.clear();
+            return;
+        };
+        super::shading::fill_cache(
+            self.study.as_ref(),
+            &shading,
+            &self.closes,
+            from,
+            &mut self.shade_colors,
+            &mut self.shade_stops,
+        );
+    }
+
+    fn shading_now(&self) -> Option<super::StudyShading> {
+        self.settings
+            .shading
+            .clone()
+            .or_else(|| self.study.shading())
     }
 }
 
@@ -573,9 +617,11 @@ impl Indicator for ConfiguredStudy {
         } else {
             self.update_price(data, from);
         }
+        self.rebuild_shade(data, from);
     }
     fn update_source(&mut self, data: &[Bar], from: usize, source: &[f64]) {
         self.study.update_source(data, from, source);
+        self.rebuild_shade(data, from);
     }
     fn is_incremental(&self) -> bool {
         self.data_requests().is_empty()
@@ -680,7 +726,38 @@ impl Indicator for ConfiguredStudy {
         } else {
             bar
         };
-        self.study.plot_color(line, bar)
+        if let Some(color) = self.study.plot_color(line, bar) {
+            return Some(color);
+        }
+        let shading = self.shading_now()?;
+        let shaded = shading.colored_line().or(match shading.kind {
+            super::ShadingKind::Channel { basis, .. } => basis,
+            _ => None,
+        });
+        if shaded == Some(line) {
+            return self.shade_colors.get(bar).copied().flatten();
+        }
+        match shading.kind {
+            super::ShadingKind::Channel { upper, .. } if line == upper => {
+                Some(super::shading::transp(shading.bear, 30))
+            }
+            super::ShadingKind::Channel { lower, .. } if line == lower => {
+                Some(super::shading::transp(shading.bull, 30))
+            }
+            super::ShadingKind::PriceSide { .. } if line % 2 == 1 => {
+                Some(super::shading::transp(shading.bear, 40))
+            }
+            super::ShadingKind::PriceSide { .. } if line > 0 => {
+                Some(super::shading::transp(shading.bull, 40))
+            }
+            super::ShadingKind::AdxInk { plus, .. } if line == plus => {
+                Some(super::shading::transp(shading.bull, 30))
+            }
+            super::ShadingKind::AdxInk { minus, .. } if line == minus => {
+                Some(super::shading::transp(shading.bear, 30))
+            }
+            _ => None,
+        }
     }
     fn plot_text(&self, line: usize, bar: usize) -> Option<String> {
         let bar = if self.aligned.is_some() {
@@ -692,6 +769,17 @@ impl Indicator for ConfiguredStudy {
     }
     fn fills(&self) -> Vec<super::StudyFill> {
         self.study.fills()
+    }
+    fn shading(&self) -> Option<super::StudyShading> {
+        self.shading_now()
+    }
+    fn gradient_stops(&self) -> &[Option<super::GradientStop>] {
+        &self.shade_stops
+    }
+    fn default_settings(&self) -> StudySettings {
+        let mut settings = self.defaults.clone();
+        settings.shading = self.study.shading();
+        settings
     }
     fn snapshot_settings(&self) -> StudySettingsSnapshot {
         let mut snapshot =
@@ -736,6 +824,7 @@ impl Indicator for ConfiguredStudy {
         self.study.set_colors(snapshot.colors.clone());
         self.study.set_visible(snapshot.visible);
         self.settings = snapshot.settings.clone();
+        self.rebuild_shade(&[], 0);
         self.timeframe = snapshot.timeframe;
         self.overlay = snapshot.overlay;
         self.scale = snapshot.scale;
@@ -757,6 +846,9 @@ impl Indicator for ConfiguredStudy {
         inputs: &[(String, InputValue)],
         mut settings: StudySettings,
     ) -> Result<(), &'static str> {
+        if let Some(shading) = &settings.shading {
+            shading.validate()?;
+        }
         if settings.precision.is_some_and(|precision| precision > 12)
             || settings
                 .plots
@@ -802,6 +894,7 @@ impl Indicator for ConfiguredStudy {
         self.offset = edited.offset;
         self.aligned = None;
         self.settings = settings;
+        self.rebuild_shade(&[], 0);
         Ok(())
     }
     fn scale_mapping(&self) -> Option<crate::scales::PriceMap> {
@@ -878,13 +971,60 @@ impl Indicator for ConfiguredStudy {
         self.study.is_volume()
     }
     fn level_style(&self, value: f64) -> LineStyle {
-        self.study.level_style(value)
+        match self.shading_now().as_ref().map(|shading| &shading.kind) {
+            Some(super::ShadingKind::Bounded {
+                midline: Some(mid), ..
+            }) if value == *mid => LineStyle::Dotted,
+            Some(super::ShadingKind::Centered {
+                baseline,
+                baseline_dotted: true,
+                ..
+            }) if value == *baseline => LineStyle::Dotted,
+            Some(_) => LineStyle::Dashed,
+            None => self.study.level_style(value),
+        }
     }
     fn level_fill_color(&self) -> Color32 {
         self.study.level_fill_color()
     }
     fn pane(&self) -> super::StudyPane {
-        self.study.pane()
+        let mut pane = self.study.pane();
+        if let Some(shading) = self.shading_now() {
+            let level = |price: f64| (price, shading.levels, "");
+            match shading.kind {
+                super::ShadingKind::Bounded {
+                    overbought,
+                    oversold,
+                    midline,
+                    ..
+                } => {
+                    pane.levels = vec![level(overbought), level(oversold)];
+                    if let Some(midline) = midline {
+                        pane.levels.insert(1, level(midline));
+                    }
+                    pane.fill_between_levels = false;
+                }
+                super::ShadingKind::BandOnly { upper, lower } => {
+                    pane.levels = vec![level(upper), level(lower)];
+                    pane.fill_between_levels = false;
+                }
+                super::ShadingKind::AdxInk { key_level, .. } => {
+                    pane.levels = vec![level(key_level)];
+                }
+                super::ShadingKind::Centered {
+                    baseline,
+                    extra_levels,
+                    ..
+                } => {
+                    pane.levels = std::iter::once(level(baseline))
+                        .chain(extra_levels.into_iter().map(level))
+                        .collect();
+                    pane.fill_between_levels = false;
+                }
+                _ => {}
+            }
+        }
+        pane
     }
     fn is_overlay(&self) -> bool {
         self.overlay.unwrap_or_else(|| self.study.is_overlay())

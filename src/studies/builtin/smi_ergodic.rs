@@ -81,6 +81,14 @@ impl<const OSCILLATOR: bool> Default for SMIErgodic<OSCILLATOR> {
 }
 
 impl<const OSCILLATOR: bool> Indicator for SMIErgodic<OSCILLATOR> {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(if OSCILLATOR {
+            crate::studies::StudyShading::rising(0)
+        } else {
+            crate::studies::StudyShading::spread(0, 1, 75)
+        })
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

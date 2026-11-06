@@ -49,12 +49,14 @@ pub use metric::MetricStudy;
 pub(crate) mod plots;
 pub(crate) mod projection;
 mod settings;
+pub mod shading;
 pub(crate) mod table;
 pub use plots::{FillBoundary, StudyCandle, StudyFill, StudyZone};
 pub use projection::StudyProjection;
 pub use settings::{
     ConfiguredStudy, PlotStyle, PlotType, StudyIntervalRange, StudySettings, StudySettingsSnapshot,
 };
+pub use shading::{GradientStop, IntensityRange, ShadingKind, StudyShading};
 pub use table::{StudyCell, StudyTable};
 mod values;
 pub use values::IndicatorValues;

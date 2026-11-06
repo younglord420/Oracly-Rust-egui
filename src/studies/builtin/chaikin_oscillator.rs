@@ -61,6 +61,10 @@ impl Default for ChaikinOscillator {
 }
 
 impl Indicator for ChaikinOscillator {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         fast_length: length("Fast Length", 1, usize::MAX),
         slow_length: length("Slow Length", 1, usize::MAX)

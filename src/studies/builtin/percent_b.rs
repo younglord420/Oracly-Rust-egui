@@ -88,6 +88,14 @@ impl PercentB {
 }
 
 impl Indicator for PercentB {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 0.5)
+                .dotted()
+                .with_levels(vec![1.0, 0.0]),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

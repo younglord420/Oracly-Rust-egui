@@ -101,6 +101,14 @@ impl ChoppinessIndex {
 }
 
 impl Indicator for ChoppinessIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::bounded(0, 61.8, 38.2, 100.0, 0.0)
+                .with_band(true)
+                .with_midpoint_wash(),
+        )
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

@@ -71,6 +71,10 @@ impl AroonOscillator {
 }
 
 impl Indicator for AroonOscillator {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     fn plot_color(&self, _line: usize, bar: usize) -> Option<Color32> {
         self.values
             .value(0, bar)

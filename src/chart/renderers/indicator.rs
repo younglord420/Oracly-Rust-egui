@@ -231,6 +231,276 @@ fn paint_band(
     }
 }
 
+fn zone_rect(
+    painter: &egui::Painter,
+    pane: egui::Rect,
+    map: &PriceMap,
+    a: f64,
+    b: f64,
+    color: Color32,
+) {
+    if !a.is_finite() || !b.is_finite() || color.a() == 0 {
+        return;
+    }
+    let rect = egui::Rect::from_two_pos(
+        Pos2::new(pane.left(), map.price_to_y(a)),
+        Pos2::new(pane.right(), map.price_to_y(b)),
+    )
+    .intersect(pane);
+    if rect.width() > 0.0 && rect.height() > 0.0 {
+        painter.rect_filled(rect, 0.0, color);
+    }
+}
+
+fn color_at(stop: &crate::studies::GradientStop, value: f64) -> Color32 {
+    let span = stop.top_value - stop.bottom_value;
+    if !span.is_finite() || span.abs() < 1e-12 {
+        return stop.top_color;
+    }
+    let t = ((stop.top_value - value) / span).clamp(0.0, 1.0) as f32;
+    Color32::from_rgba_unmultiplied(
+        lerp_u8(stop.top_color.r(), stop.bottom_color.r(), t),
+        lerp_u8(stop.top_color.g(), stop.bottom_color.g(), t),
+        lerp_u8(stop.top_color.b(), stop.bottom_color.b(), t),
+        lerp_u8(stop.top_color.a(), stop.bottom_color.a(), t),
+    )
+}
+
+fn lerp_u8(from: u8, to: u8, t: f32) -> u8 {
+    (f32::from(from) + (f32::from(to) - f32::from(from)) * t).round() as u8
+}
+
+fn paint_shading(
+    painter: &egui::Painter,
+    study: &dyn Indicator,
+    range: std::ops::Range<usize>,
+    map: &PriceMap,
+    coords: &ChartMapping,
+    pane: egui::Rect,
+) {
+    use crate::studies::ShadingKind;
+    use crate::studies::shading::transp;
+    let Some(shading) = study.shading() else {
+        return;
+    };
+    match shading.kind {
+        ShadingKind::Bounded {
+            overbought,
+            oversold,
+            top,
+            bottom,
+            band_fill,
+            zone_t,
+            ..
+        } => {
+            zone_rect(
+                painter,
+                pane,
+                map,
+                overbought,
+                top,
+                transp(shading.bear, zone_t),
+            );
+            zone_rect(
+                painter,
+                pane,
+                map,
+                oversold,
+                bottom,
+                transp(shading.bull, zone_t),
+            );
+            if band_fill {
+                zone_rect(painter, pane, map, overbought, oversold, shading.band);
+            }
+        }
+        ShadingKind::BandOnly { upper, lower } => {
+            zone_rect(painter, pane, map, upper, lower, shading.band);
+        }
+        ShadingKind::Centered {
+            zones: Some((overbought, oversold, top, bottom)),
+            ..
+        } => {
+            zone_rect(
+                painter,
+                pane,
+                map,
+                overbought,
+                top,
+                transp(shading.bear, 92),
+            );
+            zone_rect(
+                painter,
+                pane,
+                map,
+                oversold,
+                bottom,
+                transp(shading.bull, 92),
+            );
+        }
+        _ => {}
+    }
+    let pair = match shading.kind {
+        ShadingKind::Centered { line, baseline, .. } if shading.gradient_fill => {
+            Some((line, None, Some(baseline)))
+        }
+        ShadingKind::Bounded {
+            line,
+            overbought,
+            oversold,
+            midpoint_wash: true,
+            ..
+        } if shading.gradient_fill => Some((line, None, Some((overbought + oversold) / 2.0))),
+        ShadingKind::Regime { line, signal } | ShadingKind::Spread { line, signal, .. }
+            if shading.gradient_fill || matches!(shading.kind, ShadingKind::Spread { .. }) =>
+        {
+            Some((line, Some(signal), None))
+        }
+        ShadingKind::Channel { upper, lower, .. }
+        | ShadingKind::FlatChannel { upper, lower, .. }
+            if shading.gradient_fill =>
+        {
+            Some((upper, Some(lower), None))
+        }
+        ShadingKind::Intensity { line, .. } if shading.gradient_fill => {
+            Some((line, None, Some(0.0)))
+        }
+        _ => None,
+    };
+    if let Some((first, second, level)) = pair {
+        paint_wash(
+            painter,
+            study,
+            range.clone(),
+            map,
+            coords,
+            first,
+            second,
+            level,
+            None,
+        );
+    }
+    if matches!(shading.kind, ShadingKind::PriceSide { .. }) && shading.gradient_fill {
+        let mut line = 1;
+        while line + 1 < study.line_count() {
+            paint_wash(
+                painter,
+                study,
+                range.clone(),
+                map,
+                coords,
+                line,
+                Some(line + 1),
+                None,
+                Some(shading.band),
+            );
+            line += 2;
+        }
+    }
+}
+
+fn paint_wash(
+    painter: &egui::Painter,
+    study: &dyn Indicator,
+    range: std::ops::Range<usize>,
+    map: &PriceMap,
+    coords: &ChartMapping,
+    first: usize,
+    second: Option<usize>,
+    level: Option<f64>,
+    flat: Option<Color32>,
+) {
+    let stops = study.gradient_stops();
+    let mut mesh = egui::Mesh::default();
+    let value = |line: usize, bar: usize| study.plot_value(line, bar);
+    let end = |bar: usize| match (second, level) {
+        (Some(line), _) => value(line, bar),
+        (_, Some(level)) => Some(level),
+        _ => None,
+    };
+    let push = |mesh: &mut egui::Mesh, x: f32, price: f64, color: Color32| {
+        let y = map.price_to_y(price);
+        if x.is_finite() && y.is_finite() {
+            mesh.colored_vertex(Pos2::new(x, y), color);
+            true
+        } else {
+            false
+        }
+    };
+    for bar in range.start..range.end.saturating_sub(1) {
+        let Some((a, b, c, d)) = value(first, bar)
+            .zip(value(first, bar + 1))
+            .zip(end(bar))
+            .zip(end(bar + 1))
+            .map(|(((a, b), c), d)| (a, b, c, d))
+        else {
+            continue;
+        };
+        let synthetic = |left: f64, right: f64| {
+            flat.map(|color| crate::studies::GradientStop {
+                top_value: left.max(right),
+                bottom_value: left.min(right),
+                top_color: color,
+                bottom_color: color,
+            })
+        };
+        let Some(stop) = stops
+            .get(bar)
+            .copied()
+            .flatten()
+            .or_else(|| synthetic(a, c))
+        else {
+            continue;
+        };
+        let Some(next) = stops
+            .get(bar + 1)
+            .copied()
+            .flatten()
+            .or_else(|| synthetic(b, d))
+        else {
+            continue;
+        };
+        let (x, next_x) = (coords.idx_to_x(bar), coords.idx_to_x(bar + 1));
+        let (left, right) = (a - c, b - d);
+        let quad = |mesh: &mut egui::Mesh,
+                    x0: f32,
+                    x1: f32,
+                    a,
+                    b,
+                    c,
+                    d,
+                    stop: crate::studies::GradientStop| {
+            let start = mesh.vertices.len() as u32;
+            if [
+                push(mesh, x0, a, color_at(&stop, a)),
+                push(mesh, x1, b, color_at(&stop, b)),
+                push(mesh, x1, d, color_at(&stop, d)),
+                push(mesh, x0, c, color_at(&stop, c)),
+            ]
+            .into_iter()
+            .all(|ok| ok)
+            {
+                mesh.add_triangle(start, start + 1, start + 2);
+                mesh.add_triangle(start, start + 2, start + 3);
+            } else {
+                mesh.vertices.truncate(start as usize);
+            }
+        };
+        if (left < 0.0 && right > 0.0) || (left > 0.0 && right < 0.0) {
+            let t = left / (left - right);
+            let cross_x = x + (next_x - x) * t as f32;
+            let cross_a = a + (b - a) * t;
+            let cross_c = c + (d - c) * t;
+            quad(&mut mesh, x, cross_x, a, cross_a, c, cross_c, stop);
+            quad(&mut mesh, cross_x, next_x, cross_a, b, cross_c, d, next);
+        } else {
+            quad(&mut mesh, x, next_x, a, b, c, d, stop);
+        }
+    }
+    if !mesh.vertices.is_empty() {
+        painter.add(egui::Shape::mesh(mesh));
+    }
+}
+
 fn paint_fills(
     painter: &egui::Painter,
     study: &dyn Indicator,
@@ -361,6 +631,14 @@ impl IndicatorRenderer {
             .start_idx
             .min(coords.x_to_idx(context.rect.left()).saturating_sub(1));
         let display_end = coords.x_to_idx(context.rect.right()).saturating_add(2);
+        paint_shading(
+            &painter,
+            indicator,
+            display_start..display_end,
+            price_scale,
+            coords,
+            context.rect,
+        );
         paint_fills(
             &painter,
             indicator,
@@ -1103,7 +1381,6 @@ mod tests {
         ];
         for (study, colours) in cases {
             let name = study.name().to_owned();
-            let fill_alpha = study.fills().first().map(|fill| fill.color.a());
             let mut chart = chart(&[100.0], &[110.0]);
             chart.add_indicator(study);
             let ctx = Context::default();
@@ -1112,7 +1389,7 @@ mod tests {
                 assert!(
                     painted
                         .iter()
-                        .any(|shape| matches!(shape, Shape::Mesh(mesh) if mesh.vertices.iter().all(|vertex| Some(vertex.color.a()) == fill_alpha))),
+                        .any(|shape| matches!(shape, Shape::Mesh(mesh) if mesh.vertices.iter().any(|vertex| vertex.color.a() > 0))),
                     "band between the outer lines"
                 );
             }

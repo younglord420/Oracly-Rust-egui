@@ -48,6 +48,18 @@ impl Default for FisherTransform {
 }
 
 impl Indicator for FisherTransform {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::spread(0, 1, 80))
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::HL2,

@@ -58,6 +58,10 @@ impl Default for StochasticMomentumIndex {
 }
 
 impl Indicator for StochasticMomentumIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::band_only(40.0, -40.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX),
         smooth1: length("Smooth1", 1, usize::MAX),

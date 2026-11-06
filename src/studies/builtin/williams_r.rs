@@ -98,6 +98,12 @@ impl WilliamsR {
 }
 
 impl Indicator for WilliamsR {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::bounded(
+            0, -20.0, -80.0, 0.0, -100.0,
+        ))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

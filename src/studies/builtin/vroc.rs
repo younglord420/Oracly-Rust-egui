@@ -72,6 +72,10 @@ impl VolumeRateOfChange {
 }
 
 impl Indicator for VolumeRateOfChange {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

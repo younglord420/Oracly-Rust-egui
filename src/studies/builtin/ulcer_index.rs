@@ -81,6 +81,17 @@ impl Default for UlcerIndex {
 }
 
 impl Indicator for UlcerIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::intensity(
+                0,
+                crate::studies::IntensityRange::Threshold(5.0),
+            )
+            .with_value_t(50)
+            .with_accent(palette::DOWN),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

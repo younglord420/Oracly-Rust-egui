@@ -61,6 +61,18 @@ impl Default for AccumulationDistribution {
 }
 
 impl Indicator for AccumulationDistribution {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::slope(0))
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn value_format(&self) -> crate::scales::StudyFormat {
         crate::scales::StudyFormat::Volume
     }

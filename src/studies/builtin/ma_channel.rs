@@ -70,6 +70,10 @@ impl MAChannel {
 }
 
 impl Indicator for MAChannel {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::channel(0, 2, Some(1)))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

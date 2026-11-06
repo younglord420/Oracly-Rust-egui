@@ -104,6 +104,10 @@ impl CenterOfGravity {
 }
 
 impl Indicator for CenterOfGravity {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::spread(0, 1, 80))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

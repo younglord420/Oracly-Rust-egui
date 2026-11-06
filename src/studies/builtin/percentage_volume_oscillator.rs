@@ -83,6 +83,10 @@ impl Default for PercentageVolumeOscillator {
 }
 
 impl Indicator for PercentageVolumeOscillator {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0).with_value_t(60))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         short_period: length("Short period", 1, usize::MAX),
         long_period: length("Long period", 1, usize::MAX),

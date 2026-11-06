@@ -124,6 +124,10 @@ impl ChaikinMoneyFlow {
 }
 
 impl Indicator for ChaikinMoneyFlow {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

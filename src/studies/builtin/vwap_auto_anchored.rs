@@ -172,6 +172,10 @@ impl Default for VwapAutoAnchored {
 }
 
 impl Indicator for VwapAutoAnchored {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::price_side(0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         anchor: choice("Anchor Period", [AutoAnchor::Auto, AutoAnchor::HighestHigh, AutoAnchor::LowestLow, AutoAnchor::HighestVolume, AutoAnchor::Session, AutoAnchor::Week, AutoAnchor::Month, AutoAnchor::Quarter, AutoAnchor::Year, AutoAnchor::Decade, AutoAnchor::Century]),
         length: length("Length", 1, usize::MAX),

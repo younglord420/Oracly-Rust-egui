@@ -84,6 +84,10 @@ impl Default for AccumulationSwingIndex {
 }
 
 impl Indicator for AccumulationSwingIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::slope(0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         limit_move: number("Limit move", f64::EPSILON, f64::MAX)
     ; {});

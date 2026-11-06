@@ -98,20 +98,15 @@ impl Default for KeltnerChannels {
 }
 
 impl Indicator for KeltnerChannels {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::channel(1, 2, Some(0)))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         ema_period: length("EMA period", 1, usize::MAX),
         atr_period: length("ATR period", 1, usize::MAX),
         multiplier: number("Multiplier", 0.0, f64::MAX)
     ; {});
-
-    fn fills(&self) -> Vec<crate::studies::StudyFill> {
-        vec![crate::studies::StudyFill {
-            first: crate::studies::FillBoundary::Plot(1),
-            second: crate::studies::FillBoundary::Plot(2),
-            color: self.fill_color,
-            inverted_color: None,
-        }]
-    }
 
     fn name(&self) -> &str {
         "Keltner"

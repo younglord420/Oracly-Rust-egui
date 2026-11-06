@@ -77,6 +77,14 @@ impl Default for CommoditySelectionIndex {
 }
 
 impl Indicator for CommoditySelectionIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 0.0)
+                .with_bull(Color32::PLACEHOLDER)
+                .with_bear(Color32::PLACEHOLDER),
+        )
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX),
         point_value: number("Point value", 0.0, f64::MAX),
@@ -241,6 +249,10 @@ impl TrendDetectionIndex {
 }
 
 impl Indicator for TrendDetectionIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

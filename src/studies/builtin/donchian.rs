@@ -102,6 +102,10 @@ impl DonchianChannels {
 }
 
 impl Indicator for DonchianChannels {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::flat_channel(1, 2, 92))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

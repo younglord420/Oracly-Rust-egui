@@ -4,11 +4,13 @@ use crate::localization as l10n;
 use crate::model::LineStyle;
 use crate::model::Timeframe;
 use crate::studies::{
-    Indicator, InputKind, InputValue, PlotType, StudyInput, StudyScale, StudySettings,
+    Indicator, InputKind, InputValue, PlotType, StudyInput, StudyIntervalRange, StudyScale,
+    StudySettings,
 };
 use crate::theme::Theme;
-use crate::ui_kit::{FormGrid, dialog::DialogFooter, modal::Modal};
+use crate::ui_kit::{ColorPicker, ColorPickerState, FormGrid, dialog::DialogFooter, modal::Modal};
 use crate::widget::SeriesId;
+use egui::{Color32, RichText, Ui};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum Tab {
@@ -41,6 +43,9 @@ pub struct IndicatorSettingsDialog {
     sources: Vec<(crate::studies::StudySource, String)>,
     overlay: bool,
     price_scale: bool,
+    plot_pickers: Vec<ColorPickerState>,
+    error: String,
+    defaults: Option<StudySettings>,
 }
 
 impl crate::ui_kit::tab_bar::TabLabel for Tab {
@@ -50,6 +55,14 @@ impl crate::ui_kit::tab_bar::TabLabel for Tab {
             Self::Style => "Style",
             Self::Visibility => "Visibility",
         }
+    }
+
+    fn tab_icon(&self) -> Option<&'static crate::icons::Icon> {
+        Some(match self {
+            Self::Inputs => &crate::icons::icons::SETTINGS_NUT,
+            Self::Style => &crate::icons::icons::PAINTBRUSH,
+            Self::Visibility => &crate::icons::icons::EYE,
+        })
     }
 }
 
@@ -69,6 +82,14 @@ impl IndicatorSettingsDialog {
         self.current_interval = interval;
         self.tab = Tab::Inputs;
         self.sources.clear();
+        self.plot_pickers = study
+            .settings()
+            .plots
+            .iter()
+            .map(|plot| ColorPickerState::new(plot.color))
+            .collect();
+        self.error.clear();
+        self.defaults = Some(study.default_settings());
     }
 
     /// Open on a chart study and offer its other studies as source inputs, excluding cycles.
@@ -128,11 +149,14 @@ impl IndicatorSettingsDialog {
             .height(560.0)
             .top(120.0)
             .show(ctx, &mut open, |ui| {
+                let mut tab = self.tab;
                 crate::ui_kit::tab_bar::TabBar::new(
                     &[Tab::Inputs, Tab::Style, Tab::Visibility],
-                    &mut self.tab,
+                    &mut tab,
                 )
+                .pills()
                 .show(ui);
+                self.tab = tab;
                 ui.separator();
                 egui::ScrollArea::vertical()
                     .max_height((ui.available_height() - 72.0).max(0.0))
@@ -324,6 +348,7 @@ impl IndicatorSettingsDialog {
                             });
                         }
                         Tab::Style => {
+                            shading_rows(ui, edit);
                             for (line, plot) in edit.settings.plots.iter_mut().enumerate() {
                                 ui.push_id(line, |ui| {
                                     ui.horizontal_wrapped(|ui| {
@@ -336,7 +361,13 @@ impl IndicatorSettingsDialog {
                                                     .map_or("Plot", String::as_str),
                                             ),
                                         );
-                                        ui.color_edit_button_srgba(&mut plot.color);
+                                        if let Some(picker) = self.plot_pickers.get_mut(line) {
+                                            picker.sel_color = plot.color;
+                                            ColorPicker::new(picker, ("plot_color", line))
+                                                .well_size(18.0)
+                                                .show(ui);
+                                            plot.color = picker.sel_color;
+                                        }
                                         ui.add(
                                             egui::DragValue::new(&mut plot.width)
                                                 .range(0.5..=10.0)
@@ -348,7 +379,7 @@ impl IndicatorSettingsDialog {
                                         egui::ComboBox::from_id_salt("pattern")
                                             .selected_text(l10n::text(
                                                 ui.ctx(),
-                                                format!("{:?}", plot.pattern),
+                                                line_style_name(plot.pattern),
                                             ))
                                             .show_ui(ui, |ui| {
                                                 for pattern in [
@@ -363,7 +394,7 @@ impl IndicatorSettingsDialog {
                                                         pattern,
                                                         l10n::text(
                                                             ui.ctx(),
-                                                            format!("{pattern:?}"),
+                                                            line_style_name(pattern),
                                                         ),
                                                     );
                                                 }
@@ -435,6 +466,25 @@ impl IndicatorSettingsDialog {
                             });
                         }
                         Tab::Visibility => {
+                            let anchor = self.current_interval.unwrap_or(Timeframe::Min1);
+                            let mut range = edit.settings.interval_range;
+                            egui::ComboBox::from_id_salt("interval_range")
+                                .selected_text(l10n::text(ui.ctx(), range_name(range)))
+                                .show_ui(ui, |ui| {
+                                    for choice in [
+                                        StudyIntervalRange::All,
+                                        StudyIntervalRange::Only(anchor),
+                                        StudyIntervalRange::AndAbove(anchor),
+                                        StudyIntervalRange::AndBelow(anchor),
+                                    ] {
+                                        ui.selectable_value(
+                                            &mut range,
+                                            choice,
+                                            l10n::text(ui.ctx(), range_name(choice)),
+                                        );
+                                    }
+                                });
+                            edit.settings.interval_range = range;
                             ui.label(l10n::text(ui.ctx(), "Show this study on these intervals:"));
                             let mut intervals = Timeframe::all();
                             for interval in self
@@ -448,12 +498,18 @@ impl IndicatorSettingsDialog {
                             }
                             ui.horizontal_wrapped(|ui| {
                                 for interval in intervals {
-                                    let mut visible =
-                                        !edit.settings.hidden_intervals.contains(&interval);
+                                    let allowed = self.current_interval.is_none_or(|current| {
+                                        range_allows(range, current, interval)
+                                    });
+                                    let mut visible = allowed
+                                        && !edit.settings.hidden_intervals.contains(&interval);
                                     if ui
-                                        .checkbox(
-                                            &mut visible,
-                                            l10n::text(ui.ctx(), interval.to_string()),
+                                        .add_enabled(
+                                            allowed,
+                                            egui::Checkbox::new(
+                                                &mut visible,
+                                                l10n::text(ui.ctx(), interval.to_string()),
+                                            ),
                                         )
                                         .changed()
                                     {
@@ -466,11 +522,37 @@ impl IndicatorSettingsDialog {
                             });
                         }
                     });
-                let valid = self.inputs.iter().all(|input| input.accepts(&input.value));
+                let valid = self.inputs.iter().all(|input| input.accepts(&input.value))
+                    && edit
+                        .settings
+                        .shading
+                        .as_ref()
+                        .is_none_or(|shading| shading.validate().is_ok());
+                self.error = edit
+                    .settings
+                    .shading
+                    .as_ref()
+                    .and_then(|shading| shading.validate().err())
+                    .unwrap_or("")
+                    .to_string();
+                if !self.error.is_empty() {
+                    ui.label(l10n::text(ui.ctx(), &self.error));
+                }
+                let defaults = self.defaults.clone();
                 (apply, cancel) = DialogFooter::new("Apply")
                     .primary_enabled(valid)
                     .secondary("Cancel")
-                    .show(ui);
+                    .show_with_left(ui, |ui| {
+                        if ui.button(l10n::text(ui.ctx(), "Defaults")).clicked()
+                            && let Some(defaults) = defaults
+                        {
+                            edit.settings.plots = defaults.plots;
+                            edit.settings.shading = defaults.shading;
+                            edit.settings.precision = defaults.precision;
+                            edit.settings.hidden_intervals = defaults.hidden_intervals;
+                            edit.settings.interval_range = defaults.interval_range;
+                        }
+                    });
             });
         if !open || cancel {
             self.edit = None;
@@ -487,6 +569,73 @@ impl IndicatorSettingsDialog {
         }
         None
     }
+}
+
+fn shading_rows(ui: &mut Ui, edit: &mut StudyEdit) {
+    let Some(mut shading) = edit.settings.shading.clone() else {
+        return;
+    };
+    ui.label(RichText::new(l10n::text(ui.ctx(), "SHADING")).strong());
+    ui.checkbox(
+        &mut shading.gradient_fill,
+        l10n::text(ui.ctx(), "Gradient fill"),
+    );
+    let (bull, bear) = match shading.kind {
+        crate::studies::ShadingKind::Bounded { .. } => ("Oversold", "Overbought"),
+        _ => ("Bullish", "Bearish"),
+    };
+    color_row(ui, bull, &mut shading.bull);
+    color_row(ui, bear, &mut shading.bear);
+    color_row(ui, "Band", &mut shading.band);
+    color_row(ui, "Levels", &mut shading.levels);
+    if let crate::studies::ShadingKind::Bounded {
+        ref mut overbought,
+        ref mut oversold,
+        ..
+    } = shading.kind
+    {
+        ui.add(
+            egui::DragValue::new(overbought)
+                .speed(0.1)
+                .prefix("Overbought "),
+        );
+        ui.add(
+            egui::DragValue::new(oversold)
+                .speed(0.1)
+                .prefix("Oversold "),
+        );
+    }
+    edit.settings.shading = Some(shading);
+}
+
+fn color_row(ui: &mut Ui, label: &str, color: &mut Color32) {
+    ui.horizontal(|ui| {
+        ui.label(l10n::text(ui.ctx(), label));
+        ui.color_edit_button_srgba(color);
+    });
+}
+
+fn line_style_name(style: LineStyle) -> &'static str {
+    match style {
+        LineStyle::Solid => "Solid",
+        LineStyle::Dashed => "Dashed",
+        LineStyle::Dotted => "Dotted",
+        LineStyle::LargeDashed => "Large dashed",
+        LineStyle::SparseDotted => "Sparse dotted",
+    }
+}
+
+fn range_name(range: StudyIntervalRange) -> &'static str {
+    match range {
+        StudyIntervalRange::All => "All",
+        StudyIntervalRange::Only(_) => "Only current",
+        StudyIntervalRange::AndAbove(_) => "Current and above",
+        StudyIntervalRange::AndBelow(_) => "Current and below",
+    }
+}
+
+fn range_allows(range: StudyIntervalRange, _current: Timeframe, interval: Timeframe) -> bool {
+    range.contains(interval)
 }
 
 #[cfg(test)]

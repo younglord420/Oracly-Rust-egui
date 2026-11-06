@@ -138,6 +138,10 @@ impl UltimateOscillator {
 }
 
 impl Indicator for UltimateOscillator {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::bounded(0, 70.0, 30.0, 100.0, 0.0).with_zone_t(91))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period1: length("Period1", 1, usize::MAX),
         period2: length("Period2", 1, usize::MAX),

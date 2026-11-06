@@ -161,6 +161,22 @@ impl Default for RsiDivergence {
 }
 
 impl Indicator for RsiDivergence {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::bounded(0, 70.0, 30.0, 100.0, 0.0)
+                .with_midline(50.0)
+                .with_band(true),
+        )
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn level_style(&self, _value: f64) -> crate::model::LineStyle {
         crate::model::LineStyle::Dotted
     }
@@ -442,7 +458,7 @@ impl Indicator for RsiDivergence {
                 (50.0, gray, "Middle"),
                 (30.0, gray, "Oversold"),
             ],
-            fill_between_levels: true,
+            fill_between_levels: false,
         }
     }
 

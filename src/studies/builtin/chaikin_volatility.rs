@@ -46,6 +46,14 @@ impl Default for ChaikinVolatility {
 }
 
 impl Indicator for ChaikinVolatility {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 0.0)
+                .with_bull(crate::studies::palette::AMBER)
+                .with_bear(Color32::PLACEHOLDER),
+        )
+    }
+
     crate::studies::inputs::study_inputs!(self;
         ema_period: length("EMA period", 1, usize::MAX),
         roc_period: length("Roc period", 1, usize::MAX)

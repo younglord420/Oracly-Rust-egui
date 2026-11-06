@@ -13,8 +13,9 @@ pub struct VIDYA {
     /// Period for calculation
     period: usize,
     values: IndicatorValues,
-    stepper: Stepper<(std::collections::VecDeque<f64>, Option<f64>)>,
+    stepper: Stepper<(std::collections::VecDeque<f64>, Option<f64>, Vec<f64>)>,
     color: Color32,
+    adaptive: bool,
     visible: bool,
 }
 
@@ -26,6 +27,7 @@ impl VIDYA {
             values: IndicatorValues::new(),
             stepper: Stepper::default(),
             color: palette::BLUE,
+            adaptive: true,
             visible: true,
         }
     }
@@ -51,7 +53,8 @@ impl Indicator for VIDYA {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        period: length("Period", 1, usize::MAX)
+        period: length("Period", 1, usize::MAX),
+        adaptive: toggle("Adaptive gradient")
     ; {});
 
     fn name(&self) -> &str {
@@ -70,11 +73,14 @@ impl Indicator for VIDYA {
         self.stepper
             .run(data, from, &mut self.values, |state, bar| {
                 if !bar.close.is_finite() {
+                    state.2.push(0.0);
                     return IndicatorValue::None;
                 }
-                let previous = state.1.get_or_insert(bar.close);
+                let mut previous = state.1.unwrap_or(bar.close);
                 state.0.push_back(bar.close);
                 if state.0.len() <= self.period {
+                    state.1 = Some(previous);
+                    state.2.push(0.0);
                     return IndicatorValue::None;
                 }
                 while state.0.len() - 1 > self.period {
@@ -94,9 +100,11 @@ impl Indicator for VIDYA {
                 } else {
                     0.0
                 };
+                state.2.push(vi);
                 let sc = 2.0 / (self.period as f64 + 1.0);
-                *previous = sc * vi * bar.close + (1.0 - sc * vi) * *previous;
-                IndicatorValue::Single(*previous)
+                previous = sc * vi * bar.close + (1.0 - sc * vi) * previous;
+                state.1 = Some(previous);
+                IndicatorValue::Single(previous)
             });
     }
 
@@ -132,6 +140,20 @@ impl Indicator for VIDYA {
 
     fn clone_box(&self) -> Box<dyn Indicator> {
         Box::new(self.clone())
+    }
+
+    fn plot_color(&self, _line: usize, bar: usize) -> Option<Color32> {
+        if !self.adaptive {
+            return None;
+        }
+        let scale = self.stepper.state().2.get(bar).copied().unwrap_or(0.0);
+        Some(crate::studies::shading::blend(
+            scale.min(1.0),
+            0.0,
+            1.0,
+            palette::MUTED,
+            self.color,
+        ))
     }
 
     fn line_names(&self) -> Vec<String> {

@@ -96,6 +96,14 @@ impl BollingerBandsWidth {
 }
 
 impl Indicator for BollingerBandsWidth {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 0.0)
+                .with_bull(Color32::PLACEHOLDER)
+                .with_bear(Color32::PLACEHOLDER),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

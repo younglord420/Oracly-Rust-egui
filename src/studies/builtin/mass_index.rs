@@ -63,6 +63,13 @@ impl Default for MassIndex {
 }
 
 impl Indicator for MassIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::band_only(27.0, 26.5)
+                .with_band_color(crate::studies::shading::transp(palette::AMBER, 90)),
+        )
+    }
+
     crate::studies::inputs::study_inputs!(self;
         ema_period: length("EMA period", 1, usize::MAX),
         sum_period: length("Sum period", 1, usize::MAX)

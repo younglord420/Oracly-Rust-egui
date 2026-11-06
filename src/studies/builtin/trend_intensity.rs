@@ -90,6 +90,10 @@ impl TrendIntensityIndex {
 }
 
 impl Indicator for TrendIntensityIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::bounded(0, 80.0, 20.0, 100.0, 0.0).with_band(true))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,
@@ -233,6 +237,10 @@ impl Qstick {
 }
 
 impl Indicator for Qstick {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::centered(0, 0.0))
+    }
+
     fn value_format(&self) -> crate::scales::StudyFormat {
         crate::scales::StudyFormat::Price
     }

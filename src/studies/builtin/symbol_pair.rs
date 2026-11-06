@@ -140,6 +140,14 @@ impl<const RATIO: bool, const CORRELATION: bool> Default for SymbolPair<RATIO, C
 }
 
 impl<const RATIO: bool, const CORRELATION: bool> Indicator for SymbolPair<RATIO, CORRELATION> {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        if CORRELATION {
+            Some(crate::studies::StudyShading::centered(0, 0.0))
+        } else {
+            None
+        }
+    }
+
     fn line_style(&self, _line: usize) -> crate::studies::IndicatorLineStyle {
         crate::studies::IndicatorLineStyle {
             width: if CORRELATION { 1.0 } else { 2.0 },

@@ -435,6 +435,11 @@ impl<'a> Legend<'a> {
                 }
                 let row_start = layout.pos;
                 if self.show_indicator_titles {
+                    let title_color = if study.is_visible() {
+                        colors.text
+                    } else {
+                        colors.text.gamma_multiply(0.5)
+                    };
                     layout.text(
                         if study.is_volume() {
                             l10n::text(ui.ctx(), "Vol")
@@ -442,7 +447,7 @@ impl<'a> Legend<'a> {
                             study.name().to_owned()
                         },
                         theme.text.ohlc,
-                        colors.text,
+                        title_color,
                         bounds.width(),
                     );
                 }
@@ -766,7 +771,12 @@ pub(crate) fn study_controls(
                 2 => &crate::icons::icons::TRASH,
                 _ => &crate::icons::icons::UI_MORE_HORIZONTAL,
             };
-            icon.as_image_tinted(Vec2::splat(14.0), theme.ui.text_secondary)
+            let tint = if response.hovered() {
+                theme.ui.text
+            } else {
+                theme.ui.text_secondary
+            };
+            icon.as_image_tinted(Vec2::splat(14.0), tint)
                 .paint_at(ui, rect.shrink(3.0));
         }
         #[cfg(not(feature = "icons"))]

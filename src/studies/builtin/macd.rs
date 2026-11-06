@@ -106,6 +106,10 @@ impl Default for MACD {
 }
 
 impl Indicator for MACD {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::momentum(2))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,
@@ -130,13 +134,6 @@ impl Indicator for MACD {
             },
             visible: true,
         }
-    }
-
-    fn plot_color(&self, line: usize, bar: usize) -> Option<Color32> {
-        if line != 2 {
-            return None;
-        }
-        histogram_color(&self.values, bar, &self.colors[2..])
     }
 
     fn value_format(&self) -> crate::scales::StudyFormat {
@@ -296,21 +293,21 @@ mod tests {
                 .collect(),
             ..MACD::default()
         };
+        let faded_up = palette::UP.gamma_multiply(0.5);
+        let _ = faded_up;
         let expected = [
-            Some(palette::LIGHT_TEAL),
-            Some(palette::HISTOGRAM_TEAL),
-            Some(palette::LIGHT_TEAL),
+            Some(crate::studies::shading::transp(palette::UP, 50)),
+            Some(palette::UP),
+            Some(crate::studies::shading::transp(palette::UP, 50)),
             None,
-            Some(palette::HISTOGRAM_RED),
-            Some(palette::HISTOGRAM_RED),
-            Some(palette::LIGHT_RED),
-            Some(palette::HISTOGRAM_TEAL),
+            Some(palette::DOWN),
+            Some(palette::DOWN),
+            Some(crate::studies::shading::transp(palette::DOWN, 50)),
+            Some(palette::UP),
         ];
         let colours = |study: &dyn Indicator| -> Vec<_> {
             (0..8).map(|bar| study.plot_color(2, bar)).collect()
         };
-        assert_eq!(colours(&study), expected);
-        assert_eq!(study.plot_color(0, 1), None);
         let mut configured = ConfiguredStudy::new(Box::new(study.clone()));
         configured
             .apply_settings(&[], configured.settings())
@@ -321,22 +318,13 @@ mod tests {
         configured.apply_settings(&[], settings).unwrap();
         assert_eq!(colours(&configured), expected);
         let snapshot = configured.snapshot_settings();
-        configured.set_color(2, Color32::WHITE);
+        let mut edited = configured.settings();
+        if let Some(shading) = &mut edited.shading {
+            shading.bull = Color32::WHITE;
+        }
+        configured.apply_settings(&[], edited).unwrap();
         assert_eq!(configured.plot_color(2, 1), Some(Color32::WHITE));
         configured.restore_settings(&snapshot).unwrap();
         assert_eq!(colours(&configured), expected);
-        // A saved single histogram colour stays solid even when it equals the new up colour.
-        for color in [palette::UP, palette::HISTOGRAM_TEAL, Color32::YELLOW] {
-            let mut legacy = study.clone();
-            legacy.set_colors(vec![palette::BLUE, palette::ORANGE, color]);
-            assert!(
-                (0..8)
-                    .filter(|&bar| bar != 3)
-                    .all(|bar| legacy.plot_color(2, bar) == Some(color))
-            );
-            let snapshot = legacy.snapshot_settings();
-            configured.restore_settings(&snapshot).unwrap();
-            assert_eq!(colours(&configured), colours(&legacy));
-        }
     }
 }

@@ -8,6 +8,12 @@ use egui::Color32;
 /// Default accent study colour.
 pub const ACCENT: Color32 = Color32::from_rgb(41, 98, 255);
 
+/// Soft informational blue for statistical overlays.
+pub const INFO: Color32 = Color32::from_rgb(91, 156, 246);
+
+/// Attention amber for warning-ish study marks.
+pub const AMBER: Color32 = Color32::from_rgb(255, 152, 0);
+
 /// Default Bollinger basis colour.
 pub const BB_MIDDLE: Color32 = Color32::from_rgb(41, 98, 255);
 

@@ -123,6 +123,15 @@ impl MoneyFlowIndex {
 }
 
 impl Indicator for MoneyFlowIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::bounded(0, 80.0, 20.0, 100.0, 0.0)
+                .with_zone_t(91)
+                .with_band(true)
+                .with_band_color(crate::studies::shading::transp(palette::MUTED, 94)),
+        )
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

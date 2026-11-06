@@ -90,6 +90,15 @@ impl ChandeMomentumOscillator {
 }
 
 impl Indicator for ChandeMomentumOscillator {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 0.0)
+                .dotted()
+                .with_levels(vec![50.0, -50.0])
+                .with_zones(50.0, -50.0, 100.0, -100.0),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

@@ -114,6 +114,10 @@ impl AwesomeOscillator {
 }
 
 impl Indicator for AwesomeOscillator {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::rising(0))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::HL2,

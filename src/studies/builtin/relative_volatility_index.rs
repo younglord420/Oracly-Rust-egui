@@ -76,6 +76,22 @@ impl Default for RelativeVolatilityIndex {
 }
 
 impl Indicator for RelativeVolatilityIndex {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::bounded(0, 80.0, 20.0, 100.0, 0.0)
+                .with_bull(palette::DOWN)
+                .with_bear(palette::UP),
+        )
+    }
+
+    fn line_style(&self, line: usize) -> crate::studies::IndicatorLineStyle {
+        let mut style = crate::studies::IndicatorLineStyle::default();
+        if line == 0 {
+            style.width = 2.0;
+        }
+        style
+    }
+
     fn level_fill_color(&self) -> Color32 {
         self.fill_color
     }
@@ -174,7 +190,7 @@ impl Indicator for RelativeVolatilityIndex {
                 (50.0, gray.gamma_multiply_u8(128), "Middle Band"),
                 (20.0, gray, "Lower Band"),
             ],
-            fill_between_levels: true,
+            fill_between_levels: false,
         }
     }
 

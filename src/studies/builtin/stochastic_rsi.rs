@@ -97,6 +97,13 @@ impl Default for StochasticRSI {
 }
 
 impl Indicator for StochasticRSI {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::band_only(80.0, 20.0)
+                .with_band_color(crate::studies::shading::transp(palette::INFO, 90)),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

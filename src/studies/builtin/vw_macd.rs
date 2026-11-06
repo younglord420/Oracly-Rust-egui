@@ -77,6 +77,10 @@ impl VolumeWeightedMACD {
 }
 
 impl Indicator for VolumeWeightedMACD {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::momentum(2))
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::Close,

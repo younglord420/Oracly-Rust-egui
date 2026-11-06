@@ -111,6 +111,14 @@ impl CCI {
 }
 
 impl Indicator for CCI {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(
+            crate::studies::StudyShading::centered(0, 0.0)
+                .dotted()
+                .with_levels(vec![100.0, -100.0]),
+        )
+    }
+
     fn source(&self) -> Option<crate::studies::StudySource> {
         Some(crate::studies::StudySource::Price(
             crate::model::PriceSource::HLC3,

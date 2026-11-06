@@ -61,6 +61,10 @@ impl Default for DirectionalMovement {
 }
 
 impl Indicator for DirectionalMovement {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::adx(2, 0, 1, 25.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX)
     ; {});

@@ -135,6 +135,10 @@ impl DoubleStochastic {
 }
 
 impl Indicator for DoubleStochastic {
+    fn shading(&self) -> Option<crate::studies::StudyShading> {
+        Some(crate::studies::StudyShading::band_only(80.0, 20.0))
+    }
+
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX),
         smooth: length("Smooth", 1, usize::MAX)

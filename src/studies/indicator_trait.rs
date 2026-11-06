@@ -219,6 +219,21 @@ pub trait Indicator: Send {
         Vec::new()
     }
 
+    /// The gradient pattern for this study, or none when it draws without one.
+    fn shading(&self) -> Option<super::StudyShading> {
+        None
+    }
+
+    /// Per-bar wash stops rebuilt by [`ConfiguredStudy`](super::ConfiguredStudy).
+    fn gradient_stops(&self) -> &[Option<super::GradientStop>] {
+        &[]
+    }
+
+    /// Settings a Defaults button restores. The chart wrapper returns what it was constructed with.
+    fn default_settings(&self) -> super::StudySettings {
+        self.settings()
+    }
+
     /// Value at a displayed bar, accounting for the plot's displacement.
     fn plot_value(&self, line: usize, bar: usize) -> Option<f64> {
         let source = bar.checked_add_signed(self.plot_offset(line).checked_neg()?)?;
@@ -234,6 +249,7 @@ pub trait Indicator: Send {
             precision: self.precision(),
             hidden_intervals: Vec::new(),
             interval_range: Default::default(),
+            shading: self.shading(),
         }
     }
 
