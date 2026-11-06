@@ -89,8 +89,10 @@ impl Indicator for VolumeOscillator {
                     self.long_period,
                     2.0 / (self.long_period as f64 + 1.0),
                 );
-                if short.is_nan() || long.is_nan() || long == 0.0 {
+                if short.is_nan() || long.is_nan() {
                     IndicatorValue::None
+                } else if long == 0.0 {
+                    IndicatorValue::Single(0.0)
                 } else {
                     IndicatorValue::Single((short - long) / long * 100.0)
                 }

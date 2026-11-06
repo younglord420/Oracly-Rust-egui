@@ -155,12 +155,11 @@ impl Indicator for ConnorsRSI {
                         roc = (bar.close - previous) / previous * 100.0;
                     }
                 }
-                let rank = if state.roc.len() == self.rank_period && !roc.is_nan() {
-                    state
-                        .roc
-                        .iter()
-                        .filter(|&&v| !v.is_nan() && v < roc)
-                        .count() as f64
+                let rank = if state.roc.len() == self.rank_period
+                    && roc.is_finite()
+                    && state.roc.iter().all(|value| value.is_finite())
+                {
+                    state.roc.iter().filter(|&&value| value <= roc).count() as f64
                         / self.rank_period as f64
                         * 100.0
                 } else {
@@ -249,26 +248,28 @@ mod tests {
             make_bar(100.0), // 0
         ];
 
-        // Wilder RSI(2): price = 100, 50, 25, 25; streak = 100, 25, 50/3, 450/7.
-        // The last two returns rank the current return at 0, 0, 0, then 100 percent.
-        let expected = [200.0 / 3.0, 25.0, 125.0 / 9.0, 1325.0 / 21.0];
+        // Wilder RSI(2): price = 50, 25, 25; streak = 25, 50/3, 450/7 from bar 3.
+        // The rank window still holds the opening gap through bar 2, so that bar has no value.
+        // Later returns rank at 0, 0, then 100 percent.
+        let expected = [25.0, 125.0 / 9.0, 1325.0 / 21.0];
         let mut study = ConnorsRSI::new().with_periods(2, 2, 2);
         study.calculate(&data);
-        for (bar, want) in (2..data.len()).zip(expected) {
+        assert!(study.values().value(0, 2).is_none());
+        for (bar, want) in (3..data.len()).zip(expected) {
             let got = study.values().value(0, bar).expect("defined Connors RSI");
             assert!((got - want).abs() < 1e-9, "bar {bar}: {got} != {want}");
         }
     }
 
     /// A flat series has no gains or losses: both RSI components are the neutral 50 and no
-    /// return ranks above an equal one, so the composite is (50 + 50 + 0) / 3.
+    /// return counts as ranking at an equal one, so the composite is (50 + 50 + 100) / 3.
     #[test]
     fn flat_series_uses_neutral_rsi() {
         let mut crsi = ConnorsRSI::new().with_periods(3, 2, 5);
         let data: Vec<Bar> = (0..20).map(|_| make_bar(100.0)).collect();
         crsi.calculate(&data);
         match crsi.values.to_rows()[19] {
-            IndicatorValue::Single(v) => assert!((v - 100.0 / 3.0).abs() < 1e-9),
+            IndicatorValue::Single(v) => assert!((v - 200.0 / 3.0).abs() < 1e-9),
             _ => panic!("expected a value after warmup"),
         }
     }

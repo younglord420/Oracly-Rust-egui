@@ -14,10 +14,10 @@ pub struct StandardError {
 }
 
 impl StandardError {
-    /// Create with a lookback of `period` bars, clamped to at least 2.
+    /// Create with a lookback of `period` bars, clamped to at least 3.
     pub fn new(period: usize) -> Self {
         Self {
-            period: period.max(2),
+            period: period.max(3),
             values: IndicatorValues::new(),
             colors: vec![palette::ORANGE],
             visible: true,
@@ -105,7 +105,7 @@ impl Indicator for StandardError {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        period: length("Period", 2, usize::MAX)
+        period: length("Period", 3, usize::MAX)
     ; {});
 
     fn name(&self) -> &str {

@@ -9,7 +9,7 @@ use egui::Color32;
 /// Measures price movement per unit of volume
 #[derive(Clone)]
 pub struct MarketFacilitationIndex {
-    /// Divisor for volume (typically 1 for crypto, 1000000 for stocks)
+    /// Divisor for volume. The default of 1 leaves volume in the units the feed supplies.
     divisor: f64,
     values: IndicatorValues,
     color: Color32,

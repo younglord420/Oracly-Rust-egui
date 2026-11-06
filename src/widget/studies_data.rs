@@ -240,6 +240,90 @@ impl Chart {
         self.invalidate_study_data();
     }
 
+    /// Why `id` has nothing to draw, or `None` when it has a value or is only hidden by its eye toggle.
+    pub fn study_status(&self, id: super::SeriesId) -> Option<crate::studies::StudyStatus> {
+        use crate::studies::StudyStatus;
+        let (_, study) = self.indicators().find(|(candidate, _)| *candidate == id)?;
+        if study.hidden_by_interval() {
+            return Some(StudyStatus::HiddenOnInterval);
+        }
+        for request in study.data_requests() {
+            let resolved_request = resolved(&request, self.symbol(), self.timeframe());
+            let stored = self
+                .study_data
+                .series
+                .iter()
+                .find(|series| series.request == resolved_request);
+            let what = if !request.symbol.is_empty() {
+                request.symbol.clone()
+            } else if let Some(metric) = request.metric.clone() {
+                metric
+            } else if let Some(timeframe) = request.timeframe {
+                format!("{timeframe} bars")
+            } else {
+                "data".to_owned()
+            };
+            match stored {
+                Some(series) if series.error.is_some() => {
+                    return Some(StudyStatus::DataError {
+                        message: series.error.as_ref().unwrap().to_string(),
+                    });
+                }
+                Some(series) if !series.bars.is_empty() => {}
+                _ => return Some(StudyStatus::WaitingForData { what }),
+            }
+        }
+        let loaded = study.values().len();
+        let finite = (0..study.line_count())
+            .any(|line| (0..loaded).any(|bar| study.values().value(line, bar).is_some()));
+        if study.order_flow_input().is_some() && !finite {
+            return Some(StudyStatus::WaitingForData {
+                what: "trades".to_owned(),
+            });
+        }
+        if !finite {
+            if let Some(days) = study.required_days() {
+                let bars = self.bars(super::SeriesId::MAIN);
+                let span = match (bars.first(), bars.last()) {
+                    (Some(first), Some(last)) => (last.time - first.time).num_days().max(0) as u32,
+                    _ => 0,
+                };
+                if span < days {
+                    return Some(StudyStatus::NeedsHistory { days });
+                }
+            }
+            if let Some(needed) = study.required_bars()
+                && needed > loaded
+            {
+                return Some(StudyStatus::NeedsBars { needed, loaded });
+            }
+        }
+        None
+    }
+
+    /// Recompute [`Self::study_status`] for every applied study.
+    ///
+    /// Writes the status on the study directly. This must not go through
+    /// [`Self::indicator_mut`]: that path records an undo step and marks the study to be
+    /// recomputed from the first bar.
+    pub fn refresh_study_statuses(&mut self) {
+        let ids: Vec<_> = self.indicators().map(|(id, _)| id).collect();
+        let statuses: Vec<_> = ids
+            .iter()
+            .copied()
+            .map(|id| self.study_status(id))
+            .collect();
+        for (id, status) in ids.into_iter().zip(statuses) {
+            let Some(at) = self.study_ids.iter().position(|study| *study == id) else {
+                continue;
+            };
+            let study = &mut self.studies.indicators_mut()[at];
+            if study.study_status() != status {
+                study.set_study_status(status);
+            }
+        }
+    }
+
     /// The last error for a requested study history. Recoverable resolve and page failures retry
     /// with exponential backoff, respecting rate limits; success clears the error. An unavailable
     /// source leaves gaps.
@@ -551,7 +635,10 @@ mod tests {
     use super::*;
     use crate::data::{Reply, Sink};
     use crate::studies::{InputValue, SMA};
-    use crate::widget::{ChartBuilder, test_frames::shapes};
+    use crate::widget::{
+        ChartBuilder,
+        test_frames::{chart, frame, shapes},
+    };
     use chrono::{DateTime, Duration};
 
     #[derive(Default)]
@@ -1228,5 +1315,44 @@ mod tests {
         assert_eq!(values(&mut chart), [Some(10.0), None]);
         chart.set_replay_time(None);
         assert_eq!(values(&mut chart), [Some(10.0), Some(14.0), Some(24.0)]);
+    }
+
+    /// A status refresh must leave a computed study's values, pending range and undo history
+    /// alone. Routing it through `indicator_mut` marks every study dirty on each frame.
+    #[test]
+    fn status_refresh_keeps_computed_studies() {
+        let ctx = egui::Context::default();
+        let mut chart = chart(&[100.0], &[110.0]);
+        let id = chart.add_indicator(Box::new(SMA::new(1)));
+        for time in [0.0, 0.5, 1.0, 1.5] {
+            frame(&ctx, &mut chart, time, Vec::new());
+        }
+        let values: Vec<_> = {
+            let study = chart
+                .indicators()
+                .find(|(study, _)| *study == id)
+                .unwrap()
+                .1;
+            (0..study.values().len())
+                .map(|bar| study.values().value(0, bar))
+                .collect()
+        };
+        assert_eq!(values, vec![Some(110.0); 100]);
+        assert!(chart.pending_from.iter().all(|pending| pending.is_none()));
+        chart.refresh_study_statuses();
+        assert!(
+            chart.pending_from.iter().all(|pending| pending.is_none()),
+            "status refresh must not mark the study pending"
+        );
+        assert!(!chart.can_undo());
+        chart.user_action(|chart| chart.refresh_study_statuses());
+        assert!(!chart.can_undo());
+        let study = chart
+            .indicators()
+            .find(|(study, _)| *study == id)
+            .unwrap()
+            .1;
+        assert_eq!(study.values().len(), 100);
+        assert_eq!(study.values().value(0, 99), Some(110.0));
     }
 }

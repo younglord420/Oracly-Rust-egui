@@ -277,6 +277,7 @@ pub struct ConfiguredStudy {
     aligned_bars: Vec<Option<usize>>,
     shade_colors: Vec<Option<Color32>>,
     shade_stops: Vec<Option<super::GradientStop>>,
+    status: Option<super::StudyStatus>,
     closes: Vec<f64>,
     defaults: StudySettings,
 }
@@ -311,6 +312,7 @@ impl ConfiguredStudy {
             aligned_bars: Vec::new(),
             shade_colors: Vec::new(),
             shade_stops: Vec::new(),
+            status: None,
             closes: Vec::new(),
             defaults,
         }
@@ -776,6 +778,25 @@ impl Indicator for ConfiguredStudy {
     fn gradient_stops(&self) -> &[Option<super::GradientStop>] {
         &self.shade_stops
     }
+    fn study_status(&self) -> Option<super::StudyStatus> {
+        self.status.clone()
+    }
+    fn set_study_status(&mut self, status: Option<super::StudyStatus>) {
+        self.status = status;
+    }
+    fn hidden_by_interval(&self) -> bool {
+        self.study.is_visible()
+            && self.timeframe.is_some_and(|timeframe| {
+                self.settings.hidden_intervals.contains(&timeframe)
+                    || !self.settings.interval_range.contains(timeframe)
+            })
+    }
+    fn required_bars(&self) -> Option<usize> {
+        self.study.required_bars()
+    }
+    fn required_days(&self) -> Option<u32> {
+        self.study.required_days()
+    }
     fn default_settings(&self) -> StudySettings {
         let mut settings = self.defaults.clone();
         settings.shading = self.study.shading();
@@ -971,6 +992,9 @@ impl Indicator for ConfiguredStudy {
         self.study.is_volume()
     }
     fn level_style(&self, value: f64) -> LineStyle {
+        if self.study.level_style(value) == LineStyle::Dotted {
+            return LineStyle::Dotted;
+        }
         match self.shading_now().as_ref().map(|shading| &shading.kind) {
             Some(super::ShadingKind::Bounded {
                 midline: Some(mid), ..

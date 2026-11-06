@@ -127,6 +127,16 @@ impl Indicator for PringsSpecialK {
         signal_lengths[1]: length("Signal length 2", 1, usize::MAX)
     ; {});
 
+    fn required_bars(&self) -> Option<usize> {
+        Some(
+            COMPONENTS
+                .iter()
+                .map(|(roc, average, _)| roc + average)
+                .max()
+                .unwrap_or(1),
+        )
+    }
+
     fn name(&self) -> &str {
         "Pring's Special K"
     }

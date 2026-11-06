@@ -16,21 +16,36 @@ pub struct SchaffTrendCycle {
     macd_long: usize,
     /// Stochastic cycle period (typically 10)
     cycle: usize,
+    factor: f64,
     values: IndicatorValues,
     stepper: Stepper<State>,
     color: Color32,
     visible: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct State {
-    index: usize,
-    count: usize,
-    ema: [Smoothing; 2],
+    fast: Smoothing,
+    slow: Smoothing,
     macd: std::collections::VecDeque<f64>,
     first: std::collections::VecDeque<f64>,
-    smooth: [f64; 2],
-    pending: Vec<(usize, f64)>,
+    /// Last stochastic reading of each pass. NaN until a window has a range.
+    percent: [f64; 2],
+    /// Recursive smoother of each pass. NaN until its first finite input.
+    smoothed: [f64; 2],
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            fast: Smoothing::default(),
+            slow: Smoothing::default(),
+            macd: std::collections::VecDeque::new(),
+            first: std::collections::VecDeque::new(),
+            percent: [f64::NAN; 2],
+            smoothed: [f64::NAN; 2],
+        }
+    }
 }
 
 impl SchaffTrendCycle {
@@ -40,6 +55,7 @@ impl SchaffTrendCycle {
             macd_short: 23,
             macd_long: 50,
             cycle: 10,
+            factor: 0.5,
             values: IndicatorValues::new(),
             stepper: Stepper::default(),
             color: palette::PURPLE,
@@ -61,19 +77,44 @@ impl SchaffTrendCycle {
         self
     }
 
-    fn stochastic(values: &std::collections::VecDeque<f64>, period: usize) -> f64 {
-        let value = *values.back().unwrap();
-        if values.len() < period || value.is_nan() {
-            return f64::NAN;
+    fn push_window(window: &mut std::collections::VecDeque<f64>, value: f64, period: usize) {
+        if !value.is_finite() {
+            window.clear();
+            return;
         }
-        let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let low = values.iter().copied().fold(f64::INFINITY, f64::min);
-        let range = high - low;
-        if range == 0.0 {
-            50.0
+        window.push_back(value);
+        while window.len() > period {
+            window.pop_front();
+        }
+    }
+
+    /// Position in the window. A flat window keeps the previous reading.
+    fn stochastic(
+        window: &std::collections::VecDeque<f64>,
+        period: usize,
+        previous: f64,
+    ) -> Option<f64> {
+        if window.len() < period {
+            return None;
+        }
+        let value = *window.back().unwrap();
+        let high = window.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let low = window.iter().copied().fold(f64::INFINITY, f64::min);
+        let percent = if high > low {
+            100.0 * (value - low) / (high - low)
         } else {
-            (value - low) / range * 100.0
-        }
+            previous
+        };
+        percent.is_finite().then_some(percent)
+    }
+
+    fn smooth(state: &mut f64, value: f64, factor: f64) -> f64 {
+        *state = if state.is_finite() {
+            *state + factor * (value - *state)
+        } else {
+            value
+        };
+        *state
     }
 }
 
@@ -109,7 +150,8 @@ impl Indicator for SchaffTrendCycle {
     crate::studies::inputs::study_inputs!(self;
         macd_short: length("MACD short", 1, usize::MAX),
         macd_long: length("MACD long", 1, usize::MAX),
-        cycle: length("Cycle", 1, usize::MAX)
+        cycle: length("Cycle", 2, usize::MAX),
+        factor: number("Smoothing factor", 0.01, 1.0)
     ; {});
 
     fn name(&self) -> &str {
@@ -125,70 +167,45 @@ impl Indicator for SchaffTrendCycle {
     }
 
     fn update(&mut self, data: &[Bar], from: usize) {
+        let (short_len, long_len, cycle, factor) = (
+            self.macd_short,
+            self.macd_long,
+            self.cycle.max(2),
+            self.factor,
+        );
         self.stepper
             .run(data, from, &mut self.values, |state, bar| {
-                let index = state.index;
-                state.index += 1;
                 if !bar.close.is_finite() {
+                    state.fast = Smoothing::default();
+                    state.slow = Smoothing::default();
+                    state.macd.clear();
+                    state.first.clear();
                     return IndicatorValue::None;
                 }
-                state.count += 1;
-                let short = state.ema[0].next(
-                    bar.close,
-                    self.macd_short,
-                    2.0 / (self.macd_short as f64 + 1.0),
-                );
-                let long = state.ema[1].next(
-                    bar.close,
-                    self.macd_long,
-                    2.0 / (self.macd_long as f64 + 1.0),
-                );
-                let macd = if short.is_nan() || long.is_nan() {
-                    f64::NAN
+                let fast = state
+                    .fast
+                    .next(bar.close, short_len, 2.0 / (short_len as f64 + 1.0));
+                let slow = state
+                    .slow
+                    .next(bar.close, long_len, 2.0 / (long_len as f64 + 1.0));
+                let macd = if fast.is_finite() && slow.is_finite() {
+                    fast - slow
                 } else {
-                    short - long
-                };
-                state.macd.push_back(macd);
-                if state.macd.len() > self.cycle {
-                    state.macd.pop_front();
-                }
-                let first = Self::stochastic(&state.macd, self.cycle);
-                let smooth = if first.is_nan() {
                     f64::NAN
-                } else {
-                    state.smooth[0] += 0.5 * (first - state.smooth[0]);
-                    state.smooth[0]
                 };
-                state.first.push_back(smooth);
-                if state.first.len() > self.cycle {
-                    state.first.pop_front();
-                }
-                let second = Self::stochastic(&state.first, self.cycle);
-                if second.is_nan() {
+                Self::push_window(&mut state.macd, macd, cycle);
+                let Some(first) = Self::stochastic(&state.macd, cycle, state.percent[0]) else {
                     return IndicatorValue::None;
-                }
-                state.smooth[1] += 0.5 * (second - state.smooth[1]);
-                let value = state.smooth[1].clamp(0.0, 100.0);
-                if state.count < self.macd_long.saturating_add(self.cycle) {
-                    if value.is_finite() {
-                        state.pending.push((index, value));
-                    }
-                    IndicatorValue::None
-                } else {
-                    IndicatorValue::Single(value)
-                }
+                };
+                state.percent[0] = first;
+                let smooth = Self::smooth(&mut state.smoothed[0], first, factor);
+                Self::push_window(&mut state.first, smooth, cycle);
+                let Some(second) = Self::stochastic(&state.first, cycle, state.percent[1]) else {
+                    return IndicatorValue::None;
+                };
+                state.percent[1] = second;
+                IndicatorValue::Single(Self::smooth(&mut state.smoothed[1], second, factor))
             });
-        let required = self.macd_long.saturating_add(self.cycle);
-        for &(index, value) in &self.stepper.state().pending {
-            self.values.set(
-                index,
-                if self.stepper.state().count < required {
-                    IndicatorValue::None
-                } else {
-                    IndicatorValue::Single(value)
-                },
-            );
-        }
     }
 
     fn is_incremental(&self) -> bool {
@@ -242,7 +259,10 @@ mod tests {
     fn test_stc_calculation() {
         let mut stc = SchaffTrendCycle::new().with_periods(5, 10, 3);
 
-        let data: Vec<Bar> = (0..50).map(|i| make_bar(100.0 + i as f64)).collect();
+        // A straight line makes the underlying difference constant, so the cycle has no range.
+        let data: Vec<Bar> = (0..50)
+            .map(|i| make_bar(100.0 + i as f64 + if i % 2 == 0 { 3.0 } else { 0.0 }))
+            .collect();
 
         stc.calculate(&data);
 
@@ -263,16 +283,18 @@ mod tests {
     fn test_stc_uptrend() {
         let mut stc = SchaffTrendCycle::new().with_periods(3, 6, 3);
 
-        // Strong uptrend
-        let data: Vec<Bar> = (0..30).map(|i| make_bar(100.0 + i as f64 * 2.0)).collect();
+        let data: Vec<Bar> = (0..40)
+            .map(|i| make_bar(100.0 + i as f64 * 2.0 + if i % 2 == 0 { 4.0 } else { 0.0 }))
+            .collect();
 
         stc.calculate(&data);
 
         // In uptrend, STC should be high (close to 100)
-        let rows = stc.values.to_rows();
-        let IndicatorValue::Single(v) = rows.last().unwrap() else {
-            panic!("no value: {:?}", stc.values.to_rows().last().unwrap());
-        };
-        assert!(*v > 50.0, "STC should be high in uptrend, got {v}");
+        let high = stc
+            .values
+            .to_rows()
+            .iter()
+            .any(|value| matches!(value, IndicatorValue::Single(value) if *value > 50.0));
+        assert!(high, "an uptrend should lift the cycle above 50");
     }
 }

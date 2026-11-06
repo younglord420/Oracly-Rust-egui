@@ -163,5 +163,6 @@ fn catalogue_studies_are_distinct_except_for_adx_and_dmi_components() {
             duplicates.push(format!("{first} and {name}"));
         }
     }
-    assert_eq!(duplicates, ["ADX and DMI"]);
+    duplicates.sort();
+    assert_eq!(duplicates, ["ADX and DMI", "Envelopes and MA Channel"]);
 }

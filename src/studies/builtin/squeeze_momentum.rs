@@ -19,9 +19,12 @@ pub struct SqueezeMomentum {
     kc_period: usize,
     /// Keltner Channel ATR multiplier (typically 1.5)
     kc_mult: f64,
-    /// Momentum period (typically 12)
+    /// Momentum period (typically 20)
     momentum_period: usize,
+    /// Mark the first bar the squeeze releases.
+    mark_fires: bool,
     values: IndicatorValues,
+    markers: Vec<crate::studies::IndicatorMarker>,
     /// Colors: [Momentum positive, Squeeze on (the squeeze line), Momentum negative, Squeeze off]
     colors: Vec<Color32>,
     visible: bool,
@@ -35,8 +38,10 @@ impl SqueezeMomentum {
             bb_mult: 2.0,
             kc_period: 20,
             kc_mult: 1.5,
-            momentum_period: 12,
+            momentum_period: 20,
+            mark_fires: true,
             values: IndicatorValues::new(),
+            markers: Vec::new(),
             colors: vec![
                 palette::GREEN,    // Green - Momentum positive
                 palette::DISABLED, // Gray - Squeeze on
@@ -69,18 +74,59 @@ impl SqueezeMomentum {
         self
     }
 
-    fn calculate_atr(data: &[Bar], period: usize) -> Vec<f64> {
-        let mut tr = Vec::with_capacity(data.len());
-        tr.push(data[0].high - data[0].low);
+    fn wilder_atr(data: &[Bar], period: usize) -> Vec<f64> {
+        let mut average = super::smoothing::Smoothing::default();
+        let mut previous = None;
+        let alpha = 1.0 / period.max(1) as f64;
+        data.iter()
+            .map(|bar| {
+                if ![bar.high, bar.low, bar.close]
+                    .iter()
+                    .all(|value| value.is_finite())
+                {
+                    average = super::smoothing::Smoothing::default();
+                    previous = None;
+                    return f64::NAN;
+                }
+                let range = match previous {
+                    Some(close) => {
+                        let close: f64 = close;
+                        (bar.high - bar.low)
+                            .max((bar.high - close).abs())
+                            .max((bar.low - close).abs())
+                    }
+                    None => bar.high - bar.low,
+                };
+                previous = Some(bar.close);
+                average.next(range, period, alpha)
+            })
+            .collect()
+    }
 
-        for i in 1..data.len() {
-            let high_low = data[i].high - data[i].low;
-            let high_close = (data[i].high - data[i - 1].close).abs();
-            let low_close = (data[i].low - data[i - 1].close).abs();
-            tr.push(high_low.max(high_close).max(low_close));
-        }
-
-        helpers::sma(&tr, period)
+    /// Full-window highest or lowest. Earlier bars and windows with a gap are NaN.
+    fn window_extreme(
+        values: impl IntoIterator<Item = f64>,
+        period: usize,
+        highest: bool,
+    ) -> Vec<f64> {
+        let values: Vec<f64> = values.into_iter().collect();
+        let mut run = 0;
+        values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                run = if value.is_finite() { run + 1 } else { 0 };
+                if run < period {
+                    return f64::NAN;
+                }
+                let window = &values[index + 1 - period..=index];
+                if highest {
+                    window.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+                } else {
+                    window.iter().copied().fold(f64::INFINITY, f64::min)
+                }
+            })
+            .collect()
     }
 
     fn linear_regression(data: &[f64], period: usize) -> Vec<f64> {
@@ -132,46 +178,30 @@ impl SqueezeMomentum {
         // Get closes
         let closes: Vec<f64> = data.iter().map(|b| b.close).collect();
 
-        // Calculate Bollinger Bands
-        let bb_sma = helpers::sma(&closes, self.bb_period);
         let bb_std = helpers::stdev(&closes, self.bb_period);
-
-        // Calculate Keltner Channels
-        let kc_sma = helpers::sma(&closes, self.kc_period);
-        let atr = Self::calculate_atr(data, self.kc_period);
-
-        // Calculate midline and deviations for squeeze calculation
-        let hl2: Vec<f64> = data.iter().map(|b| (b.high + b.low) / 2.0).collect();
-        let hl2_sma = helpers::sma(&hl2, self.momentum_period);
-
-        // Calculate momentum using linear regression
+        let atr = Self::wilder_atr(data, self.kc_period);
+        let basis = helpers::sma(&closes, self.momentum_period);
+        let highest =
+            Self::window_extreme(data.iter().map(|bar| bar.high), self.momentum_period, true);
+        let lowest =
+            Self::window_extreme(data.iter().map(|bar| bar.low), self.momentum_period, false);
         let mut deviation = Vec::with_capacity(data.len());
         for i in 0..data.len() {
-            if hl2_sma[i].is_nan() {
+            if highest[i].is_nan() || lowest[i].is_nan() || basis[i].is_nan() {
                 deviation.push(f64::NAN);
             } else {
-                deviation.push(closes[i] - hl2_sma[i]);
+                let anchor = ((highest[i] + lowest[i]) / 2.0 + basis[i]) / 2.0;
+                deviation.push(closes[i] - anchor);
             }
         }
         let momentum = Self::linear_regression(&deviation, self.momentum_period);
 
         // Store results: [momentum, squeeze_state (1.0 = squeeze on, 0.0 = off)]
         for i in 0..data.len() {
-            if bb_sma[i].is_nan()
-                || bb_std[i].is_nan()
-                || kc_sma[i].is_nan()
-                || atr[i].is_nan()
-                || momentum[i].is_nan()
-            {
+            if bb_std[i].is_nan() || atr[i].is_nan() || momentum[i].is_nan() {
                 values.push(IndicatorValue::None);
             } else {
-                let bb_upper = bb_sma[i] + self.bb_mult * bb_std[i];
-                let bb_lower = bb_sma[i] - self.bb_mult * bb_std[i];
-                let kc_upper = kc_sma[i] + self.kc_mult * atr[i];
-                let kc_lower = kc_sma[i] - self.kc_mult * atr[i];
-
-                // Squeeze is ON when BB is inside KC
-                let squeeze_on = bb_lower > kc_lower && bb_upper < kc_upper;
+                let squeeze_on = self.bb_mult * bb_std[i] < self.kc_mult * atr[i];
 
                 values.push_lines(&[momentum[i], if squeeze_on { 1.0 } else { 0.0 }]);
             }
@@ -191,7 +221,8 @@ impl Indicator for SqueezeMomentum {
         bb_mult: number("Bb mult", 0.0, f64::MAX),
         kc_period: length("Kc period", 1, usize::MAX),
         kc_mult: number("Kc mult", 0.0, f64::MAX),
-        momentum_period: length("Momentum period", 1, usize::MAX)
+        momentum_period: length("Momentum period", 1, usize::MAX),
+        mark_fires: toggle("Mark squeeze fires")
     ; {});
 
     fn value_format(&self) -> crate::scales::StudyFormat {
@@ -231,6 +262,34 @@ impl Indicator for SqueezeMomentum {
             },
         );
         self.values = values;
+        self.markers.clear();
+        if !self.mark_fires {
+            return;
+        }
+        let mut previous = None;
+        for (bar, value) in self.values.to_rows().into_iter().enumerate() {
+            let IndicatorValue::Multiple(values) = value else {
+                previous = None;
+                continue;
+            };
+            let on = values[1] == 1.0;
+            if previous == Some(true) && !on {
+                self.markers.push(crate::studies::IndicatorMarker {
+                    bar,
+                    value: 0.0,
+                    direction: if values[0] >= 0.0 {
+                        crate::studies::CrossDirection::Up
+                    } else {
+                        crate::studies::CrossDirection::Down
+                    },
+                });
+            }
+            previous = Some(on);
+        }
+    }
+
+    fn markers(&self) -> &[crate::studies::IndicatorMarker] {
+        &self.markers
     }
 
     fn is_incremental(&self) -> bool {

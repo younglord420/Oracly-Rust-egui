@@ -54,8 +54,8 @@ impl Stochastic {
             k_smooth: k_smooth.max(1),
             d_period: d_period.max(1),
             values: IndicatorValues::new(),
-            k_color: palette::BLUE,
-            d_color: palette::ORANGE,
+            k_color: palette::INFO,
+            d_color: palette::AMBER,
             visible: true,
         }
     }
@@ -107,7 +107,7 @@ impl Stochastic {
                     raw_k.push(50.0); // Middle value when no range
                 } else {
                     let k = 100.0 * (data[i].close - lowest) / range;
-                    raw_k.push(k.clamp(0.0, 100.0));
+                    raw_k.push(k);
                 }
             }
         }

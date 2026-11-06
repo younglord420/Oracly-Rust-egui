@@ -20,7 +20,7 @@ impl StandardErrorBands {
     /// `multiplier` is clamped into 0 to `f64::MAX`, NaN to 0.
     pub fn new(period: usize, multiplier: f64) -> Self {
         Self {
-            period: period.max(2),
+            period: period.max(3),
             multiplier: clamp_param(multiplier, 0.0, f64::MAX),
             values: IndicatorValues::new(),
             colors: vec![palette::LIGHT_BLUE, palette::ORANGE, palette::LIGHT_BLUE],
@@ -115,7 +115,7 @@ impl Indicator for StandardErrorBands {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        period: length("Period", 2, usize::MAX),
+        period: length("Period", 3, usize::MAX),
         multiplier: number("Multiplier", 0.0, f64::MAX)
     ; {});
 

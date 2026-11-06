@@ -751,6 +751,21 @@ fn degenerate_lengths_and_hostile_bars_are_survivable() {
                 let mut bars = long.clone();
                 edit(&mut bars[at]);
                 let hostile = values(&mut study, &bars).unwrap_or_default();
+                // These averages re-seed after a gap, so the tail is not the series with the bar removed.
+                if matches!(
+                    study.name(),
+                    "KAMA"
+                        | "SMMA"
+                        | "VIDYA"
+                        | "ZLEMA"
+                        | "TSI"
+                        | "STC"
+                        | "SMI Ergodic Indicator"
+                        | "SMI Ergodic Oscillator"
+                ) && hostile.get(at).is_some_and(blank)
+                {
+                    continue;
+                }
                 // A study that reads the bad field skips the bar and matches the series
                 // without it; one that does not read it sees an ordinary bar and matches
                 // the full series.

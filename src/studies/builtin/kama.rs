@@ -53,10 +53,9 @@ pub struct KAMA {
 
 #[derive(Clone, Default)]
 struct State {
+    /// Consecutive finite closes ending at the current bar.
     closes: VecDeque<f64>,
-    seed_sum: f64,
-    volatility: f64,
-    kama: Option<f64>,
+    prev: Option<f64>,
 }
 
 impl KAMA {
@@ -132,32 +131,36 @@ impl Indicator for KAMA {
             .run(data, from, &mut self.values, |state, bar| {
                 let close = bar.close;
                 if !close.is_finite() {
+                    state.closes.clear();
                     return IndicatorValue::None;
                 }
-                if let Some(previous) = state.closes.back() {
-                    state.volatility += (close - previous).abs();
-                }
                 state.closes.push_back(close);
-                let next = if let Some(previous) = state.kama {
-                    // N + 1 closes supply exactly N price changes.
-                    let first = state.closes.pop_front().unwrap();
-                    let er = if state.volatility > 0.0 {
-                        (close - first).abs() / state.volatility
-                    } else {
+                while state.closes.len() > self.period.saturating_add(1) {
+                    state.closes.pop_front();
+                }
+                let ready = state.closes.len() > self.period;
+                let next = if ready {
+                    let oldest = *state.closes.front().unwrap();
+                    let direction = (close - oldest).abs();
+                    let volatility = state
+                        .closes
+                        .iter()
+                        .zip(state.closes.iter().skip(1))
+                        .fold(0.0, |sum, (previous, close)| sum + (close - previous).abs());
+                    let er = if volatility == 0.0 {
                         0.0
+                    } else {
+                        direction / volatility
                     };
                     let sc = (er * (fast - slow) + slow).powi(2);
-                    state.volatility =
-                        (state.volatility - (state.closes.front().unwrap() - first).abs()).max(0.0);
-                    previous + sc * (close - previous)
-                } else {
-                    state.seed_sum += close;
-                    if state.closes.len() < self.period {
-                        return IndicatorValue::None;
+                    match state.prev {
+                        Some(previous) => previous + sc * (close - previous),
+                        None => close,
                     }
-                    state.seed_sum / self.period as f64
+                } else {
+                    state.prev.unwrap_or(close)
                 };
-                state.kama = Some(next);
+                state.prev = Some(next);
                 IndicatorValue::Single(next)
             });
     }
@@ -209,9 +212,8 @@ mod tests {
     use super::*;
     use crate::studies::test_support::make_bar;
 
-    /// Expected values from Kaufman's definition (n price changes per
-    /// efficiency ratio), seeded with the simple average of the first n
-    /// closes; fast 2, slow 30.
+    /// Expected values from the efficiency-ratio recurrence, carrying the
+    /// first close until a full window exists. Fast period 2, slow period 30.
     #[test]
     fn calculate_matches_kaufman_reference() {
         // (name, period, closes, expected KAMA per bar)
@@ -222,16 +224,16 @@ mod tests {
                 4,
                 &[10.0, 11.0, 10.5, 12.0, 11.0, 13.0, 12.5, 14.0, 13.0, 13.5],
                 &[
-                    None,
-                    None,
-                    None,
-                    Some(10.875),
-                    Some(10.88078101514626),
-                    Some(11.078408170242067),
-                    Some(11.210978306235772),
-                    Some(11.47106771973126),
-                    Some(11.613647858472564),
-                    Some(11.656395577253855),
+                    Some(10.0),
+                    Some(10.0),
+                    Some(10.0),
+                    Some(10.0),
+                    Some(10.046248121170077),
+                    Some(10.321699400553712),
+                    Some(10.524836194574917),
+                    Some(10.8489115927601),
+                    Some(11.04951072164707),
+                    Some(11.10504267893198),
                 ],
             ),
             (
@@ -239,34 +241,39 @@ mod tests {
                 3,
                 &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
                 &[
-                    None,
-                    None,
-                    Some(2.0),
-                    Some(2.8888888888888884),
-                    Some(3.8271604938271597),
-                    Some(4.792866941015088),
+                    Some(1.0),
+                    Some(1.0),
+                    Some(1.0),
+                    Some(2.333333333333333),
+                    Some(3.518518518518518),
+                    Some(4.621399176954732),
                 ],
             ),
             (
                 "flat",
                 3,
                 &[7.0; 5],
-                &[None, None, Some(7.0), Some(7.0), Some(7.0)],
+                &[Some(7.0), Some(7.0), Some(7.0), Some(7.0), Some(7.0)],
             ),
-            ("short", 5, &[1.0, 2.0, 3.0], &[None, None, None]),
+            (
+                "short",
+                5,
+                &[1.0, 2.0, 3.0],
+                &[Some(1.0), Some(1.0), Some(1.0)],
+            ),
             // The NaN close has no value; the next efficiency ratio spans the closes around it.
             (
                 "NaN close",
                 2,
                 &[1.0, 2.0, f64::NAN, 4.0, 5.0, 6.0, 7.0],
                 &[
+                    Some(1.0),
+                    Some(1.0),
                     None,
-                    Some(1.5),
-                    None,
-                    Some(2.611111111111111),
-                    Some(3.6728395061728394),
-                    Some(4.707133058984911),
-                    Some(5.726185032769395),
+                    Some(1.0),
+                    Some(1.0),
+                    Some(3.2222222222222214),
+                    Some(4.901234567901233),
                 ],
             ),
         ];

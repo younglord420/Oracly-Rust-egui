@@ -49,6 +49,16 @@ impl HammingMA {
     fn compute(&self, data: &[Bar]) -> IndicatorValues {
         let mut values = IndicatorValues::new();
 
+        if self.period == 1 {
+            for bar in data {
+                values.push(if bar.close.is_finite() {
+                    IndicatorValue::Single(bar.close)
+                } else {
+                    IndicatorValue::None
+                });
+            }
+            return values;
+        }
         if data.len() < self.period || self.period < 2 {
             for _ in 0..data.len() {
                 values.push(IndicatorValue::None);
@@ -148,5 +158,20 @@ impl Indicator for HammingMA {
 
     fn line_names(&self) -> Vec<String> {
         vec![format!("Hamming({})", self.period)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::studies::test_support::make_bar;
+
+    #[test]
+    fn a_one_bar_window_is_the_close() {
+        let mut average = HammingMA::new(1);
+        average.calculate(&[make_bar(4.0), make_bar(7.0)]);
+        let rows = average.values().to_rows();
+        assert!(matches!(rows[0], IndicatorValue::Single(value) if value == 4.0));
+        assert!(matches!(rows[1], IndicatorValue::Single(value) if value == 7.0));
     }
 }

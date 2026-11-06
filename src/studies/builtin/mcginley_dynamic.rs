@@ -72,12 +72,10 @@ impl Indicator for McGinleyDynamic {
                     return IndicatorValue::None;
                 }
                 let md = state.get_or_insert(bar.close);
-                if *md != 0.0 {
-                    let ratio = bar.close / *md;
-                    let divisor = 0.6 * self.period as f64 * ratio.powi(4);
-                    if divisor != 0.0 {
-                        *md += (bar.close - *md) / divisor;
-                    }
+                let ratio = if *md == 0.0 { 0.0 } else { bar.close / *md };
+                let denom = self.period as f64 * ratio.powi(4);
+                if denom != 0.0 {
+                    *md += (bar.close - *md) / denom;
                 }
                 IndicatorValue::Single(*md)
             });
@@ -143,5 +141,16 @@ mod tests {
             panic!("no value: {:?}", md.values.to_rows().last().unwrap());
         };
         assert!(*v > 100.0 && *v < 120.0);
+    }
+
+    /// One step from 100 toward 110 over period 10, without the extra 0.6 factor.
+    #[test]
+    fn one_step_matches_the_plain_dynamic() {
+        let mut md = McGinleyDynamic::new(10);
+        md.calculate(&[make_bar(100.0), make_bar(110.0)]);
+        let IndicatorValue::Single(value) = md.values.to_rows()[1] else {
+            panic!("missing");
+        };
+        assert!((value - 100.683_013_455).abs() < 1e-9);
     }
 }

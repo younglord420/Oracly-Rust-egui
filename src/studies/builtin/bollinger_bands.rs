@@ -83,9 +83,9 @@ impl BollingerBands {
             average: None,
             values: IndicatorValues::new(),
             colors: vec![
-                palette::RED,       // Upper
-                palette::BB_MIDDLE, // Middle
-                palette::TEAL,      // Lower
+                palette::INFO,  // Upper
+                palette::AMBER, // Basis
+                palette::INFO,  // Lower
                 palette::LIGHT_BLUE.gamma_multiply_u8(13),
             ],
             visible: true,

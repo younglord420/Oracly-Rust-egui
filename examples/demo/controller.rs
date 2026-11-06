@@ -995,12 +995,14 @@ impl DemoApp {
             self.chart.set_quote(None);
             self.chart.set_events(Vec::new());
             self.annotate();
+            self.supply_host_symbols();
             return;
         }
         let tf = self.state.timeframe;
         let clock = self.chart.bar_clock();
         self.bars = self.live.snapshot(tf, clock, self.chart.extended_hours());
         self.chart.set_data(SeriesId::MAIN, self.bars.clone());
+        self.supply_host_symbols();
         self.chart.set_instrument(Some(self.live.instrument()));
         self.chart
             .set_legend_statuses(&[egui_charts::widget::LegendStatus {
@@ -1011,6 +1013,43 @@ impl DemoApp {
         self.chart.set_quote(None);
         self.chart.set_events(Vec::new());
         self.annotate();
+    }
+
+    /// Deterministic stand-ins for breadth symbols the demo feed does not serve.
+    fn supply_host_symbols(&mut self) {
+        let bars = self.chart.bars(SeriesId::MAIN).to_vec();
+        for request in self.chart.study_data_requests() {
+            let symbol = request.symbol.clone();
+            if !matches!(
+                symbol.as_str(),
+                "ADVANCING_ISSUES" | "DECLINING_ISSUES" | "ADVANCING_VOLUME" | "DECLINING_VOLUME"
+            ) {
+                continue;
+            }
+            let synthetic = bars
+                .iter()
+                .enumerate()
+                .map(|(index, bar)| {
+                    let advancing = 1500.0 + 500.0 * (index as f64 / 37.0).sin();
+                    let value = if symbol.starts_with("DECLINING") {
+                        3000.0 - advancing
+                    } else {
+                        advancing
+                    };
+                    egui_charts::model::Bar {
+                        time: bar.time,
+                        open: value,
+                        high: value,
+                        low: value,
+                        close: value,
+                        volume: value.max(0.0),
+                        colors: None,
+                        payload: None,
+                    }
+                })
+                .collect();
+            self.chart.set_study_data(request, synthetic, None);
+        }
     }
 
     // --- alerts ------------------------------------------------------------
@@ -1253,6 +1292,7 @@ impl DemoApp {
                 let id = self.chart.add_indicator(study);
                 self.chart.set_indicator_inputs(id, inputs);
                 self.chart.end_user_action();
+                self.supply_host_symbols();
             }
         }
 
@@ -1990,6 +2030,7 @@ impl DemoApp {
                     let id = self.chart.add_indicator(study);
                     self.chart.set_indicator_inputs(id, inputs);
                     self.chart.end_user_action();
+                    self.supply_host_symbols();
                 }
             }
             TopToolbarAction::SaveIndicatorTemplate => {

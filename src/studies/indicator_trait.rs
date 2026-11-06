@@ -45,6 +45,36 @@ pub enum CrossDirection {
     Down,
 }
 
+/// Why an applied study shows no values.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum StudyStatus {
+    /// Waiting for a history or stream the host has not supplied yet.
+    WaitingForData {
+        /// Symbol, metric or `"trades"`.
+        what: String,
+    },
+    /// The host reported an error for a requested history.
+    DataError {
+        /// The host's error text.
+        message: String,
+    },
+    /// Needs more bars than are loaded.
+    NeedsBars {
+        /// Bars required before the first value.
+        needed: usize,
+        /// Bars currently loaded.
+        loaded: usize,
+    },
+    /// Needs a calendar span that is not loaded.
+    NeedsHistory {
+        /// Calendar days required.
+        days: u32,
+    },
+    /// Hidden on this interval by its visibility settings.
+    HiddenOnInterval,
+}
+
 /// A shape at a study value on a source bar.
 #[derive(Clone, Copy, Debug)]
 pub struct IndicatorMarker {
@@ -541,6 +571,31 @@ pub trait Indicator: Send {
     /// Shapes attached to study values, empty by default.
     fn markers(&self) -> &[IndicatorMarker] {
         &[]
+    }
+
+    /// Bars of history before the first value, when the inputs fix that length.
+    fn required_bars(&self) -> Option<usize> {
+        None
+    }
+
+    /// Calendar days of history before the first value.
+    fn required_days(&self) -> Option<u32> {
+        None
+    }
+
+    /// Why this applied study currently has nothing to draw.
+    fn study_status(&self) -> Option<StudyStatus> {
+        None
+    }
+
+    /// Store a status computed by the chart. Studies that do not display one ignore it.
+    fn set_study_status(&mut self, status: Option<StudyStatus>) {
+        let _ = status;
+    }
+
+    /// Hidden by the interval range or an unticked interval, while the eye toggle is still on.
+    fn hidden_by_interval(&self) -> bool {
+        false
     }
 
     /// Extend the last two values of each overlay line to the plot's right edge.

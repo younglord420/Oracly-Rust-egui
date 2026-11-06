@@ -1337,7 +1337,6 @@ mod tests {
 
     #[test]
     fn overlay_lines_use_joined_one_point_strokes_and_keep_gaps_and_study_colours() {
-        let blue = Color32::from_rgb(41, 98, 255);
         let orange = Color32::from_rgb(255, 109, 0);
         let custom = Color32::from_rgb(10, 200, 90);
         let mut recoloured = BollingerBands::default();
@@ -1348,9 +1347,8 @@ mod tests {
             (
                 Box::new(BollingerBands::default()),
                 vec![
-                    Color32::from_rgb(242, 54, 69),
-                    blue,
-                    Color32::from_rgb(8, 153, 129),
+                    crate::studies::palette::INFO,
+                    crate::studies::palette::AMBER,
                 ],
             ),
             (Box::new(sma), vec![custom]),

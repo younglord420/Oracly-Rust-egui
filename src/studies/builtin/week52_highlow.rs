@@ -40,6 +40,10 @@ impl Indicator for Week52HighLow {
         crate::scales::StudyFormat::Percent
     }
 
+    fn required_days(&self) -> Option<u32> {
+        Some(364)
+    }
+
     fn name(&self) -> &str {
         "52W HL%"
     }
@@ -136,6 +140,10 @@ impl Default for Week52HighLowLevels {
 }
 
 impl Indicator for Week52HighLowLevels {
+    fn required_days(&self) -> Option<u32> {
+        Some(364)
+    }
+
     fn name(&self) -> &str {
         "52W High/Low"
     }

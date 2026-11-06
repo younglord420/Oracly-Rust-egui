@@ -204,7 +204,7 @@ impl Qstick {
 
 impl Default for Qstick {
     fn default() -> Self {
-        Self::new(8)
+        Self::new(14)
     }
 }
 

@@ -66,6 +66,7 @@ impl Indicator for SmoothedMA {
         self.stepper
             .run(data, from, &mut self.values, |state, bar| {
                 if !bar.close.is_finite() {
+                    *state = Default::default();
                     return IndicatorValue::None;
                 }
                 if state.0 == 0 {
@@ -122,5 +123,24 @@ impl Indicator for SmoothedMA {
 
     fn line_names(&self) -> Vec<String> {
         vec![format!("SMMA({})", self.period)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::studies::test_support::make_bar;
+
+    #[test]
+    fn a_gap_reseeds_the_average() {
+        let data = [1.0, 2.0, 3.0, f64::NAN, 4.0, 5.0, 6.0]
+            .map(make_bar)
+            .to_vec();
+        let mut average = SmoothedMA::new(3);
+        average.calculate(&data);
+        let rows = average.values().to_rows();
+        assert!(matches!(rows[2], IndicatorValue::Single(value) if (value - 2.0).abs() < 1e-12));
+        assert!(matches!(rows[3], IndicatorValue::None));
+        assert!(matches!(rows[6], IndicatorValue::Single(value) if (value - 5.0).abs() < 1e-12));
     }
 }

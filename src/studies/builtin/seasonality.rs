@@ -157,6 +157,10 @@ impl Indicator for Seasonality {
         start_year: integer("Starting year", 0, 9999)
     ; {});
 
+    fn required_days(&self) -> Option<u32> {
+        Some(730)
+    }
+
     fn name(&self) -> &str {
         "Seasonality"
     }

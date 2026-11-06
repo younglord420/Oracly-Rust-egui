@@ -451,7 +451,14 @@ impl<'a> Legend<'a> {
                         bounds.width(),
                     );
                 }
-                if study.is_volume() {
+                if let Some(status) = study.study_status().filter(|_| self.show_indicator_values) {
+                    layout.text(
+                        study_status_text(ui.ctx(), &status),
+                        theme.text.ohlc,
+                        theme.ui.text_secondary,
+                        bounds.width(),
+                    );
+                } else if study.is_volume() {
                     if self.show_indicator_inputs && study.plot_style(2).visible {
                         layout.text(
                             study.line_names().get(2).cloned().unwrap_or_default(),
@@ -633,6 +640,33 @@ impl<'a> Legend<'a> {
 }
 
 /// Temp-data key for the title/OHLC hit rect so the host can freeze the readout.
+fn study_status_text(ctx: &egui::Context, status: &crate::studies::StudyStatus) -> String {
+    use crate::localization as l10n;
+    use crate::studies::StudyStatus;
+    match status {
+        StudyStatus::WaitingForData { what } => {
+            l10n::format_text(ctx, "Waiting for {what}", &[("what", what.clone())])
+        }
+        StudyStatus::DataError { message } => {
+            l10n::format_text(ctx, "No data: {message}", &[("message", message.clone())])
+        }
+        StudyStatus::NeedsBars { needed, loaded } => l10n::format_text(
+            ctx,
+            "Needs {needed} bars ({loaded} loaded)",
+            &[
+                ("needed", needed.to_string()),
+                ("loaded", loaded.to_string()),
+            ],
+        ),
+        StudyStatus::NeedsHistory { days } => l10n::format_text(
+            ctx,
+            "Needs {days} days of history",
+            &[("days", days.to_string())],
+        ),
+        StudyStatus::HiddenOnInterval => l10n::text(ctx, "Hidden on this interval"),
+    }
+}
+
 pub(crate) fn legend_readout_id(symbol: &str) -> egui::Id {
     #[allow(deprecated)]
     {
@@ -869,6 +903,7 @@ impl<'a> Layout<'a> {
             egui::text::LayoutJob::simple_singleline(text, FontId::proportional(size), color);
         job.wrap.max_width = max_width;
         job.wrap.max_rows = 1;
+        job.wrap.overflow_character = Some('…');
         self.galley(self.painter.layout_job(job));
     }
 

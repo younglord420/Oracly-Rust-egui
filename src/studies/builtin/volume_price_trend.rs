@@ -80,9 +80,12 @@ impl Indicator for VolumePriceTrend {
                 if !bar.close.is_finite() || !bar.volume.is_finite() {
                     return IndicatorValue::None;
                 }
-                if let Some(previous) = state.0.filter(|p| *p != 0.0) {
-                    let change = (bar.close - previous) / previous;
-                    state.1 += bar.volume * change;
+                let Some(previous) = state.0 else {
+                    state.0 = Some(bar.close);
+                    return IndicatorValue::None;
+                };
+                if previous != 0.0 {
+                    state.1 += bar.volume * (bar.close - previous) / previous;
                 }
                 state.0 = Some(bar.close);
                 IndicatorValue::Single(state.1)
@@ -128,18 +131,18 @@ impl Indicator for VolumePriceTrend {
     }
 }
 
-/// Length of the NVI and PVI signal line, the published one-year EMA of the index.
-const SIGNAL_LEN: f64 = 255.0;
-
 /// Resume the volume-gated index and its first-value-seeded signal.
 fn volume_index(
     stepper: &mut Stepper<(Option<[f64; 2]>, f64, f64)>,
     values: &mut IndicatorValues,
     data: &[Bar],
     from: usize,
+    base: f64,
+    signal_length: usize,
     counts: fn(f64, f64) -> bool,
 ) {
-    stepper.run(data, from, values, |state, bar| {
+    let alpha = 2.0 / (signal_length.max(1) as f64 + 1.0);
+    stepper.run(data, from, values, move |state, bar| {
         if !bar.close.is_finite() || !bar.volume.is_finite() {
             return IndicatorValue::None;
         }
@@ -147,10 +150,10 @@ fn volume_index(
             if counts(bar.volume, volume) && close != 0.0 {
                 state.1 += state.1 * ((bar.close - close) / close);
             }
-            state.2 += (state.1 - state.2) * (2.0 / (SIGNAL_LEN + 1.0));
+            state.2 += (state.1 - state.2) * alpha;
         } else {
-            state.1 = 1000.0;
-            state.2 = 1000.0;
+            state.1 = base;
+            state.2 = base;
         }
         state.0 = Some([bar.close, bar.volume]);
         IndicatorValue::Multiple(vec![state.1, state.2])
@@ -164,6 +167,8 @@ fn volume_index(
 /// with the first index value so that it starts at bar 0 like the index.
 #[derive(Clone)]
 pub struct NegativeVolumeIndex {
+    base: f64,
+    signal_length: usize,
     values: IndicatorValues,
     stepper: Stepper<(Option<[f64; 2]>, f64, f64)>,
     color: Color32,
@@ -175,6 +180,8 @@ impl NegativeVolumeIndex {
     /// Create with the default plot colors.
     pub fn new() -> Self {
         Self {
+            base: 1000.0,
+            signal_length: 255,
             values: IndicatorValues::new(),
             stepper: Stepper::default(),
             color: palette::BLUE,
@@ -215,6 +222,15 @@ impl Indicator for NegativeVolumeIndex {
         ))
     }
 
+    crate::studies::inputs::study_inputs!(self;
+        base: number("Base", f64::MIN, f64::MAX),
+        signal_length: length("Signal length", 1, usize::MAX)
+    ; {});
+
+    fn required_bars(&self) -> Option<usize> {
+        Some(1)
+    }
+
     fn name(&self) -> &str {
         "NVI"
     }
@@ -233,6 +249,8 @@ impl Indicator for NegativeVolumeIndex {
             &mut self.values,
             data,
             from,
+            self.base,
+            self.signal_length,
             |volume, prev| volume < prev,
         );
     }
@@ -290,6 +308,8 @@ impl Indicator for NegativeVolumeIndex {
 /// with the first index value so that it starts at bar 0 like the index.
 #[derive(Clone)]
 pub struct PositiveVolumeIndex {
+    base: f64,
+    signal_length: usize,
     values: IndicatorValues,
     stepper: Stepper<(Option<[f64; 2]>, f64, f64)>,
     color: Color32,
@@ -301,6 +321,8 @@ impl PositiveVolumeIndex {
     /// Create with the default plot colors.
     pub fn new() -> Self {
         Self {
+            base: 1000.0,
+            signal_length: 255,
             values: IndicatorValues::new(),
             stepper: Stepper::default(),
             color: palette::BLUE,
@@ -341,6 +363,15 @@ impl Indicator for PositiveVolumeIndex {
         ))
     }
 
+    crate::studies::inputs::study_inputs!(self;
+        base: number("Base", f64::MIN, f64::MAX),
+        signal_length: length("Signal length", 1, usize::MAX)
+    ; {});
+
+    fn required_bars(&self) -> Option<usize> {
+        Some(1)
+    }
+
     fn name(&self) -> &str {
         "PVI"
     }
@@ -359,6 +390,8 @@ impl Indicator for PositiveVolumeIndex {
             &mut self.values,
             data,
             from,
+            self.base,
+            self.signal_length,
             |volume, prev| volume > prev,
         );
     }
@@ -441,11 +474,12 @@ mod tests {
 
         assert_eq!(vpt.values.len(), 3);
 
-        // First VPT should be 0
-        let IndicatorValue::Single(v) = vpt.values.to_rows()[0] else {
-            panic!("no value: {:?}", vpt.values.to_rows()[0]);
+        let rows = vpt.values.to_rows();
+        assert!(matches!(rows[0], IndicatorValue::None));
+        let IndicatorValue::Single(value) = rows[1] else {
+            panic!("no value: {:?}", rows[1]);
         };
-        assert_eq!(v, 0.0);
+        assert!((value - 60.0).abs() < 1e-9);
     }
 
     /// Index and signal line against the published definition. On a bar whose volume fell (NVI)

@@ -76,11 +76,11 @@ impl Indicator for AnchoredVWAP {
                 let price = bar.typical_price();
                 state.1 += price * bar.volume;
                 state.2 += bar.volume;
-                IndicatorValue::Single(if state.2 == 0.0 {
-                    price
+                if state.2 == 0.0 {
+                    IndicatorValue::None
                 } else {
-                    state.1 / state.2
-                })
+                    IndicatorValue::Single(state.1 / state.2)
+                }
             });
     }
 
@@ -120,5 +120,54 @@ impl Indicator for AnchoredVWAP {
 
     fn line_names(&self) -> Vec<String> {
         vec![format!("AVWAP({})", self.anchor_bar)]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::studies::InputValue;
+
+    fn bar(high: f64, low: f64, close: f64, volume: f64) -> Bar {
+        Bar {
+            time: chrono::Utc::now(),
+            open: close,
+            high,
+            low,
+            close,
+            volume,
+            colors: None,
+            payload: None,
+        }
+    }
+
+    #[test]
+    fn zero_volume_stays_blank_and_a_new_anchor_drops_the_old_sums() {
+        let mut vwap = AnchoredVWAP::new(0);
+        vwap.calculate(&[bar(3.0, 1.0, 2.0, 0.0)]);
+        assert!(matches!(vwap.values().to_rows()[0], IndicatorValue::None));
+
+        let data = vec![bar(3.0, 1.0, 2.0, 10.0), bar(6.0, 4.0, 5.0, 10.0)];
+        vwap.calculate(&data);
+        vwap.set_input("anchor_bar", InputValue::Length(1)).unwrap();
+        vwap.calculate(&data);
+        let mut fresh = AnchoredVWAP::new(1);
+        fresh.calculate(&data);
+        let fresh_rows = fresh.values().to_rows();
+        let same = vwap
+            .values()
+            .to_rows()
+            .iter()
+            .zip(&fresh_rows)
+            .all(|(left, right)| match (left, right) {
+                (IndicatorValue::None, IndicatorValue::None) => true,
+                (IndicatorValue::Single(left), IndicatorValue::Single(right)) => left == right,
+                _ => false,
+            });
+        assert!(same);
+        let IndicatorValue::Single(value) = fresh.values().to_rows()[1] else {
+            panic!("missing");
+        };
+        assert!((value - 5.0).abs() < 1e-9);
     }
 }

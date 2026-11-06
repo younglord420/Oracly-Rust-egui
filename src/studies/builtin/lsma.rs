@@ -46,7 +46,7 @@ impl LSMA {
     /// * `period` -- Number of bars in the regression window (e.g. 25).
     pub fn new(period: usize) -> Self {
         Self {
-            period: period.max(1),
+            period: period.max(2),
             offset: 0,
             values: IndicatorValues::new(),
             color: palette::BLUE,
@@ -107,7 +107,7 @@ impl LSMA {
 /// Construct with the conventional default parameters.
 impl Default for LSMA {
     fn default() -> Self {
-        Self::new(20)
+        Self::new(25)
     }
 }
 
@@ -140,7 +140,7 @@ impl Indicator for LSMA {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        period: length("Period", 1, usize::MAX),
+        period: length("Period", 2, usize::MAX),
         offset: integer("Offset", i32::MIN, i32::MAX)
     ; {});
 

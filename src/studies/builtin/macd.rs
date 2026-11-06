@@ -86,8 +86,8 @@ impl MACD {
             values: IndicatorValues::new(),
             stepper: Stepper::default(),
             colors: vec![
-                palette::BLUE,           // MACD line
-                palette::ORANGE,         // Signal line
+                palette::INFO,           // MACD line
+                palette::AMBER,          // Signal line
                 palette::HISTOGRAM_TEAL, // Histogram: positive and rising
                 palette::LIGHT_TEAL,
                 palette::HISTOGRAM_RED,

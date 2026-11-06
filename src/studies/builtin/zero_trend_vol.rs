@@ -13,6 +13,7 @@ use egui::Color32;
 #[derive(Clone)]
 pub struct ZeroTrendVol {
     period: usize,
+    periods_per_year: f64,
     values: IndicatorValues,
     colors: Vec<Color32>,
     visible: bool,
@@ -23,6 +24,7 @@ impl ZeroTrendVol {
     pub fn new(period: usize) -> Self {
         Self {
             period: period.max(1),
+            periods_per_year: 252.0,
             values: IndicatorValues::new(),
             colors: vec![palette::LIGHT_BLUE],
             visible: true,
@@ -59,7 +61,9 @@ impl ZeroTrendVol {
                     return IndicatorValue::None;
                 }
                 let mean_squared = window.iter().map(|r| r * r).sum::<f64>() / self.period as f64;
-                IndicatorValue::Single(mean_squared.sqrt() * 252.0_f64.sqrt() * 100.0)
+                IndicatorValue::Single(
+                    mean_squared.sqrt() * self.periods_per_year.max(0.0).sqrt() * 100.0,
+                )
             })
             .collect()
     }
@@ -91,7 +95,8 @@ impl Indicator for ZeroTrendVol {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        period: length("Period", 1, usize::MAX)
+        period: length("Period", 1, usize::MAX),
+        periods_per_year: number("Periods per year", 0.0, f64::MAX)
     ; {});
 
     fn value_format(&self) -> crate::scales::StudyFormat {

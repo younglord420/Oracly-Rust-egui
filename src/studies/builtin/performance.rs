@@ -69,6 +69,10 @@ impl Default for Performance {
 }
 
 impl Indicator for Performance {
+    fn required_days(&self) -> Option<u32> {
+        Some(365)
+    }
+
     fn name(&self) -> &str {
         "Performance"
     }

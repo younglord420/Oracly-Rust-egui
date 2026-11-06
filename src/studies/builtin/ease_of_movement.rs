@@ -69,10 +69,9 @@ impl EaseOfMovement {
                 let distance_moved =
                     (current.high + current.low) / 2.0 - (prev.high + prev.low) / 2.0;
                 let range = current.high - current.low;
-                if range == 0.0 {
+                if range == 0.0 || current.volume == 0.0 {
                     Some(0.0)
                 } else {
-                    // Box Ratio = (Volume / divisor) / (High - Low); zero volume makes the value infinite.
                     let box_ratio = (current.volume / self.divisor) / range;
                     Some(distance_moved / box_ratio).filter(|eom| eom.is_finite())
                 }
@@ -261,7 +260,7 @@ mod tests {
                 "zero volume",
                 &zero_volume[..],
                 1,
-                vec![None, None, Some(20.0)],
+                vec![None, Some(0.0), Some(20.0)],
             ),
             (
                 "zero volume windows",
@@ -271,12 +270,12 @@ mod tests {
                     None,
                     None,
                     None,
-                    Some(0.20833333333333334),
-                    Some(0.16666666666666666),
-                    Some(0.16666666666666666),
-                    None,
-                    Some(0.3333333333333333),
-                    Some(0.16666666666666666),
+                    Some(0.13888888888888887),
+                    Some(0.05555555555555555),
+                    Some(0.05555555555555555),
+                    Some(0.0),
+                    Some(0.1111111111111111),
+                    Some(0.1111111111111111),
                     Some(0.19444444444444445),
                 ],
             ),

@@ -493,6 +493,7 @@ impl Chart {
         ui: &mut Ui,
         footprint: Option<(&Footprint, &FootprintConfig)>,
     ) -> Response {
+        self.refresh_study_statuses();
         let footprint = footprint.filter(|_| self.replay.is_none());
         let theme = self.theme_override.clone();
         // Axis labels take their size from the theme's label text.

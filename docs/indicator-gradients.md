@@ -1,6 +1,6 @@
 # Indicator gradients, indicator settings dialog and legend controls
 
-Status: implemented.
+Status: partly implemented; the remaining items are listed in `docs/indicator-fixes.md` section 4.
 
 Decisions already taken by the user (do not change them):
 

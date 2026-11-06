@@ -809,10 +809,25 @@ impl IndicatorPane {
                     }),
                 )
             });
-            // Draw y-axis labels
-            self.measured_axis_width = self.draw_y_axis_labels(
-                painter, rect, chart_rect, y_min, y_max, indicator, axis, tag,
-            );
+            let empty = !self.overlay && !pane_has_value(indicator, &displayed_range);
+            if empty {
+                let message = indicator
+                    .study_status()
+                    .as_ref()
+                    .map(|status| study_status_label(ui.ctx(), status))
+                    .unwrap_or_else(|| crate::localization::text(ui.ctx(), "No values"));
+                painter.text(
+                    chart_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    message,
+                    egui::FontId::proportional(ui.active_theme().text.ohlc),
+                    ui.active_theme().ui.text_secondary,
+                );
+            } else {
+                self.measured_axis_width = self.draw_y_axis_labels(
+                    painter, rect, chart_rect, y_min, y_max, indicator, axis, tag,
+                );
+            }
         }
 
         if collapsed && let Some((pos, mut options)) = crosshair {
@@ -1840,5 +1855,43 @@ mod tests {
                 assert_eq!(sections[0].format.color, theme.ui.text);
             }
         }
+    }
+}
+
+fn pane_has_value(
+    indicator: &dyn crate::studies::Indicator,
+    range: &std::ops::Range<usize>,
+) -> bool {
+    (0..indicator.line_count()).any(|line| {
+        range
+            .clone()
+            .any(|bar| indicator.plot_value(line, bar).is_some())
+    })
+}
+
+fn study_status_label(ctx: &egui::Context, status: &crate::studies::StudyStatus) -> String {
+    use crate::localization as l10n;
+    use crate::studies::StudyStatus;
+    match status {
+        StudyStatus::WaitingForData { what } => {
+            l10n::format_text(ctx, "Waiting for {what}", &[("what", what.clone())])
+        }
+        StudyStatus::DataError { message } => {
+            l10n::format_text(ctx, "No data: {message}", &[("message", message.clone())])
+        }
+        StudyStatus::NeedsBars { needed, loaded } => l10n::format_text(
+            ctx,
+            "Needs {needed} bars ({loaded} loaded)",
+            &[
+                ("needed", needed.to_string()),
+                ("loaded", loaded.to_string()),
+            ],
+        ),
+        StudyStatus::NeedsHistory { days } => l10n::format_text(
+            ctx,
+            "Needs {days} days of history",
+            &[("days", days.to_string())],
+        ),
+        StudyStatus::HiddenOnInterval => l10n::text(ctx, "Hidden on this interval"),
     }
 }

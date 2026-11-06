@@ -6,7 +6,7 @@
 //!
 //! # Formula
 //! ALMA = Σ(weight[i] * price[i]) / Σ(weight[i])
-//! Where weight[i] = exp(-((i - offset * (period - 1))^2) / (2 * sigma^2 * period^2))
+//! Where weight[i] = exp(-((i - offset * (period - 1))^2) / (2 * (period / sigma)^2))
 //!
 //! # Params
 //! - period: Lookback period (typically 9)

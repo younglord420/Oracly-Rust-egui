@@ -140,6 +140,27 @@ impl Indicator for FisherTransform {
         }
     }
 
+    fn pane(&self) -> crate::studies::StudyPane {
+        crate::studies::StudyPane {
+            height: None,
+            range: None,
+            levels: vec![
+                (1.5, palette::MUTED, ""),
+                (0.0, palette::MUTED, ""),
+                (-1.5, palette::MUTED, ""),
+            ],
+            fill_between_levels: false,
+        }
+    }
+
+    fn level_style(&self, value: f64) -> crate::model::LineStyle {
+        if value == 0.0 {
+            crate::model::LineStyle::Dotted
+        } else {
+            crate::model::LineStyle::Dashed
+        }
+    }
+
     fn is_overlay(&self) -> bool {
         false // Separate pane
     }

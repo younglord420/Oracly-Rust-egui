@@ -5,7 +5,9 @@ use crate::studies::{Indicator, IndicatorValue, IndicatorValues};
 use egui::Color32;
 
 /// Majority Rule - counts up vs down closes over period.
-/// Outputs +1 if majority up, -1 if majority down, 0 if tie.
+///
+/// A window of `period` bars contains `period - 1` close-to-close moves (the first bar of the
+/// series has no previous close). Outputs +1 if more of those moves rose, -1 if more fell, 0 on a tie.
 #[derive(Clone)]
 pub struct MajorityRule {
     period: usize,

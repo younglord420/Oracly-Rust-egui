@@ -4,14 +4,35 @@ use crate::studies::stepper::Stepper;
 use crate::studies::{Indicator, IndicatorValue, IndicatorValues};
 use egui::Color32;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SignalAverage {
+    Sma,
+    Ema,
+}
+
+impl std::fmt::Debug for SignalAverage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Sma => "SMA",
+            Self::Ema => "EMA",
+        })
+    }
+}
+
 /// Price Volume Trend (Enhanced) with Signal Line
 /// PVT = prev_PVT + volume * (close - prev_close) / prev_close
-/// Signal = EMA(PVT, signal_period)
+/// Signal = SMA or EMA of PVT. The signal defaults to a 21-bar SMA.
 #[derive(Clone)]
 pub struct PriceVolumeTrendStudy {
     signal_period: usize,
+    signal_type: SignalAverage,
     values: IndicatorValues,
-    stepper: Stepper<(Option<f64>, f64, f64)>,
+    stepper: Stepper<(
+        Option<f64>,
+        f64,
+        super::smoothing::Smoothing,
+        std::collections::VecDeque<f64>,
+    )>,
     colors: Vec<Color32>,
     visible: bool,
 }
@@ -21,6 +42,7 @@ impl PriceVolumeTrendStudy {
     pub fn new(signal_period: usize) -> Self {
         Self {
             signal_period: signal_period.max(1),
+            signal_type: SignalAverage::Sma,
             values: IndicatorValues::new(),
             stepper: Stepper::default(),
             colors: vec![
@@ -34,7 +56,7 @@ impl PriceVolumeTrendStudy {
 
 impl Default for PriceVolumeTrendStudy {
     fn default() -> Self {
-        Self::new(9)
+        Self::new(21)
     }
 }
 
@@ -58,7 +80,8 @@ impl Indicator for PriceVolumeTrendStudy {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        signal_period: length("Signal period", 1, usize::MAX)
+        signal_type: choice("Signal type", [SignalAverage::Sma, SignalAverage::Ema]),
+        signal_period: length("Signal length", 1, usize::MAX)
     ; {});
 
     fn value_format(&self) -> crate::scales::StudyFormat {
@@ -78,20 +101,37 @@ impl Indicator for PriceVolumeTrendStudy {
     }
 
     fn update(&mut self, data: &[Bar], from: usize) {
+        let (kind, period) = (self.signal_type, self.signal_period);
         self.stepper
             .run(data, from, &mut self.values, |state, bar| {
                 if !bar.close.is_finite() || !bar.volume.is_finite() {
                     return IndicatorValue::None;
                 }
-                if let Some(previous) = state.0 {
-                    if previous != 0.0 {
-                        state.1 += bar.volume * (bar.close - previous) / previous;
-                    }
-                    state.2 =
-                        (state.1 - state.2) * (2.0 / (self.signal_period as f64 + 1.0)) + state.2;
+                let Some(previous) = state.0 else {
+                    state.0 = Some(bar.close);
+                    return IndicatorValue::None;
+                };
+                if previous != 0.0 {
+                    state.1 += bar.volume * (bar.close - previous) / previous;
                 }
                 state.0 = Some(bar.close);
-                IndicatorValue::Multiple(vec![state.1, state.2])
+                let signal = match kind {
+                    SignalAverage::Ema => {
+                        state.2.next(state.1, period, 2.0 / (period as f64 + 1.0))
+                    }
+                    SignalAverage::Sma => {
+                        state.3.push_back(state.1);
+                        while state.3.len() > period {
+                            state.3.pop_front();
+                        }
+                        if state.3.len() < period {
+                            f64::NAN
+                        } else {
+                            state.3.iter().sum::<f64>() / period as f64
+                        }
+                    }
+                };
+                IndicatorValue::Multiple(vec![state.1, signal])
             });
     }
 

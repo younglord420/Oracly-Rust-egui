@@ -34,7 +34,7 @@ impl MAChannel {
 
 impl Default for MAChannel {
     fn default() -> Self {
-        Self::new(20, 1.0)
+        Self::new(20, 2.5)
     }
 }
 

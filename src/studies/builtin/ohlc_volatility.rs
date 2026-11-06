@@ -10,6 +10,7 @@ use egui::Color32;
 #[derive(Clone)]
 pub struct OhlcVolatility {
     period: usize,
+    periods_per_year: f64,
     values: IndicatorValues,
     colors: Vec<Color32>,
     visible: bool,
@@ -20,6 +21,7 @@ impl OhlcVolatility {
     pub fn new(period: usize) -> Self {
         Self {
             period: period.max(1),
+            periods_per_year: 252.0,
             values: IndicatorValues::new(),
             colors: vec![Color32::from_rgb(255, 82, 82)], // Violet
             visible: true,
@@ -76,7 +78,7 @@ impl OhlcVolatility {
             let avg = valid.iter().sum::<f64>() / valid.len() as f64;
             // sqrt of average GK, annualized, as percentage
             let vol = if avg >= 0.0 {
-                avg.sqrt() * 252.0_f64.sqrt() * 100.0
+                avg.sqrt() * self.periods_per_year.max(0.0).sqrt() * 100.0
             } else {
                 0.0
             };
@@ -108,7 +110,8 @@ impl Indicator for OhlcVolatility {
     }
 
     crate::studies::inputs::study_inputs!(self;
-        period: length("Period", 1, usize::MAX)
+        period: length("Period", 1, usize::MAX),
+        periods_per_year: number("Periods per year", 0.0, f64::MAX)
     ; {});
 
     fn value_format(&self) -> crate::scales::StudyFormat {

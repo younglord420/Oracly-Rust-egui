@@ -4,6 +4,16 @@ use crate::studies::palette;
 use crate::studies::stepper::Stepper;
 use crate::studies::{ATR, Indicator, IndicatorValue, IndicatorValues};
 use egui::Color32;
+use std::collections::VecDeque;
+
+#[derive(Clone, Default)]
+struct ExitState {
+    index: usize,
+    window: VecDeque<[f64; 2]>,
+    prev_long: Option<f64>,
+    prev_short: Option<f64>,
+    prev_close: Option<f64>,
+}
 
 /// Chandelier Exit
 /// Trailing stop-loss indicator based on Wilder's ATR
@@ -14,9 +24,11 @@ pub struct ChandelierExit {
     period: usize,
     /// ATR multiplier (typically 3.0)
     multiplier: f64,
+    /// Keep a long stop from falling and a short stop from rising.
+    ratchet: bool,
     values: IndicatorValues,
     atr: ATR,
-    stepper: Stepper<(usize, std::collections::VecDeque<[f64; 2]>)>,
+    stepper: Stepper<ExitState>,
     /// Colors: [Long exit, Short exit]
     colors: Vec<Color32>,
     visible: bool,
@@ -28,6 +40,7 @@ impl ChandelierExit {
         Self {
             period: period.max(1),
             multiplier: clamp_param(multiplier, 0.0, f64::MAX),
+            ratchet: false,
             values: IndicatorValues::new(),
             atr: ATR::new(period),
             stepper: Stepper::default(),
@@ -55,7 +68,8 @@ impl Default for ChandelierExit {
 impl Indicator for ChandelierExit {
     crate::studies::inputs::study_inputs!(self;
         period: length("Period", 1, usize::MAX),
-        multiplier: number("Multiplier", 0.0, f64::MAX)
+        multiplier: number("Multiplier", 0.0, f64::MAX),
+        ratchet: toggle("Ratchet stops")
     ; {});
 
     fn name(&self) -> &str {
@@ -77,28 +91,54 @@ impl Indicator for ChandelierExit {
         self.atr.update(data, from);
         self.stepper
             .run(data, from, &mut self.values, |state, bar| {
-                let index = state.0;
-                state.0 += 1;
+                let index = state.index;
+                state.index += 1;
                 if ![bar.high, bar.low, bar.close].iter().all(|x| x.is_finite()) {
                     return IndicatorValue::None;
                 }
-                state.1.push_back([bar.high, bar.low]);
-                if state.1.len() > self.period {
-                    state.1.pop_front();
+                state.window.push_back([bar.high, bar.low]);
+                if state.window.len() > self.period {
+                    state.window.pop_front();
                 }
                 let Some(atr) = self.atr.values().value(0, index) else {
+                    state.prev_close = Some(bar.close);
                     return IndicatorValue::None;
                 };
                 let high = state
-                    .1
+                    .window
                     .iter()
                     .map(|v| v[0])
                     .fold(f64::NEG_INFINITY, f64::max);
-                let low = state.1.iter().map(|v| v[1]).fold(f64::INFINITY, f64::min);
-                IndicatorValue::Multiple(vec![
-                    high - atr * self.multiplier,
-                    low + atr * self.multiplier,
-                ])
+                let low = state
+                    .window
+                    .iter()
+                    .map(|v| v[1])
+                    .fold(f64::INFINITY, f64::min);
+                let basic_long = high - atr * self.multiplier;
+                let basic_short = low + atr * self.multiplier;
+                let (long, short) = if self.ratchet {
+                    let prev_close = state.prev_close.unwrap_or(bar.close);
+                    let prev_long = state.prev_long.unwrap_or(basic_long);
+                    let prev_short = state.prev_short.unwrap_or(basic_short);
+                    (
+                        if prev_close > prev_long {
+                            basic_long.max(prev_long)
+                        } else {
+                            basic_long
+                        },
+                        if prev_close < prev_short {
+                            basic_short.min(prev_short)
+                        } else {
+                            basic_short
+                        },
+                    )
+                } else {
+                    (basic_long, basic_short)
+                };
+                state.prev_long = Some(long);
+                state.prev_short = Some(short);
+                state.prev_close = Some(bar.close);
+                IndicatorValue::Multiple(vec![long, short])
             });
     }
 
@@ -212,5 +252,29 @@ mod tests {
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// Period 1 makes ATR equal the true range, so the ratchet steps are exact.
+    #[test]
+    fn ratchet_holds_the_stop_until_price_crosses_it() {
+        let data = vec![
+            make_bar(10.0, 8.0, 9.0),
+            make_bar(11.0, 9.0, 11.0),
+            make_bar(8.0, 6.0, 7.0),
+        ];
+        let mut exit = ChandelierExit::new(1, 1.0);
+        exit.ratchet = true;
+        exit.calculate(&data);
+        let rows = exit.values().to_rows();
+        let pair = |value: &IndicatorValue| match value {
+            IndicatorValue::Multiple(values) => (values[0], values[1]),
+            other => panic!("{other:?}"),
+        };
+        let (long, short) = pair(&rows[0]);
+        assert!((long - 8.0).abs() < 1e-9 && (short - 10.0).abs() < 1e-9);
+        let (long, short) = pair(&rows[1]);
+        assert!((long - 9.0).abs() < 1e-9 && (short - 10.0).abs() < 1e-9);
+        let (long, short) = pair(&rows[2]);
+        assert!((long - 9.0).abs() < 1e-9 && (short - 11.0).abs() < 1e-9);
     }
 }

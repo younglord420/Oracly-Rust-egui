@@ -1,9 +1,10 @@
-use super::over_finite_bars;
+use super::smoothing::Smoothing;
 use crate::model::Bar;
 use crate::studies::palette;
-use crate::studies::stepper::{update_window, usable_behind};
+use crate::studies::stepper::Stepper;
 use crate::studies::{Indicator, IndicatorValue, IndicatorValues};
 use egui::Color32;
+use std::collections::VecDeque;
 
 /// Pretty Good Oscillator (PGO)
 /// Measures price distance from moving avg in ATR units
@@ -13,6 +14,7 @@ pub struct PrettyGoodOscillator {
     /// Period for calculations (typically 14)
     period: usize,
     values: IndicatorValues,
+    stepper: Stepper<(Option<f64>, Smoothing, VecDeque<f64>)>,
     color: Color32,
     visible: bool,
 }
@@ -23,6 +25,7 @@ impl PrettyGoodOscillator {
         Self {
             period: period.max(1),
             values: IndicatorValues::new(),
+            stepper: Stepper::default(),
             color: palette::PURPLE,
             visible: true,
         }
@@ -38,57 +41,6 @@ impl PrettyGoodOscillator {
 impl Default for PrettyGoodOscillator {
     fn default() -> Self {
         Self::new(14)
-    }
-}
-
-impl PrettyGoodOscillator {
-    /// The values over `data`, every bar of which has finite inputs.
-    fn compute(&self, data: &[Bar]) -> IndicatorValues {
-        let mut values = IndicatorValues::new();
-        if data.len() < self.period {
-            for _ in 0..data.len() {
-                values.push(IndicatorValue::None);
-            }
-            return values;
-        }
-
-        // Calculate True Range
-        let mut tr = Vec::with_capacity(data.len());
-        tr.push(data[0].high - data[0].low);
-
-        for i in 1..data.len() {
-            let high_low = data[i].high - data[i].low;
-            let high_close = (data[i].high - data[i - 1].close).abs();
-            let low_close = (data[i].low - data[i - 1].close).abs();
-            tr.push(high_low.max(high_close).max(low_close));
-        }
-
-        // Calculate SMA of closes and EMA of TR (ATR)
-        for i in 0..data.len() {
-            if i < self.period - 1 {
-                values.push(IndicatorValue::None);
-            } else {
-                // SMA of closes
-                let sma: f64 = data[i + 1 - self.period..=i]
-                    .iter()
-                    .map(|b| b.close)
-                    .sum::<f64>()
-                    / self.period as f64;
-
-                // SMA of TR (ATR)
-                let atr: f64 = tr[i + 1 - self.period..=i].iter().sum::<f64>() / self.period as f64;
-
-                if atr == 0.0 {
-                    values.push(IndicatorValue::None);
-                } else {
-                    // PGO = (Close - SMA) / ATR
-                    let pgo = (data[i].close - sma) / atr;
-                    values.push(IndicatorValue::Single(pgo));
-                }
-            }
-        }
-
-        values
     }
 }
 
@@ -114,23 +66,39 @@ impl Indicator for PrettyGoodOscillator {
     }
 
     fn update(&mut self, data: &[Bar], from: usize) {
-        let mut values = std::mem::take(&mut self.values);
-        update_window(
-            &mut values,
-            data,
-            from,
-            usable_behind(self.period, |b| {
-                b.high.is_finite() && b.low.is_finite() && b.close.is_finite()
-            }),
-            |data| {
-                over_finite_bars(
-                    data,
-                    |b| b.high.is_finite() && b.low.is_finite() && b.close.is_finite(),
-                    |data| self.compute(data),
-                )
-            },
-        );
-        self.values = values;
+        // `from == 0` replaces the series. Resetting here also covers a one-bar series, which
+        // the stepper would otherwise resume.
+        if from == 0 {
+            self.stepper = Stepper::default();
+        }
+        let period = self.period;
+        let alpha = 2.0 / (period as f64 + 1.0);
+        self.stepper
+            .run(data, from, &mut self.values, |state, bar| {
+                if !(bar.high.is_finite() && bar.low.is_finite() && bar.close.is_finite()) {
+                    return IndicatorValue::None;
+                }
+                let range = match state.0 {
+                    Some(previous) => {
+                        let high_low = bar.high - bar.low;
+                        let high_close = (bar.high - previous).abs();
+                        let low_close = (bar.low - previous).abs();
+                        high_low.max(high_close).max(low_close)
+                    }
+                    None => bar.high - bar.low,
+                };
+                state.0 = Some(bar.close);
+                let average = state.1.next(range, period, alpha);
+                state.2.push_back(bar.close);
+                if state.2.len() > period {
+                    state.2.pop_front();
+                }
+                if state.2.len() < period || !average.is_finite() || average == 0.0 {
+                    return IndicatorValue::None;
+                }
+                let mean = state.2.iter().sum::<f64>() / period as f64;
+                IndicatorValue::Single((bar.close - mean) / average)
+            });
     }
 
     fn is_incremental(&self) -> bool {
@@ -200,5 +168,40 @@ mod tests {
             panic!("no value: {:?}", pgo.values.to_rows().last().unwrap());
         };
         assert!(*v > 0.0, "PGO should be positive after upward move");
+        // First five true ranges are 4, so the seed is 4. Bar 4: (104 - 102) / 4.
+        assert_eq!(pgo.values().value(0, 4), Some(0.5));
+        // Bar 5 true range is 6. alpha = 2/6, so the average is 4 + (6 - 4) * alpha.
+        // The close mean is (101 + 102 + 103 + 104 + 109) / 5.
+        let alpha = 2.0 / 6.0;
+        let average = 4.0 + (6.0 - 4.0) * alpha;
+        let mean = (101.0 + 102.0 + 103.0 + 104.0 + 109.0) / 5.0;
+        assert_eq!(pgo.values().value(0, 5), Some((109.0 - mean) / average));
+    }
+
+    #[test]
+    fn incremental_matches_a_full_compute() {
+        let mut data = vec![
+            make_bar(102.0, 98.0, 100.0),
+            make_bar(103.0, 99.0, 101.0),
+            make_bar(f64::NAN, 1.0, 1.0),
+            make_bar(104.0, 100.0, 102.0),
+            make_bar(105.0, 101.0, 103.0),
+            make_bar(106.0, 102.0, 104.0),
+            make_bar(110.0, 105.0, 109.0),
+        ];
+        super::super::assert_replay_matches_batch(&PrettyGoodOscillator::new(5), &data);
+        data[6].close = 111.0;
+        let mut batch = PrettyGoodOscillator::new(5);
+        batch.calculate(&data);
+        let mut stepped = PrettyGoodOscillator::new(5);
+        stepped.calculate(&data[..6]);
+        stepped.update(&data, 6);
+        for bar in 0..data.len() {
+            assert_eq!(
+                stepped.values().value(0, bar),
+                batch.values().value(0, bar),
+                "bar {bar}"
+            );
+        }
     }
 }

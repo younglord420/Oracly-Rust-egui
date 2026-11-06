@@ -12,10 +12,9 @@
 //! Oscillator = SMI - Signal
 //! ```
 //!
-//! The SMI runs from -1 to 1. Every EMA starts at its first input, as in
-//! [`TrueStrengthIndex`](super::TrueStrengthIndex), which computes the same lines scaled by 100: the
-//! changes start on bar 1 and values start on bar `long + short`. Defaults: long 20, short 5,
-//! signal 5.
+//! The SMI runs from -1 to 1. It is [`TrueStrengthIndex`](super::TrueStrengthIndex) divided by 100,
+//! so every EMA uses that study's seed, the mean of its first full window. Defaults: long 20,
+//! short 5, signal 5.
 //!
 //! # Example
 //! ```
@@ -67,7 +66,7 @@ impl<const OSCILLATOR: bool> SMIErgodic<OSCILLATOR> {
             colors: if OSCILLATOR {
                 vec![Color32::from_rgb(255, 82, 82)]
             } else {
-                vec![palette::BLUE, palette::ORANGE]
+                vec![palette::BLUE, palette::AMBER]
             },
             visible: true,
         }
@@ -87,6 +86,18 @@ impl<const OSCILLATOR: bool> Indicator for SMIErgodic<OSCILLATOR> {
         } else {
             crate::studies::StudyShading::spread(0, 1, 75)
         })
+    }
+
+    fn pane(&self) -> crate::studies::StudyPane {
+        if OSCILLATOR {
+            return crate::studies::StudyPane::default();
+        }
+        crate::studies::StudyPane {
+            height: None,
+            range: None,
+            levels: vec![(0.0, crate::studies::shading::transp(palette::MUTED, 50), "")],
+            fill_between_levels: false,
+        }
     }
 
     fn source(&self) -> Option<crate::studies::StudySource> {
