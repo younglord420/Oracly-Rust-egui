@@ -18,12 +18,6 @@ impl SettingsDialog {
         ui.horizontal(|ui| {
             ui.add_space(0.0);
             ui.vertical(|ui| {
-                styled_checkbox(
-                    ui,
-                    &mut self.settings.show_price_targets,
-                    "Analyst price targets",
-                    theme.ui.text,
-                );
                 let kind = self.settings.chart_type;
                 if kind.is_time_independent()
                     || !kind.uses_ohlc()
@@ -169,7 +163,7 @@ impl SettingsDialog {
                         theme.ui.text,
                         &curr_tz,
                         |ui| {
-                            for tz in &dialog.timezones {
+                            for tz in dialog.timezone_choices() {
                                 ui.selectable_value(
                                     &mut dialog.settings.timezone,
                                     tz.clone(),
@@ -256,12 +250,6 @@ impl SettingsDialog {
                     ui,
                     &mut self.settings.status_line.show_last_day_change,
                     "Last day change values",
-                    theme.ui.text,
-                );
-                styled_checkbox(
-                    ui,
-                    &mut self.settings.status_line.show_quote_boxes,
-                    "Buy/sell buttons",
                     theme.ui.text,
                 );
                 ui.add_space(theme.spacing.xxxl);

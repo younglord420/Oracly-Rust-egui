@@ -157,6 +157,7 @@ impl Modal {
         }
         let response = modal.frame(frame).backdrop_color(backdrop).show(ctx, |ui| {
             ui.set_width(size.x);
+            ui.set_max_width(size.x);
             ui.set_min_height(size.y);
             // Start from the window cap each frame, so scrolling content can grow and shrink.
             ui.set_max_height(max_height);

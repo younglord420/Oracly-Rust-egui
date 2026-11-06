@@ -394,7 +394,9 @@ impl Chart {
             .instrument
             .take()
             .filter(|instrument| instrument.symbol == self.symbol);
-        self.state.price_scale_mut().set_price_precision(None);
+        let scale = self.state.price_scale_mut();
+        scale.set_precision_follows_instrument(true);
+        scale.set_price_precision(None);
         link.trades = Trades::new(TRADE_CAPACITY);
         for study in self.studies.indicators() {
             if let Some(input) = study.order_flow_input() {
@@ -469,7 +471,7 @@ impl Chart {
     fn subscribe(&mut self, link: &mut FeedLink, instrument: Instrument) {
         self.state
             .price_scale_mut()
-            .set_price_precision(crate::scales::instrument_price_precision(&instrument));
+            .adopt_instrument_precision(crate::scales::instrument_price_precision(&instrument));
         let timeframe = self.timeframe.unwrap_or_default();
         let withheld = !supports(self.legend_instrument.as_ref(), timeframe);
         link.instrument = Some(instrument);

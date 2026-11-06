@@ -110,14 +110,18 @@ impl Terminal {
         }
         let chart_type = self.chart().chart_type();
         let config = self.chart().config().clone();
+        let auto = !self.chart().state().price_scale().is_manual();
         let menu = &mut self.studies.quick_settings;
         if !menu.is_open {
             menu.sync_from_config(&config);
             menu.settings.chart_type = chart_type;
+            menu.settings.auto_scale = auto;
         }
         menu.show_btn(ui, self.chart_area);
         menu.show_menu(ui.ctx());
         let open_scale = menu.take_scale_settings_request();
+        let reset_scale = menu.take_scale_reset_request();
+        let auto_scale = menu.take_auto_scale_request();
         let applied = menu.apply_to_config(config);
         let next_type = menu.chart_type();
         let chart = self.chart_mut();
@@ -126,6 +130,18 @@ impl Terminal {
         }
         if chart.chart_type() != next_type {
             chart.set_chart_type(next_type);
+        }
+        if reset_scale {
+            chart.price_scale_mut().reset();
+        }
+        if let Some(auto) = auto_scale {
+            let manual = chart.state().price_scale().is_manual();
+            let range = chart.state().price_scale().range();
+            if auto {
+                chart.price_scale_mut().reset();
+            } else if !manual {
+                chart.price_scale_mut().set_range(range.min, range.max);
+            }
         }
         if open_scale {
             self.open_chart_settings();
@@ -169,6 +185,15 @@ impl Terminal {
             Action::Indicators(IndicatorDialogAction::AddIndicator(study)) => self.add_study(study),
             Action::Indicators(_) => {}
             Action::Settings(SettingsAction::Apply(state)) => self.apply_chart_settings(*state),
+            Action::Settings(SettingsAction::SetDarkTheme(dark)) => {
+                if self.theme.dark != dark {
+                    self.theme_choice = Some(dark);
+                    self.update_theme(&self.ctx());
+                }
+                if let Some(state) = self.studies.settings_dialog.take_committed() {
+                    self.apply_chart_settings(state);
+                }
+            }
             Action::Settings(SettingsAction::PreviewSound { name, volume }) => {
                 self.play_sound(&name, volume);
             }
@@ -320,7 +345,9 @@ impl Terminal {
         state.alerts = last.alerts.clone();
         state.trading = last.trading.clone();
         state.adjust_for_dividends = last.adjust_for_dividends;
+        let symbol = self.chart().symbol().to_owned();
         self.studies.settings_dialog.open(state);
+        self.studies.settings_dialog.set_preview_symbol(&symbol);
     }
 
     /// Opens the settings of series `id`: the chart's for the main series, the study's for a

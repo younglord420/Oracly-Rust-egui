@@ -1,7 +1,7 @@
 //! Canvas tab of the chart settings dialog.
 
 use super::super::SettingsDialog;
-use super::{styled_dropdown, styled_text_input};
+use super::styled_dropdown;
 use crate::localization as l10n;
 use crate::model::LineStyle;
 use crate::theme::Theme;
@@ -19,12 +19,12 @@ impl SettingsDialog {
                 // APPEARANCE
                 self.draw_section_header(ui, "APPEARANCE", theme);
                 self.draw_setting_row_with_controls(ui, "Color theme", theme, |ui, dialog| {
-                    let mut dark = theme.dark;
+                    let mut dark = dialog.pending_dark_theme.unwrap_or(theme.dark);
                     if ui
                         .checkbox(&mut dark, l10n::text(ui.ctx(), "Dark theme"))
                         .changed()
                     {
-                        dialog.pending_dark_theme = Some(dark);
+                        dialog.choose_dark_theme(theme, dark);
                     }
                 });
                 ui.add_space(ui.active_theme().spacing.xxl);
@@ -65,6 +65,7 @@ impl SettingsDialog {
                             .inner
                             {
                                 dialog.settings.chart_basic_styles.background_color = color;
+                                dialog.colors_touched.background = true;
                             }
                         }
                         _ => {
@@ -76,6 +77,7 @@ impl SettingsDialog {
                             .inner
                             {
                                 dialog.settings.chart_basic_styles.background_gradient_top = color;
+                                dialog.colors_touched.gradient_top = true;
                             }
                             if let Some(color) = ColorPicker::new(
                                 &mut dialog.color_picker_states.background_gradient_bottom,
@@ -88,6 +90,7 @@ impl SettingsDialog {
                                     .settings
                                     .chart_basic_styles
                                     .background_gradient_bottom = color;
+                                dialog.colors_touched.gradient_bottom = true;
                             }
                         }
                     }
@@ -124,6 +127,7 @@ impl SettingsDialog {
                                 .inner
                         {
                             dialog.settings.grid_lines.horizontal_color = color;
+                            dialog.colors_touched.grid_h = true;
                         }
                     }
                     if matches!(
@@ -135,6 +139,7 @@ impl SettingsDialog {
                             .inner
                     {
                         dialog.settings.grid_lines.vertical_color = color;
+                        dialog.colors_touched.grid_v = true;
                     }
                 });
 
@@ -146,6 +151,7 @@ impl SettingsDialog {
                             .inner
                     {
                         dialog.settings.crosshair.color = color;
+                        dialog.colors_touched.crosshair = true;
                     }
 
                     ui.add_space(ui.active_theme().spacing.lg);
@@ -194,14 +200,10 @@ impl SettingsDialog {
                         theme.ui.text,
                         dialog.settings.watermark.mode.name(),
                         |ui| {
-                            for wm in &[
-                                WatermarkMode::ReplayMode,
-                                WatermarkMode::Symbol,
-                                WatermarkMode::SymbolAndDescription,
-                            ] {
+                            for wm in watermark_modes(dialog.settings.watermark.mode) {
                                 ui.selectable_value(
                                     &mut dialog.settings.watermark.mode,
-                                    *wm,
+                                    wm,
                                     l10n::text(ui.ctx(), wm.name()),
                                 );
                             }
@@ -216,6 +218,7 @@ impl SettingsDialog {
                             .inner
                     {
                         dialog.settings.watermark.color = color;
+                        dialog.colors_touched.watermark = true;
                     }
                 });
 
@@ -231,6 +234,7 @@ impl SettingsDialog {
                             .inner
                     {
                         dialog.settings.scales_appearance.text_color = color;
+                        dialog.colors_touched.scales_text = true;
                     }
                 });
 
@@ -243,6 +247,7 @@ impl SettingsDialog {
                     .inner
                     {
                         dialog.settings.scales_appearance.lines_color = color;
+                        dialog.colors_touched.scales_lines = true;
                     }
                 });
 
@@ -267,18 +272,16 @@ impl SettingsDialog {
 
                 ui.add_space(ui.active_theme().spacing.xxl);
 
-                // MARGINS (Pixel input fields)
                 self.draw_section_header(ui, "MARGINS", theme);
 
                 self.draw_setting_row_with_controls(ui, "Top margin (%)", theme, |ui, dialog| {
-                    styled_text_input(
-                        ui,
-                        &mut dialog.margin_top_str,
-                        DESIGN_TOKENS.sizing.settings_dialog.input_width_margin,
+                    ui.add(
+                        egui::DragValue::new(&mut dialog.settings.margins.top_percent)
+                            .range(0.0..=99.0)
+                            .speed(1.0)
+                            .max_decimals(0)
+                            .suffix(l10n::text(ui.ctx(), " %")),
                     );
-                    if let Ok(v) = dialog.margin_top_str.parse::<f32>() {
-                        dialog.settings.margins.top_percent = v;
-                    }
                 });
 
                 self.draw_setting_row_with_controls(
@@ -286,14 +289,13 @@ impl SettingsDialog {
                     "Bottom margin (%)",
                     theme,
                     |ui, dialog| {
-                        styled_text_input(
-                            ui,
-                            &mut dialog.margin_bottom_str,
-                            DESIGN_TOKENS.sizing.settings_dialog.input_width_margin,
+                        ui.add(
+                            egui::DragValue::new(&mut dialog.settings.margins.bottom_percent)
+                                .range(0.0..=99.0)
+                                .speed(1.0)
+                                .max_decimals(0)
+                                .suffix(l10n::text(ui.ctx(), " %")),
                         );
-                        if let Ok(v) = dialog.margin_bottom_str.parse::<f32>() {
-                            dialog.settings.margins.bottom_percent = v;
-                        }
                     },
                 );
 
@@ -302,14 +304,11 @@ impl SettingsDialog {
                     "Right margin (bars)",
                     theme,
                     |ui, dialog| {
-                        styled_text_input(
-                            ui,
-                            &mut dialog.margin_right_str,
-                            DESIGN_TOKENS.sizing.settings_dialog.input_width_margin,
+                        ui.add(
+                            egui::DragValue::new(&mut dialog.settings.margins.right_bars)
+                                .range(0..=500)
+                                .speed(1.0),
                         );
-                        if let Ok(v) = dialog.margin_right_str.parse::<u32>() {
-                            dialog.settings.margins.right_bars = v;
-                        }
                     },
                 );
 
@@ -374,6 +373,19 @@ impl SettingsDialog {
             });
         });
     }
+}
+
+/// Custom stays available only while it is already the selected mode.
+fn watermark_modes(current: WatermarkMode) -> Vec<WatermarkMode> {
+    let mut modes = vec![
+        WatermarkMode::ReplayMode,
+        WatermarkMode::Symbol,
+        WatermarkMode::SymbolAndDescription,
+    ];
+    if current == WatermarkMode::Custom {
+        modes.push(WatermarkMode::Custom);
+    }
+    modes
 }
 
 fn line_style_preview(ls: LineStyle) -> &'static str {

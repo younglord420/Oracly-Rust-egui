@@ -1055,6 +1055,7 @@ impl DemoApp {
         self.settings_state.adjust_for_dividends =
             self.timeframe_toolbar.state.adjust_for_dividends;
         self.settings_dialog.open(self.settings_state.clone());
+        self.settings_dialog.set_preview_symbol(self.chart.symbol());
     }
 
     fn open_drawing_props_for(&mut self, drawing_id: usize) {
@@ -1285,6 +1286,9 @@ impl DemoApp {
             SettingsAction::SetDarkTheme(dark) => {
                 if self.theme.dark != dark {
                     self.toggle_theme(ctx);
+                }
+                if let Some(state) = self.settings_dialog.take_committed() {
+                    self.apply_chart_settings(state);
                 }
             }
             SettingsAction::Cancel => {}
@@ -2166,7 +2170,8 @@ impl DemoApp {
             }
             DrawingToolbarAction::HideAllDrawings => dm.toggle_visibility_all(),
             DrawingToolbarAction::LockAllDrawings => {
-                let lock = dm.drawings.is_empty() || dm.drawings.iter().any(|drawing| !drawing.locked);
+                let lock =
+                    dm.drawings.is_empty() || dm.drawings.iter().any(|drawing| !drawing.locked);
                 dm.set_lock_all(lock);
             }
             DrawingToolbarAction::ToggleMeasure => {
@@ -5838,7 +5843,14 @@ mod tests {
             );
             assert_eq!(app.drawing_toolbar.state.current_cursor_type, cursor);
             assert!(app.drawing_toolbar.state.magnet_mode);
-            assert_eq!(app.drawing_toolbar.state.magnet_type, magnet);
+            assert_eq!(
+                app.drawing_toolbar.state.magnet_type,
+                if magnet == MagnetType::OHLC {
+                    MagnetType::Strong
+                } else {
+                    magnet
+                }
+            );
             let dm = app.chart.drawings_mut();
             dm.start_drawing_with_coords(
                 DrawingToolType::TrendLine,

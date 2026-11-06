@@ -104,7 +104,7 @@ impl ButtonVisibility {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum WatermarkMode {
     #[default]
-    /// Replay mode.
+    /// No watermark. The variant name is kept so saved settings still load.
     ReplayMode,
     /// Symbol.
     Symbol,

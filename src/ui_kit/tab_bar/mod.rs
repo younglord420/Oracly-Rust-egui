@@ -40,6 +40,11 @@ use egui::{Role, Sense, Ui, WidgetInfo, vec2};
 pub trait TabLabel: Copy + PartialEq {
     /// Label displayed for this tab.
     fn tab_label(&self) -> &str;
+
+    /// A 16 px icon drawn before the label.
+    fn tab_icon(&self) -> Option<&'static crate::icons::Icon> {
+        None
+    }
 }
 
 /// Horizontal tab bar with underline indicator on the active tab.
@@ -84,9 +89,10 @@ impl<'a, T: TabLabel> TabBar<'a, T> {
                     egui::FontId::proportional(if self.pills { 14.0 } else { theme.text.label }),
                     egui::Color32::PLACEHOLDER,
                 );
+                let icon_span = if tab.tab_icon().is_some() { 20.0 } else { 0.0 };
                 let (rect, response) = ui.allocate_exact_size(
                     vec2(
-                        galley.size().x + if self.pills { 24.0 } else { 0.0 },
+                        galley.size().x + if self.pills { 24.0 } else { 0.0 } + icon_span,
                         ButtonSize::MD.pixels(),
                     ),
                     Sense::click(),
@@ -130,7 +136,18 @@ impl<'a, T: TabLabel> TabBar<'a, T> {
                 } else {
                     visuals.text_color()
                 };
-                let text_pos = rect.center() - galley.size() / 2.0;
+                let content_width = galley.size().x + icon_span;
+                let start_x = rect.center().x - content_width / 2.0;
+                if let Some(icon) = tab.tab_icon() {
+                    let icon_rect = egui::Rect::from_min_size(
+                        egui::pos2(start_x, rect.center().y - 8.0),
+                        egui::vec2(16.0, 16.0),
+                    );
+                    icon.as_image_tinted(egui::vec2(16.0, 16.0), text_color)
+                        .paint_at(ui, icon_rect);
+                }
+                let text_pos =
+                    egui::pos2(start_x + icon_span, rect.center().y - galley.size().y / 2.0);
                 ui.painter().galley(text_pos, galley, text_color);
 
                 if is_active && !self.pills {

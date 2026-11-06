@@ -62,3 +62,13 @@ impl SettingsTab {
         }
     }
 }
+
+impl crate::ui_kit::tab_bar::TabLabel for SettingsTab {
+    fn tab_label(&self) -> &str {
+        self.name()
+    }
+
+    fn tab_icon(&self) -> Option<&'static Icon> {
+        Some(self.icon())
+    }
+}

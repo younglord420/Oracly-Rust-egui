@@ -522,6 +522,12 @@ pub struct ChartSettingsState {
     pub precision: PrecisionMode,
     /// UTC, Local, or a supported zone name.
     pub timezone: String,
+    /// Exchange zone offered in the timezone list when the chart has one.
+    #[serde(default)]
+    pub exchange_timezone: Option<String>,
+    /// Host theme choice edited in this dialog. `None` leaves the host theme alone.
+    #[serde(default)]
+    pub dark_theme: Option<bool>,
     /// Show analyst estimates answered by the host feed.
     #[serde(default)]
     pub show_price_targets: bool,
@@ -583,6 +589,8 @@ impl Default for ChartSettingsState {
             candle_colors: CandleColorConfig::default(),
             precision: PrecisionMode::Default,
             timezone: "UTC".to_string(),
+            exchange_timezone: None,
+            dark_theme: None,
             show_price_targets: false,
             adjust_for_dividends: false,
 

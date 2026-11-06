@@ -144,6 +144,12 @@ impl ChartSettingsState {
             TimezoneMode::Timezone(zone) => zone.to_string(),
             TimezoneMode::Exchange(zone) => format!("Exchange:{zone}"),
         };
+        settings.exchange_timezone = match &chart.chart_options().time_scale.timezone {
+            TimezoneMode::Exchange(zone) => Some(zone.to_string()),
+            _ => chart
+                .instrument()
+                .and_then(|instrument| instrument.time_zone.as_ref().map(ToString::to_string)),
+        };
         settings.grid_lines.mode = match (
             config.show_grid && config.show_horizontal_grid,
             config.show_grid && config.show_vertical_grid,
@@ -176,16 +182,17 @@ impl ChartSettingsState {
         settings.crosshair.color = crosshair.horz_line_color;
         settings.crosshair.line_width = crosshair.horz_line_width;
         settings.crosshair.line_style = crosshair.horz_line_style;
-        let decimals = chart
-            .state()
-            .price_scale()
-            .map(Default::default(), 0.0, 1.0)
-            .price_precision();
-        settings.precision = PrecisionMode::all()
-            .iter()
-            .copied()
-            .find(|mode| mode.decimals() == decimals)
-            .unwrap_or_default();
+        let scale = chart.state().price_scale();
+        settings.precision = if scale.precision_follows_instrument() {
+            PrecisionMode::Default
+        } else {
+            let decimals = scale.map(Default::default(), 0.0, 1.0).price_precision();
+            PrecisionMode::all()
+                .iter()
+                .copied()
+                .find(|mode| mode.decimals() == decimals)
+                .unwrap_or_default()
+        };
         let symbol_description = chart
             .instrument()
             .and_then(|instrument| instrument.description.as_deref())
@@ -328,7 +335,6 @@ impl ChartSettingsState {
         if self.chart_basic_styles.background_color != Color32::PLACEHOLDER {
             config.background_color = self.chart_basic_styles.background_color;
         }
-        config.grid_color = self.grid_lines.horizontal_color;
 
         let (h, v) = match self.grid_lines.mode {
             GridLinesMode::None => (false, false),
@@ -336,6 +342,12 @@ impl ChartSettingsState {
             GridLinesMode::Vertical => (false, true),
             GridLinesMode::Both => (true, true),
         };
+        if h {
+            config.grid_color = self.grid_lines.horizontal_color;
+        }
+        if v {
+            config.vertical_grid_color = Some(self.grid_lines.vertical_color);
+        }
         config.show_horizontal_grid = h;
         config.show_vertical_grid = v;
         config.show_grid = h || v;
@@ -378,7 +390,6 @@ impl ChartSettingsState {
         config.show_bid_ask = self.scales_and_lines.show_bid_ask;
         config.show_high_low = self.scales_and_lines.show_high_low;
 
-        config.vertical_grid_color = Some(self.grid_lines.vertical_color);
         let resolved = |color| {
             if color == Color32::PLACEHOLDER {
                 config.background_color
@@ -451,16 +462,17 @@ impl ChartSettingsState {
         let options = chart.state.price_scale_mut().options_mut();
         options.mode = mode;
         options.invert_scale = self.scales_and_lines.invert_scale;
-        let precision = self
-            .precision
-            .decimals()
-            .map(|value| value as u8)
-            .or_else(|| {
-                chart
-                    .instrument()
-                    .and_then(crate::scales::instrument_price_precision)
-            });
-        chart.state.price_scale_mut().set_price_precision(precision);
+        let follows = self.precision == PrecisionMode::Default;
+        let precision = if follows {
+            chart
+                .instrument()
+                .and_then(crate::scales::instrument_price_precision)
+        } else {
+            self.precision.decimals().map(|value| value as u8)
+        };
+        let scale = chart.state.price_scale_mut();
+        scale.set_precision_follows_instrument(follows);
+        scale.set_price_precision(precision);
         if let Some(style) = chart.series_style_mut(crate::widget::SeriesId::MAIN) {
             style.price_line_color = self.scales_and_lines.symbol_price_color;
         }

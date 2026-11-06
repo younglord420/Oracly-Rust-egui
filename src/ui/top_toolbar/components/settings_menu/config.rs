@@ -12,7 +12,7 @@ use egui::Color32;
 pub struct SettingsDialogConfig {
     /// Width, in egui logical points.
     pub width: f32,
-    /// Outer height override; zero sizes the dialog for the active tab.
+    /// Outer height override; zero uses one height for every tab.
     pub height: f32,
     /// Background color value; the settings dialog currently uses the supplied theme instead.
     pub bg_color: Color32,
@@ -31,7 +31,7 @@ impl Default for SettingsDialogConfig {
         // Colors are TRANSPARENT to signal that colors should be fetched from
         // ui.style().visuals at render time for proper theme support.
         Self {
-            width: 752.0,
+            width: 880.0,
             height: 0.0,
             bg_color: Color32::TRANSPARENT,
             tab_bg_color: Color32::TRANSPARENT,
@@ -79,6 +79,8 @@ pub struct ChartSettings {
     pub no_overlapping_labels: bool,
     /// Whether to show countdown.
     pub show_countdown: bool,
+    /// Whether the price scale fits the visible data. Distinct from the scale mode.
+    pub auto_scale: bool,
 }
 
 impl Default for ChartSettings {
@@ -99,6 +101,7 @@ impl Default for ChartSettings {
             show_indicator_last_val: true,
             no_overlapping_labels: true,
             show_countdown: false,
+            auto_scale: true,
         }
     }
 }

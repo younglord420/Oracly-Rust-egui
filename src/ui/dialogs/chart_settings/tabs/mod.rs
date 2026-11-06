@@ -182,11 +182,3 @@ fn styled_checkbox(ui: &mut Ui, checked: &mut bool, label: &str, text_color: Col
     ui.add_space(ui.active_theme().spacing.sm);
     changed
 }
-
-fn styled_text_input(ui: &mut Ui, text: &mut String, width: f32) {
-    ui.add(
-        egui::TextEdit::singleline(text)
-            .desired_width(width)
-            .font(FontId::proportional(ui.active_theme().text.body)),
-    );
-}

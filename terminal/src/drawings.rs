@@ -797,7 +797,14 @@ mod tests {
             assert_eq!(state.sel_tool, Some(DrawingToolType::TrendLine));
             assert_eq!(state.current_cursor_type, cursor);
             assert!(state.magnet_mode);
-            assert_eq!(state.magnet_type, magnet);
+            assert_eq!(
+                state.magnet_type,
+                if magnet == MagnetType::OHLC {
+                    MagnetType::Strong
+                } else {
+                    magnet
+                }
+            );
             // Completing the drawing clears the tool, and the toolbar follows.
             let manager = terminal.chart_mut().drawings_mut();
             manager.start_drawing_with_coords(

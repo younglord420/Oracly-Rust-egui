@@ -9,7 +9,6 @@ use crate::localization as l10n;
 use crate::model::ChartType;
 use crate::scales::PriceScaleMode;
 use crate::theme::ThemeExt;
-use crate::tokens::DESIGN_TOKENS;
 use crate::ui_kit::ext::UiExt;
 use egui::{Align2, Context, Id, Pos2, Rect, Response, Ui};
 
@@ -25,8 +24,14 @@ pub struct SettingsMenu {
     pub is_open: bool,
     /// Set when the host should open the full scale settings dialog.
     scale_settings_requested: bool,
+    /// Set when the host should return the price scale to auto-fit.
+    scale_reset_requested: bool,
+    /// Set when the user toggles auto scale. `None` until that toggle.
+    auto_scale_requested: Option<bool>,
     /// Rect of the trigger button (for popup positioning)
     btn_rect: Option<Rect>,
+    /// Rect of the open popup, used to tell an inside click from an outside one.
+    menu_rect: Rect,
 }
 
 impl SettingsMenu {
@@ -36,7 +41,10 @@ impl SettingsMenu {
             settings: ChartSettings::default(),
             is_open: false,
             scale_settings_requested: false,
+            scale_reset_requested: false,
+            auto_scale_requested: None,
             btn_rect: None,
+            menu_rect: Rect::NOTHING,
         }
     }
 
@@ -77,6 +85,16 @@ impl SettingsMenu {
         std::mem::take(&mut self.scale_settings_requested)
     }
 
+    /// True once after the user chose Reset Scale.
+    pub fn take_scale_reset_request(&mut self) -> bool {
+        std::mem::take(&mut self.scale_reset_requested)
+    }
+
+    /// The auto-scale checkbox, once, after the user changes it.
+    pub fn take_auto_scale_request(&mut self) -> Option<bool> {
+        self.auto_scale_requested.take()
+    }
+
     /// Apply current settings to a ChartConfig
     pub fn apply_to_config(&self, mut config: ChartConfig) -> ChartConfig {
         config.show_grid = self.settings.show_horizontal_grid || self.settings.show_vertical_grid;
@@ -102,7 +120,8 @@ impl SettingsMenu {
         config
     }
 
-    /// Get the currently selected chart type
+    /// Chart type selected in the menu. Applying the menu config does not change it;
+    /// the host sets it with [`Chart::set_chart_type`](crate::widget::Chart::set_chart_type).
     pub fn chart_type(&self) -> ChartType {
         self.settings.chart_type
     }
@@ -160,11 +179,11 @@ impl SettingsMenu {
         };
 
         let popup_id = Id::unique("settings_popup");
-        let popup_pos = Pos2::new(btn_rect.min.x - 200.0, btn_rect.min.y - 400.0);
-
-        egui::Area::new(popup_id)
-            .fixed_pos(popup_pos)
+        let response = egui::Area::new(popup_id)
             .order(egui::Order::Foreground)
+            .pivot(Align2::RIGHT_BOTTOM)
+            .fixed_pos(btn_rect.left_top())
+            .constrain(true)
             .show(ctx, |ui| {
                 crate::ui_kit::glass_popup(ui).show(ui, |ui| {
                     ui.set_min_width(180.0);
@@ -172,8 +191,8 @@ impl SettingsMenu {
                     self.draw_menu_sections(ui);
                 });
             });
-
-        self.handle_click_outside(ctx, btn_rect, popup_pos);
+        self.menu_rect = response.response.rect;
+        self.handle_click_outside(ctx, btn_rect);
     }
 
     fn draw_menu_sections(&mut self, ui: &mut egui::Ui) {
@@ -234,6 +253,7 @@ impl SettingsMenu {
         ui.separator();
 
         if ui.button(l10n::text(ui.ctx(), "Reset Scale")).clicked() {
+            self.scale_reset_requested = true;
             self.is_open = false;
         }
 
@@ -249,11 +269,20 @@ impl SettingsMenu {
         if ui
             .selectable_label(
                 self.settings.scale_mode == PriceScaleMode::Normal,
-                l10n::text(ui.ctx(), "Auto Scale"),
+                l10n::text(ui.ctx(), "Regular"),
             )
             .clicked()
         {
             self.settings.scale_mode = PriceScaleMode::Normal;
+        }
+        if ui
+            .checkbox(
+                &mut self.settings.auto_scale,
+                l10n::text(ui.ctx(), "Auto scale"),
+            )
+            .changed()
+        {
+            self.auto_scale_requested = Some(self.settings.auto_scale);
         }
 
         ui.checkbox(
@@ -325,20 +354,13 @@ impl SettingsMenu {
         );
     }
 
-    fn handle_click_outside(&mut self, ctx: &Context, btn_rect: Rect, popup_pos: Pos2) {
+    fn handle_click_outside(&mut self, ctx: &Context, btn_rect: Rect) {
         if ctx.input(|i| i.pointer.any_released())
             && let Some(pos) = ctx.input(|i| i.pointer.interact_pos())
+            && !self.menu_rect.contains(pos)
+            && !btn_rect.contains(pos)
         {
-            let menu_rect = Rect::from_min_size(
-                popup_pos,
-                egui::vec2(
-                    DESIGN_TOKENS.sizing.dialog.menu_settings_width,
-                    DESIGN_TOKENS.sizing.dialog.menu_settings_height,
-                ),
-            );
-            if !menu_rect.contains(pos) && !btn_rect.contains(pos) {
-                self.is_open = false;
-            }
+            self.is_open = false;
         }
     }
 }
@@ -346,5 +368,58 @@ impl SettingsMenu {
 impl Default for SettingsMenu {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scales::PriceScaleMode;
+
+    #[test]
+    fn reset_scale_is_a_request_and_auto_scale_is_not_regular() {
+        let ctx = Context::default();
+        let mut menu = SettingsMenu::new();
+        menu.settings.scale_mode = PriceScaleMode::Logarithmic;
+        let output = ctx.run_ui(Default::default(), |ui| menu.draw_scale_section(ui));
+        let text = |label: &str| {
+            output.shapes.iter().any(|shape| {
+                matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == label)
+            })
+        };
+        assert!(text("Regular"));
+        assert!(text("Auto scale"));
+        assert!(!text("Auto Scale"));
+        let reset = output.shapes.iter().find_map(|shape| match &shape.shape {
+            egui::Shape::Text(text) if text.galley.text() == "Reset Scale" => {
+                Some(text.pos + text.galley.size() / 2.0)
+            }
+            _ => None,
+        });
+        output.drop_without_applying_deltas();
+        let pos = reset.unwrap();
+        let click = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![click(true)],
+            vec![click(false)],
+        ] {
+            ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| menu.draw_scale_section(ui),
+            )
+            .drop_without_applying_deltas();
+        }
+        assert!(menu.take_scale_reset_request());
+        assert_eq!(menu.settings.scale_mode, PriceScaleMode::Logarithmic);
+        assert!(menu.settings.auto_scale);
     }
 }

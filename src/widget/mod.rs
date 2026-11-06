@@ -578,7 +578,9 @@ impl Chart {
         let precision = self
             .instrument()
             .and_then(crate::scales::instrument_price_precision);
-        self.state.price_scale_mut().set_price_precision(precision);
+        self.state
+            .price_scale_mut()
+            .adopt_instrument_precision(precision);
     }
 
     /// Supplies currencies the host can convert the chart into. Choosing one emits an intent;

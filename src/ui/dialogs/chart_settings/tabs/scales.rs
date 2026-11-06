@@ -179,6 +179,18 @@ impl SettingsDialog {
                         &mut dialog.settings.scales_and_lines.show_prev_close,
                     );
                 });
+                styled_checkbox(
+                    ui,
+                    &mut self.settings.scales_and_lines.show_bid_ask,
+                    "Bid and ask",
+                    theme.ui.text,
+                );
+                styled_checkbox(
+                    ui,
+                    &mut self.settings.scales_and_lines.show_high_low,
+                    "High and low",
+                    theme.ui.text,
+                );
                 ui.add_space(theme.spacing.xxxl);
                 self.draw_section_header(ui, "SCALE MODES", theme);
                 if styled_checkbox(

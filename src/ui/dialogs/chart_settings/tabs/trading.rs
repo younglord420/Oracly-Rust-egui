@@ -15,6 +15,12 @@ use egui::{Color32, RichText, Ui};
 impl SettingsDialog {
     pub(in super::super) fn draw_events_tab(&mut self, ui: &mut Ui, theme: &Theme) {
         self.draw_section_header(ui, "EVENT VISIBILITY", theme);
+        styled_checkbox(
+            ui,
+            &mut self.settings.show_price_targets,
+            "Analyst price targets",
+            theme.ui.text,
+        );
         let events = &mut self.settings.events;
         for (value, label) in [
             (&mut events.show_dividends, "Dividends"),

@@ -263,6 +263,9 @@ pub struct PriceScale {
     /// Larger magnitude of the data at the last fit, in scale units
     level: f64,
     price_precision: Option<u8>,
+    /// `true` until the user picks a precision, so a new instrument replaces the decimals.
+    #[serde(default)]
+    precision_follows_instrument: bool,
     bar_ratio: Option<f64>,
 }
 
@@ -276,6 +279,7 @@ impl PriceScale {
             manual: false,
             level: 0.0,
             price_precision: None,
+            precision_follows_instrument: true,
             bar_ratio: None,
         }
     }
@@ -283,6 +287,23 @@ impl PriceScale {
     /// Sets the decimals used by price ticks and tags. `None` derives them from the tick step.
     pub fn set_price_precision(&mut self, decimals: Option<u8>) {
         self.price_precision = decimals;
+    }
+
+    /// Whether a new instrument may replace the decimals.
+    pub fn precision_follows_instrument(&self) -> bool {
+        self.precision_follows_instrument
+    }
+
+    /// `true` keeps later instruments in charge of the decimals.
+    pub fn set_precision_follows_instrument(&mut self, follows: bool) {
+        self.precision_follows_instrument = follows;
+    }
+
+    /// Writes decimals only while [`precision_follows_instrument`](Self::precision_follows_instrument) is set.
+    pub fn adopt_instrument_precision(&mut self, decimals: Option<u8>) {
+        if self.precision_follows_instrument {
+            self.price_precision = decimals;
+        }
     }
 
     /// Locks scale units per bar at the current bar spacing and pane height.

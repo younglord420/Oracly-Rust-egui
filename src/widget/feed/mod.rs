@@ -351,7 +351,9 @@ impl Chart {
             self.time_scale_events = Default::default();
             self.event_click = None;
             self.axis_hover = None;
-            self.state.price_scale_mut().set_price_precision(None);
+            let scale = self.state.price_scale_mut();
+            scale.set_precision_follows_instrument(true);
+            scale.set_price_precision(None);
         }
         self.symbol = symbol;
     }
