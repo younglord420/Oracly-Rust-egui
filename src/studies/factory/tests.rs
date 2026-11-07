@@ -166,3 +166,60 @@ fn catalogue_studies_are_distinct_except_for_adx_and_dmi_components() {
     duplicates.sort();
     assert_eq!(duplicates, ["ADX and DMI", "Envelopes and MA Channel"]);
 }
+
+#[test]
+fn every_study_has_a_listed_category() {
+    let factory = IndicatorFactory::new();
+    let allowed: Vec<_> = IndicatorFactory::INDICATOR_CATEGORIES
+        .into_iter()
+        .chain([IndicatorFactory::PROFILES, IndicatorFactory::PATTERNS])
+        .collect();
+    for name in factory.list() {
+        let category = factory.category(&name).unwrap();
+        assert!(
+            allowed.contains(&category),
+            "{name} is in {category:?}, not a listed category"
+        );
+    }
+}
+
+#[test]
+fn categories_match_the_table() {
+    let factory = IndicatorFactory::new();
+    let cases = [
+        ("SMA", IndicatorFactory::MOVING_AVERAGES),
+        ("EMA Cross", IndicatorFactory::MOVING_AVERAGES),
+        ("BB", IndicatorFactory::BANDS),
+        ("MA Channel", IndicatorFactory::BANDS),
+        ("ADX", IndicatorFactory::TREND),
+        ("CHOP", IndicatorFactory::TREND),
+        ("SuperTrend", IndicatorFactory::STOPS),
+        ("PSAR", IndicatorFactory::STOPS),
+        ("MACD", IndicatorFactory::MOMENTUM),
+        ("TRIX", IndicatorFactory::MOMENTUM),
+        ("RSI", IndicatorFactory::OSCILLATORS),
+        ("Fisher Transform", IndicatorFactory::OSCILLATORS),
+        ("ATR", IndicatorFactory::VOLATILITY),
+        ("Mass Index", IndicatorFactory::VOLATILITY),
+        ("OBV", IndicatorFactory::VOLUME),
+        ("Force Index", IndicatorFactory::VOLUME),
+        ("Volume Osc", IndicatorFactory::VOLUME),
+        ("VWAP", IndicatorFactory::AVERAGE_PRICE),
+        ("Visible Average Price", IndicatorFactory::AVERAGE_PRICE),
+        ("Pivot Points Standard", IndicatorFactory::LEVELS),
+        ("ZigZag", IndicatorFactory::LEVELS),
+        ("LinReg", IndicatorFactory::STATISTICS),
+        ("Correlation Coefficient", IndicatorFactory::STATISTICS),
+        ("TP", IndicatorFactory::PRICE),
+        ("Seasonality", IndicatorFactory::PRICE),
+        ("Advance/Decline Ratio", IndicatorFactory::BREADTH),
+        ("Advance/Decline Ratio (Bars)", IndicatorFactory::BREADTH),
+        ("Quoted Spread", IndicatorFactory::ORDER_FLOW),
+        ("Vol Profile VR", IndicatorFactory::PROFILES),
+        ("Rising Wedge", IndicatorFactory::PATTERNS),
+        ("Elliott Wave", IndicatorFactory::PATTERNS),
+    ];
+    for (name, category) in cases {
+        assert_eq!(factory.category(name), Some(category), "{name}");
+    }
+}

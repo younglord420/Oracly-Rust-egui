@@ -254,6 +254,11 @@ pub trait Indicator: Send {
         None
     }
 
+    /// Optional names for the bullish and bearish shading colours, in that order.
+    fn shading_labels(&self) -> Option<[&'static str; 2]> {
+        None
+    }
+
     /// Per-bar wash stops rebuilt by [`ConfiguredStudy`](super::ConfiguredStudy).
     fn gradient_stops(&self) -> &[Option<super::GradientStop>] {
         &[]

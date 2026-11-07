@@ -16,13 +16,7 @@ use egui::{Color32, FontId, RichText, Ui};
 
 impl SettingsDialog {
     pub(super) fn draw_section_header(&self, ui: &mut Ui, title: &str, theme: &Theme) {
-        ui.label(
-            RichText::new(l10n::text(ui.ctx(), title))
-                .size(theme.text.small)
-                .strong()
-                .color(theme.ui.text_secondary),
-        );
-        ui.add_space(ui.active_theme().spacing.sm);
+        crate::ui_kit::section_header(ui, title, theme);
     }
 
     /// The width of the label column, which every tab shares: the longest label's width.
@@ -67,33 +61,7 @@ impl SettingsDialog {
         F: FnOnce(&mut Ui, &mut SettingsDialog),
     {
         let label_width = Self::label_width(ui, theme);
-        ui.horizontal(|ui| {
-            // All tabs share the longest label's width.
-            let label = ui.allocate_ui_with_layout(
-                egui::vec2(label_width, 42.0),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.set_min_width(label_width);
-                    ui.set_max_width(label_width);
-                    ui.add(
-                        egui::Label::new(
-                            RichText::new(l10n::text(ui.ctx(), label))
-                                .size(theme.text.title)
-                                .color(theme.ui.text),
-                        )
-                        .wrap(),
-                    )
-                },
-            );
-
-            // Controls column - starts at fixed offset
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                ui.spacing_mut().interact_size.y = 32.0;
-                ui.label_inputs_by(label.inner.id, |ui| add_content(ui, self));
-            });
-        });
-        ui.add_space(ui.active_theme().spacing.sm);
+        crate::ui_kit::setting_row(ui, label, label_width, theme, |ui| add_content(ui, self));
     }
 }
 
@@ -121,15 +89,7 @@ fn styled_dropdown<R>(
     selected: &str,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) {
-    egui::ComboBox::from_id_salt(id)
-        .icon(crate::ui_kit::buttons::combo_chevron)
-        .width(width)
-        .selected_text(
-            RichText::new(l10n::text(ui.ctx(), selected))
-                .size(ui.active_theme().text.title)
-                .color(text_color),
-        )
-        .show_ui(ui, add_contents);
+    crate::ui_kit::styled_dropdown(ui, id, width, text_color, selected, add_contents);
 }
 
 /// The width of the Trading tab's labels, where its dropdowns start.
@@ -163,22 +123,5 @@ fn trading_option(
 }
 
 fn styled_checkbox(ui: &mut Ui, checked: &mut bool, label: &str, text_color: Color32) -> bool {
-    let changed = ui
-        .allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), 42.0),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.set_min_height(42.0);
-                ui.checkbox(
-                    checked,
-                    RichText::new(l10n::text(ui.ctx(), label))
-                        .size(ui.active_theme().text.title)
-                        .color(text_color),
-                )
-                .changed()
-            },
-        )
-        .inner;
-    ui.add_space(ui.active_theme().spacing.sm);
-    changed
+    crate::ui_kit::styled_checkbox(ui, checked, label, text_color)
 }

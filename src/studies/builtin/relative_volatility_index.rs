@@ -76,6 +76,10 @@ impl Default for RelativeVolatilityIndex {
 }
 
 impl Indicator for RelativeVolatilityIndex {
+    fn shading_labels(&self) -> Option<[&'static str; 2]> {
+        Some(["Overbought", "Oversold"])
+    }
+
     fn shading(&self) -> Option<crate::studies::StudyShading> {
         Some(
             crate::studies::StudyShading::bounded(0, 80.0, 20.0, 100.0, 0.0)

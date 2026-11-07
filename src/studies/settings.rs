@@ -775,6 +775,9 @@ impl Indicator for ConfiguredStudy {
     fn shading(&self) -> Option<super::StudyShading> {
         self.shading_now()
     }
+    fn shading_labels(&self) -> Option<[&'static str; 2]> {
+        self.study.shading_labels()
+    }
     fn gradient_stops(&self) -> &[Option<super::GradientStop>] {
         &self.shade_stops
     }

@@ -339,7 +339,7 @@ impl IndicatorPane {
             axis_rect: None,
             axis_tags: Vec::new(),
             axis_options,
-            legend_backdrop: 0.6,
+            legend_backdrop: 0.92,
             skip_background: false,
         }
     }
@@ -1457,19 +1457,32 @@ impl IndicatorPane {
         text_color: Color32,
         background: Color32,
         font_size: f32,
+        max_width: f32,
+        status: Option<&str>,
     ) -> egui::text::LayoutJob {
         let mut job = egui::text::LayoutJob::default();
         let format = |color| egui::TextFormat::simple(egui::FontId::proportional(font_size), color);
+        let title_color = if indicator.is_visible() {
+            text_color
+        } else {
+            text_color.gamma_multiply(0.5)
+        };
         if self.config.show_name {
-            job.append(indicator.name(), 0.0, format(text_color));
+            job.append(indicator.name(), 0.0, format(title_color));
         }
         if !self.config.inputs.is_empty() {
             if !job.text.is_empty() {
+                job.append(" ", 0.0, format(title_color));
+            }
+            job.append(&self.config.inputs, 0.0, format(title_color));
+        }
+        if let Some(status) = status {
+            if !job.text.is_empty() {
                 job.append(" ", 0.0, format(text_color));
             }
-            job.append(&self.config.inputs, 0.0, format(text_color));
-        }
-        if self.config.show_values
+            job.append(status, 0.0, format(text_color.gamma_multiply(0.7)));
+        } else if indicator.is_visible()
+            && self.config.show_values
             && let Some(bar) = self
                 .bar_index
                 .or_else(|| indicator.values().len().checked_sub(1))
@@ -1477,29 +1490,38 @@ impl IndicatorPane {
             for line in
                 (0..indicator.line_count()).filter(|line| indicator.plot_style(*line).visible)
             {
-                if let Some(value) = indicator.plot_value(line, bar) {
-                    if !job.text.is_empty() {
-                        job.append(" ", 0.0, format(text_color));
-                    }
-                    let color = indicator.plot_style(line).color;
-                    let readable = crate::theme::contrast(color, background) >= 4.5;
-                    if !readable {
-                        let mut swatch = format(color);
-                        swatch.background = color;
-                        swatch.font_id.size = 8.0;
-                        swatch.valign = egui::Align::Center;
-                        job.append("  ", 0.0, swatch);
-                        job.append(" ", 0.0, format(text_color));
-                    }
-                    let label = indicator.format_value(value);
-                    job.append(
-                        &label,
-                        0.0,
-                        format(if readable { color } else { text_color }),
-                    );
+                if !job.text.is_empty() {
+                    job.append(" ", 0.0, format(text_color));
                 }
+                let Some(value) = indicator.plot_value(line, bar) else {
+                    job.append(
+                        crate::scales::NO_VALUE,
+                        0.0,
+                        format(text_color.gamma_multiply(0.55)),
+                    );
+                    continue;
+                };
+                let color = indicator.plot_style(line).color;
+                let readable = crate::theme::contrast(color, background) >= 4.5;
+                if !readable {
+                    let mut swatch = format(color);
+                    swatch.background = color;
+                    swatch.font_id.size = 8.0;
+                    swatch.valign = egui::Align::Center;
+                    job.append("  ", 0.0, swatch);
+                    job.append(" ", 0.0, format(text_color));
+                }
+                let label = indicator.format_value(value);
+                job.append(
+                    &label,
+                    0.0,
+                    format(if readable { color } else { text_color }),
+                );
             }
         }
+        job.wrap.max_width = max_width;
+        job.wrap.max_rows = 1;
+        job.wrap.overflow_character = Some('…');
         job
     }
 
@@ -1514,11 +1536,17 @@ impl IndicatorPane {
             return None;
         }
         let theme = painter.ctx().active_theme();
+        let status = indicator
+            .study_status()
+            .as_ref()
+            .map(|status| study_status_label(painter.ctx(), status));
         let galley = painter.layout_job(self.legend_job(
             indicator,
             theme.ui.text,
             theme.chart.bg,
             theme.text.ohlc,
+            f32::INFINITY,
+            status.as_deref(),
         ));
         let x = (rect.left() + theme.spacing.sm + galley.size().x + theme.spacing.md)
             .min(rect.right() - if self.pane_controls { 120.0 } else { 80.0 })
@@ -1549,16 +1577,23 @@ impl IndicatorPane {
             return;
         }
         let theme = painter.ctx().active_theme();
+        let pos = Pos2::new(
+            rect.left() + theme.spacing.sm,
+            rect.top() + self.legend_offset + theme.spacing.sm.min(rect.height() / 2.0),
+        );
+        let max_width = (painter.clip_rect().right() - pos.x - theme.spacing.sm).max(0.0);
+        let status = indicator
+            .study_status()
+            .as_ref()
+            .map(|status| study_status_label(painter.ctx(), status));
         let galley = painter.layout_job(self.legend_job(
             indicator,
             text_color,
             theme.chart.bg,
             theme.text.ohlc,
+            max_width,
+            status.as_deref(),
         ));
-        let pos = Pos2::new(
-            rect.left() + theme.spacing.sm,
-            rect.top() + self.legend_offset + theme.spacing.sm.min(rect.height() / 2.0),
-        );
         painter.rect_filled(
             Rect::from_min_size(pos, galley.size())
                 .expand(2.0)
@@ -1750,6 +1785,8 @@ mod tests {
                 Color32::WHITE,
                 Color32::BLACK,
                 crate::theme::Theme::default().text.ohlc,
+                f32::INFINITY,
+                None,
             );
             assert!(job.text.contains(expected), "{}", job.text);
             let ctx = egui::Context::default();

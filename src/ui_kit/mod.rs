@@ -20,6 +20,7 @@ pub mod modal;
 pub mod notifications;
 pub mod panel_header;
 pub mod section;
+pub mod settings_rows;
 pub mod sidebar_layout;
 pub mod status_message;
 pub mod tab_bar;
@@ -34,6 +35,9 @@ pub use form::{FormGrid, form_control_width, form_control_width_for, form_label}
 pub use frames::{Card, glass_chrome, glass_frame, glass_menu, glass_popup};
 pub use loading::LoadingIndicator;
 pub use panel_header::PanelHeader;
+pub use settings_rows::{
+    label_width, line_style_preview, section_header, setting_row, styled_checkbox, styled_dropdown,
+};
 pub use toolbar::ResponsiveToolbar;
 
 #[warn(missing_docs)]

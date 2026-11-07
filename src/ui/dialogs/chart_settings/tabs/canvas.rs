@@ -388,12 +388,6 @@ fn watermark_modes(current: WatermarkMode) -> Vec<WatermarkMode> {
     modes
 }
 
-fn line_style_preview(ls: LineStyle) -> &'static str {
-    match ls {
-        LineStyle::Solid => "Solid",
-        LineStyle::Dashed => "\u{2013} \u{2013} \u{2013}",
-        LineStyle::Dotted => "· · · ·",
-        LineStyle::LargeDashed => "\u{2014}  \u{2014}  \u{2014}",
-        LineStyle::SparseDotted => "·   ·   ·",
-    }
+fn line_style_preview(style: LineStyle) -> &'static str {
+    crate::ui_kit::line_style_preview(style)
 }

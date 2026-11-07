@@ -99,6 +99,7 @@ pub struct SidebarTab<'a> {
     label: &'a str,
     icon: Option<&'a crate::icons::Icon>,
     is_active: bool,
+    count: Option<usize>,
 }
 
 impl<'a> SidebarTab<'a> {
@@ -108,7 +109,14 @@ impl<'a> SidebarTab<'a> {
             label,
             icon: None,
             is_active,
+            count: None,
         }
+    }
+
+    /// A right-aligned count, such as the number of studies in a category.
+    pub fn count(mut self, count: usize) -> Self {
+        self.count = Some(count);
+        self
     }
 
     /// Set the tab's optional icon.
@@ -170,8 +178,24 @@ impl<'a> SidebarTab<'a> {
             format.coords.push("wght", 600.0);
         }
         let label_x = icon_x + icon_size + theme.spacing.sm;
+        let count_width = self.count.map_or(0.0, |count| {
+            let galley = ui.painter().layout_no_wrap(
+                count.to_string(),
+                egui::FontId::proportional(theme.text.small),
+                theme.ui.text_secondary,
+            );
+            let pos = Pos2::new(
+                rect.right() - theme.spacing.md - galley.size().x,
+                rect.center().y - galley.size().y / 2.0,
+            );
+            ui.painter()
+                .galley(pos, galley.clone(), theme.ui.text_secondary);
+            galley.size().x + theme.spacing.md
+        });
         let mut job = egui::text::LayoutJob::single_section(translated_label, format);
-        job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - label_x).max(0.0));
+        job.wrap = egui::text::TextWrapping::truncate_at_width(
+            (rect.right() - label_x - count_width - theme.spacing.sm).max(0.0),
+        );
         let galley = ui.painter().layout_job(job);
         let label_pos = Pos2::new(label_x, rect.center().y - galley.size().y / 2.0);
         ui.painter().galley(label_pos, galley, text_color);

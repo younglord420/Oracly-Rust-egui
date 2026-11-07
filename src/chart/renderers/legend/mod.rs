@@ -145,7 +145,7 @@ impl<'a> Legend<'a> {
             show_indicator_inputs: true,
             show_indicator_values: true,
             day_change: None,
-            study_backdrop: 0.6,
+            study_backdrop: 0.92,
             quantity: None,
         }
     }
@@ -388,6 +388,7 @@ impl<'a> Legend<'a> {
             .bg
             .gamma_multiply(self.study_backdrop.clamp(0.0, 1.0));
         let mut study_settings = None;
+        let mut last_tail = None;
         let collapsed = ui
             .ctx()
             .data_mut(|data| data.get_temp::<bool>(id).unwrap_or(false));
@@ -463,7 +464,7 @@ impl<'a> Legend<'a> {
                         layout.text(
                             study.line_names().get(2).cloned().unwrap_or_default(),
                             theme.text.ohlc,
-                            Color32::from_gray(112),
+                            theme.ui.text_muted,
                             bounds.width(),
                         );
                     }
@@ -473,16 +474,18 @@ impl<'a> Legend<'a> {
                         if let Some(value) = up.or_else(|| study.values().value(1, self.bar_index))
                             && study.plot_style(line).visible
                         {
-                            // The column colour without its transparency.
-                            let [r, g, b, _] = study
-                                .colors()
-                                .get(line)
-                                .map_or(colors.bar_color(up.is_some()), |color| *color)
-                                .to_srgba_unmultiplied();
+                            let color = {
+                                let plot = study.plot_style(line).color.to_opaque();
+                                if crate::theme::contrast(plot, theme.chart.bg) >= 4.5 {
+                                    plot
+                                } else {
+                                    colors.text
+                                }
+                            };
                             layout.text(
                                 study.format_value(value),
                                 theme.text.ohlc,
-                                Color32::from_rgb(r, g, b),
+                                color,
                                 bounds.width(),
                             );
                         }
@@ -497,11 +500,14 @@ impl<'a> Legend<'a> {
                         layout.text(
                             (*inputs).to_owned(),
                             theme.text.ohlc,
-                            theme.ui.text_muted,
+                            if study.is_visible() {
+                                theme.ui.text_muted
+                            } else {
+                                theme.ui.text_muted.gamma_multiply(0.5)
+                            },
                             bounds.width(),
                         );
                     }
-                    let study_colors = study.colors();
                     let precision = study.precision().or_else(|| {
                         (study.value_format() == crate::scales::StudyFormat::Price)
                             .then_some(precision)
@@ -521,31 +527,75 @@ impl<'a> Legend<'a> {
                         } else {
                             crate::scales::NO_VALUE.to_owned()
                         };
-                        // A fully transparent colour holds no RGB, so it has no opaque form.
-                        let color = study_colors
-                            .get(index)
-                            .filter(|color| color.a() != 0)
-                            .map_or(colors.text, |color| color.to_opaque());
+                        let plot = study.plot_style(index).color;
+                        let color = if !value.is_finite() {
+                            theme.ui.text_muted
+                        } else if plot.a() == 0 {
+                            colors.text
+                        } else {
+                            let opaque = plot.to_opaque();
+                            if crate::theme::contrast(opaque, theme.chart.bg) >= 4.5 {
+                                opaque
+                            } else {
+                                colors.text
+                            }
+                        };
                         layout.text(text, theme.text.ohlc, color, bounds.width());
                     }
                 }
-                let controls = layout
-                    .reserve_space(Vec2::new(80.0, 20.0))
-                    .intersect(bounds);
-                let row_right = if layout.pos.y > row_start.y {
+                // The value row is the hover target. The 80px controls are reserved only
+                // while that row is revealed, and they start after the text, so they never
+                // cover another study's values.
+                let text_end = layout.pos;
+                let text_tail = LegendTail {
+                    pos: text_end,
+                    background: layout.background,
+                    height: layout.height,
+                };
+                let text_right = if text_end.y > row_start.y {
                     bounds.right()
                 } else {
-                    controls.right()
+                    text_end.x.max(row_start.x)
                 };
-                let row = Rect::from_min_max(row_start, Pos2::new(row_right, controls.bottom()))
-                    .intersect(bounds);
-                let (responses, menu) = study_controls(
-                    ui,
-                    row,
-                    controls,
-                    id.with(("study", index)),
-                    study.is_visible(),
+                let text_row = Rect::from_min_max(
+                    row_start,
+                    Pos2::new(text_right, text_end.y + layout.height),
+                )
+                .intersect(bounds);
+                // The collapse chevron owns the first 29px after the text on the last
+                // row, so the controls start after it and the chevron does not move.
+                let control_size = Vec2::new(80.0, 20.0);
+                let after_chevron = text_end.x + 29.0 + 8.0;
+                let wraps =
+                    text_end.x > bounds.left() && after_chevron + control_size.x > bounds.right();
+                let slot_y = if wraps {
+                    text_end.y + layout.height + (22.0 - control_size.y) / 2.0
+                } else {
+                    text_end.y + (layout.height.max(control_size.y) - control_size.y) / 2.0
+                };
+                let slot = Rect::from_min_size(
+                    Pos2::new(if wraps { bounds.left() } else { after_chevron }, slot_y),
+                    control_size,
                 );
+                let study_id = id.with(("study", index));
+                let revealed = legend_row_revealed(ui, text_row.union(slot), study_id);
+                let controls = if revealed {
+                    if wraps {
+                        layout.new_row();
+                    } else {
+                        layout.pos.x = after_chevron;
+                    }
+                    layout.reserve_space(control_size).intersect(bounds)
+                } else {
+                    Rect::from_min_size(text_end, Vec2::ZERO)
+                };
+                let row = if revealed {
+                    text_row.union(controls)
+                } else {
+                    text_row
+                };
+                let (responses, menu) =
+                    study_controls(ui, row, controls, study_id, study.is_visible());
                 for (response, intent) in responses.iter().zip([
                     StudyAction::ToggleVisibility(index),
                     StudyAction::Settings(index),
@@ -558,10 +608,18 @@ impl<'a> Legend<'a> {
                 if let Some(pos) = menu {
                     study_settings = Some(StudyAction::Menu { index, pos });
                 }
+                // Anchor the chevron to the text end, not to the position after the
+                // controls, and keep the backdrop shape that sits behind this text.
+                last_tail = Some(text_tail);
                 layout.new_row();
             }
         }
         if has_rows {
+            if !collapsed && let Some(tail) = last_tail {
+                layout.pos = tail.pos;
+                layout.background = tail.background;
+                layout.height = tail.height;
+            }
             let rect = layout.reserve(Vec2::new(29.0, 21.0));
             let response = ui.interact(rect.intersect(bounds), id, Sense::click());
             let label = l10n::text(
@@ -691,14 +749,14 @@ fn live_dot_hint(text: &str) -> Option<&'static str> {
 /// The row outline and its hide, settings, remove and more-actions buttons. Returns the first
 /// three buttons and, when the more-actions button is clicked or the row secondary-clicked, the
 /// corner of the study menu.
-pub(crate) fn study_controls(
-    ui: &mut Ui,
-    row: Rect,
-    controls: Rect,
-    id: egui::Id,
-    visible: bool,
-) -> ([Response; 3], Option<Pos2>) {
-    let theme = ui.active_theme();
+struct LegendTail {
+    pos: Pos2,
+    background: egui::layers::ShapeIdx,
+    height: f32,
+}
+
+/// Whether this frame is a touch frame. Stored so a frame with no pointer event keeps the last mode.
+fn legend_touch(ui: &Ui) -> bool {
     let touch_id = egui::Id::unique("legend_touch_input");
     let input_touch = ui.input(|input| {
         if input.any_touches()
@@ -718,11 +776,38 @@ pub(crate) fn study_controls(
             None
         }
     });
-    let touch = ui.ctx().data_mut(|data| {
+    ui.ctx().data_mut(|data| {
         let touch = input_touch.unwrap_or_else(|| data.get_temp::<bool>(touch_id).unwrap_or(false));
         data.insert_temp(touch_id, touch);
         touch
+    })
+}
+
+/// The same reveal rule `study_controls` uses, so the controls' slot can be reserved first.
+fn legend_row_revealed(ui: &Ui, row: Rect, id: egui::Id) -> bool {
+    let touch = legend_touch(ui);
+    let selected = ui
+        .ctx()
+        .data(|data| data.get_temp::<bool>(id).unwrap_or(false));
+    let focused = ui.memory(|memory| {
+        memory.has_focus(id.with("row"))
+            || (0..4_usize).any(|index| memory.has_focus(id.with(index)))
     });
+    let hovered = !touch
+        && ui.input(|input| input.pointer.hover_pos().is_some())
+        && ui.rect_contains_pointer(row);
+    selected || focused || hovered
+}
+
+pub(crate) fn study_controls(
+    ui: &mut Ui,
+    row: Rect,
+    controls: Rect,
+    id: egui::Id,
+    visible: bool,
+) -> ([Response; 3], Option<Pos2>) {
+    let theme = ui.active_theme();
+    let touch = legend_touch(ui);
     let row_response = ui.interact(row, id.with("row"), Sense::click());
     let controls_label = l10n::text(ui.ctx(), "Study controls");
     row_response

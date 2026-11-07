@@ -38,7 +38,7 @@ type IndicatorConstructor = Box<dyn Fn() -> Box<dyn Indicator> + Send + Sync>;
 /// the value the rendering layer and legends display, and a new indicator is
 /// reachable through the factory the moment it is added to this list.
 macro_rules! register_builtins {
-    ($factory:expr, $($category:literal => [$($ty:ty),+ $(,)?]),+ $(,)?) => {
+    ($factory:expr, $($category:expr => [$($ty:ty),+ $(,)?]),+ $(,)?) => {
         $($(
             // Read the canonical name from a throwaway default instance so the
             // key is always exactly what the indicator reports at runtime.
@@ -74,6 +74,52 @@ impl IndicatorFactory {
     pub const PROFILES: &'static str = "Profiles";
     /// The category of the built-in pattern detectors.
     pub const PATTERNS: &'static str = "Patterns";
+    /// Moving-average studies.
+    pub const MOVING_AVERAGES: &'static str = "Moving averages";
+    /// Bands and channels drawn around price.
+    pub const BANDS: &'static str = "Bands and channels";
+    /// Trend strength and direction.
+    pub const TREND: &'static str = "Trend";
+    /// Trailing stops.
+    pub const STOPS: &'static str = "Stops and trailing";
+    /// Unbounded momentum studies.
+    pub const MOMENTUM: &'static str = "Momentum";
+    /// Bounded oscillators.
+    pub const OSCILLATORS: &'static str = "Oscillators";
+    /// Volatility studies.
+    pub const VOLATILITY: &'static str = "Volatility";
+    /// Volume studies.
+    pub const VOLUME: &'static str = "Volume";
+    /// VWAP and other average-price studies.
+    pub const AVERAGE_PRICE: &'static str = "VWAP and average price";
+    /// Pivots, levels and automatic drawings.
+    pub const LEVELS: &'static str = "Pivots and levels";
+    /// Regression and statistical studies.
+    pub const STATISTICS: &'static str = "Statistics and regression";
+    /// Price replicas and session studies.
+    pub const PRICE: &'static str = "Price and sessions";
+    /// Market-breadth studies.
+    pub const BREADTH: &'static str = "Market breadth";
+    /// Order-flow studies.
+    pub const ORDER_FLOW: &'static str = "Order flow";
+
+    /// The built-in categories of the Indicators page, in picker order.
+    pub const INDICATOR_CATEGORIES: [&'static str; 14] = [
+        Self::MOVING_AVERAGES,
+        Self::BANDS,
+        Self::TREND,
+        Self::STOPS,
+        Self::MOMENTUM,
+        Self::OSCILLATORS,
+        Self::VOLATILITY,
+        Self::VOLUME,
+        Self::AVERAGE_PRICE,
+        Self::LEVELS,
+        Self::STATISTICS,
+        Self::PRICE,
+        Self::BREADTH,
+        Self::ORDER_FLOW,
+    ];
 
     /// Create a factory with the built-in catalogue enabled by the current features.
     pub fn new() -> Self {
@@ -92,214 +138,79 @@ impl IndicatorFactory {
     fn register_builtin(&mut self) {
         register_builtins!(
             self,
-            "Moving averages" => [
-                SMA,
-                EMA,
-                WMA,
-                DEMA,
-                TEMA,
-                HMA,
-                ALMA,
-                VWMA,
-                LSMA,
-                SWMA,
-                KAMA,
-                SmoothedMA,
-                GuppyMA,
-                McGinleyDynamic,
-                VIDYA,
-                ZLEMA,
-                HammingMA,
-                MultipleMA,
-                MAChannel,
-                EMACross,
-                MACross,
-                MixedMACross,
-                TripleMA,
-                MARibbon,
+            Self::MOVING_AVERAGES => [
+                SMA, EMA, WMA, DEMA, TEMA, HMA, ALMA, VWMA, LSMA, SWMA, KAMA, SmoothedMA,
+                GuppyMA, McGinleyDynamic, VIDYA, ZLEMA, HammingMA, MultipleMA, MARibbon,
+                EMACross, MACross, MixedMACross, TripleMA,
             ],
-            "Momentum" => [
-                RSI,
-                MACD,
-                VolumeWeightedMACD,
-                Stochastic,
-                StochasticRSI,
-                WilliamsR,
-                CCI,
-                Momentum,
-                RateOfChange,
-                Aroon,
-                AwesomeOscillator,
-                RsiDivergence,
-                KnoxvilleDivergence,
-                TechnicalRatings,
-                UltimateOscillator,
-                ConnorsRSI,
-                CoppockCurve,
-                TRIX,
-                ElderRay,
-                FisherTransform,
-                ForceIndex,
-                MassIndex,
-                DetrendedPriceOscillator,
-                KDJ,
-                PrettyGoodOscillator,
-                ChandeMomentumOscillator,
-                TrueStrengthIndex,
-                StochasticMomentumIndex,
-                SchaffTrendCycle,
-                RelativeVigorIndex,
-                DoubleStochastic,
-                CenterOfGravity,
-                KnowSureThing,
-                RainbowOscillator,
-                UltimateMomentum,
-                PriceOscillator,
-                PercentageVolumeOscillator,
-                VolumeOscillator,
-                BalanceOfPower,
-                EaseOfMovement,
-                AcceleratorOscillator,
-                AroonOscillator,
-                BullBearPower,
-                AdvanceDeclineRatioBars,
-                PriceMomentumOscillator,
-                PringsSpecialK,
-                SMIErgodicIndicator,
-                SMIErgodicOscillator,
-                WoodiesCCI,
+            Self::BANDS => [
+                BollingerBands, KeltnerChannels, DonchianChannels, Envelopes, MAChannel,
+                AccelerationBands, StandardErrorBands, LinearRegressionChannel, Median,
             ],
-            "Trend" => [
-                ADX,
-                AdxBreakout,
-                SuperTrend,
-                IchimokuCloud,
-                ParabolicSAR,
-                DirectionalMovement,
-                VortexIndicator,
-                SqueezeMomentum,
-                TrendIntensityIndex,
-                TrendDetectionIndex,
-                Qstick,
-                ChoppinessIndex,
-                ElderImpulseSystem,
-                WilliamsAlligator,
-                ChopZone,
-                VolatilityStop,
-                ChandeKrollStop,
+            Self::TREND => [
+                ADX, DirectionalMovement, AdxBreakout, Aroon, AroonOscillator, VortexIndicator,
+                IchimokuCloud, WilliamsAlligator, SqueezeMomentum, TrendIntensityIndex,
+                TrendDetectionIndex, Qstick, ChoppinessIndex, ChopZone, ElderImpulseSystem,
             ],
-            "Volatility" => [
-                BollingerBands,
-                BollingerBandsWidth,
-                ATR,
-                TrueRange,
-                KeltnerChannels,
-                DonchianChannels,
-                StandardDeviation,
-                HistoricalVolatility,
-                ChaikinVolatility,
-                ChandelierExit,
-                AccelerationBands,
-                Envelopes,
-                PercentB,
-                OhlcVolatility,
-                ParkinsonVol,
-                ZeroTrendVol,
-                CommoditySelectionIndex,
-                AverageDailyRange,
-                BBTrend,
-                UlcerIndex,
-                RelativeVolatilityIndex,
-                Median,
+            Self::STOPS => [
+                SuperTrend, ParabolicSAR, ChandelierExit, ChandeKrollStop, VolatilityStop,
             ],
-            "Volume" => [
-                Volume,
-                UpDownVolume,
-                OnBalanceVolume,
-                VolumeWeightedAvgPrice,
-                AnchoredVWAP,
-                VwapAutoAnchored,
-                TimeWeightedAvgPrice,
-                MoneyFlowIndex,
-                AccumulationDistribution,
-                ChaikinMoneyFlow,
-                VolumeRateOfChange,
-                KlingerOscillator,
-                NetVolume,
-                VolumePriceTrend,
-                PriceVolumeTrendStudy,
-                NegativeVolumeIndex,
-                PositiveVolumeIndex,
-                WilliamsAD,
-                MarketFacilitationIndex,
-                ChaikinOscillator,
-                Volume24h,
-                RelativeVolumeAtTime,
+            Self::MOMENTUM => [
+                MACD, VolumeWeightedMACD, Momentum, RateOfChange, AwesomeOscillator,
+                AcceleratorOscillator, TRIX, CoppockCurve, KnowSureThing, PriceOscillator,
+                PriceMomentumOscillator, PringsSpecialK, ElderRay, BullBearPower,
+                DetrendedPriceOscillator, BalanceOfPower, TechnicalRatings,
             ],
-            "Profiles" => [
-                VolProfileVisible,
-                VolProfileFixed,
-                VolProfileSession,
-                VolProfilePeriodic,
-                VolProfileAnchored,
-                VolProfileAutoAnchored,
-                TimePriceOpportunity,
+            Self::OSCILLATORS => [
+                RSI, Stochastic, StochasticRSI, WilliamsR, CCI, WoodiesCCI, ConnorsRSI, KDJ,
+                DoubleStochastic, StochasticMomentumIndex, SMIErgodicIndicator,
+                SMIErgodicOscillator, TrueStrengthIndex, UltimateOscillator, FisherTransform,
+                RelativeVigorIndex, ChandeMomentumOscillator, RainbowOscillator,
+                UltimateMomentum, SchaffTrendCycle, CenterOfGravity, PrettyGoodOscillator,
+                RsiDivergence, KnoxvilleDivergence,
             ],
-            "Support and resistance" => [
-                PivotPoints,
-                PivotPointsHighLow,
-                Reversal,
-                ElliottWave,
-                RisingWedge,
-                FallingWedge,
-                MissedPivots,
-                KeyLevels,
-                IntradayPivotPoints,
-                ProjectedPivotPoints,
-                GhostPivots,
-                WilliamsFractals,
-                ZigZag,
+            Self::VOLATILITY => [
+                ATR, TrueRange, StandardDeviation, HistoricalVolatility, ChaikinVolatility,
+                BollingerBandsWidth, PercentB, BBTrend, OhlcVolatility, ParkinsonVol,
+                ZeroTrendVol, AverageDailyRange, UlcerIndex, RelativeVolatilityIndex,
+                CommoditySelectionIndex, MassIndex,
             ],
-            "Statistics" => [
-                LinearRegression,
-                LinearRegressionChannel,
-                LinearRegressionSlope,
-                TrendStrengthIndex,
-                StandardError,
-                StandardErrorBands,
-                RankCorrelationIndex,
-                Ratio,
-                Spread,
-                Correlation,
-                RciRibbon,
-                MajorityRule,
-                AccumulationSwingIndex,
-                Seasonality,
-                LunarPhases,
-                Performance,
+            Self::VOLUME => [
+                Volume, UpDownVolume, NetVolume, Volume24h, RelativeVolumeAtTime,
+                VolumeRateOfChange, VolumeOscillator, PercentageVolumeOscillator,
+                OnBalanceVolume, AccumulationDistribution, WilliamsAD, ChaikinMoneyFlow,
+                ChaikinOscillator, MoneyFlowIndex, KlingerOscillator, ForceIndex,
+                EaseOfMovement, VolumePriceTrend, PriceVolumeTrendStudy, NegativeVolumeIndex,
+                PositiveVolumeIndex, MarketFacilitationIndex,
             ],
-            "Price" => [
-                HigherIntervalCandles,
-                BollingerBars,
-                TypicalPrice,
-                MedianPrice,
-                WeightedClose,
-                OHLC4,
+            Self::AVERAGE_PRICE => [
+                VolumeWeightedAvgPrice, AnchoredVWAP, VwapAutoAnchored, TimeWeightedAvgPrice,
                 VisibleAveragePrice,
             ],
-            "Market structure" => [
-                Week52HighLow,
-                Week52HighLowLevels,
-                TradingSessions,
-                Gaps,
+            Self::LEVELS => [
+                PivotPoints, PivotPointsHighLow, IntradayPivotPoints, ProjectedPivotPoints,
+                GhostPivots, MissedPivots, KeyLevels, WilliamsFractals, ZigZag,
+                Week52HighLowLevels, Gaps,
             ],
-            "Market breadth" => [
-                AdvanceDeclineRatio,
-                AdvanceDeclineLine,
-                CumulativeVolumeIndex,
+            Self::STATISTICS => [
+                LinearRegression, LinearRegressionSlope, StandardError, TrendStrengthIndex,
+                RankCorrelationIndex, RciRibbon, Correlation, Ratio, Spread, MajorityRule,
+                AccumulationSwingIndex,
             ],
-            "Patterns" => [
-                CandlestickPatterns,
+            Self::PRICE => [
+                HigherIntervalCandles, BollingerBars, TypicalPrice, MedianPrice, WeightedClose,
+                OHLC4, TradingSessions, Week52HighLow, Performance, Seasonality, LunarPhases,
+            ],
+            Self::BREADTH => [
+                AdvanceDeclineRatio, AdvanceDeclineLine, CumulativeVolumeIndex,
+                AdvanceDeclineRatioBars,
+            ],
+            Self::PROFILES => [
+                VolProfileVisible, VolProfileFixed, VolProfileSession, VolProfilePeriodic,
+                VolProfileAnchored, VolProfileAutoAnchored, TimePriceOpportunity,
+            ],
+            Self::PATTERNS => [
+                CandlestickPatterns, RisingWedge, FallingWedge, ElliottWave, Reversal,
             ],
         );
         for kind in [
@@ -337,7 +248,7 @@ impl IndicatorFactory {
             self.constructors.insert(
                 name,
                 (
-                    "Order flow",
+                    Self::ORDER_FLOW,
                     Box::new(move || Box::new(OrderFlowStudy::new(kind))),
                 ),
             );
@@ -358,7 +269,7 @@ impl IndicatorFactory {
             self.constructors.insert(
                 name,
                 (
-                    "Support and resistance",
+                    Self::LEVELS,
                     Box::new(move || Box::new(AutoDrawing::new(kind, 5.0, 10))),
                 ),
             );

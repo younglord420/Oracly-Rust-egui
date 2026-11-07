@@ -22,7 +22,6 @@ use crate::ui_kit::EmptyState;
 use crate::ui_kit::filter::FilterWidget;
 use crate::ui_kit::modal::Modal;
 use crate::ui_kit::sidebar_layout::{SidebarLayout, SidebarTab};
-use crate::ui_kit::tab_bar::TabBar;
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
     Align2, Color32, FontId, Key, Modifiers, Pos2, Rect, Response, RichText, Role, Sense, Stroke,
@@ -34,6 +33,64 @@ use std::sync::Arc;
 
 /// Width of the category sidebar.
 const SIDEBAR_WIDTH: f32 = 228.0;
+
+/// One row of the picker sidebar or the narrow category menu.
+#[derive(Clone)]
+struct PickerEntry {
+    heading: &'static str,
+    label: String,
+    category: IndicatorCategory,
+    tab: IndicatorTab,
+    group: Option<String>,
+    count: usize,
+    icon: &'static crate::icons::Icon,
+    selected: bool,
+}
+
+impl PickerEntry {
+    fn new(
+        heading: &'static str,
+        label: impl Into<String>,
+        category: IndicatorCategory,
+        tab: IndicatorTab,
+        group: Option<String>,
+        count: usize,
+        icon: &'static crate::icons::Icon,
+    ) -> Self {
+        Self {
+            heading,
+            label: label.into(),
+            category,
+            tab,
+            group,
+            count,
+            icon,
+            selected: false,
+        }
+    }
+}
+
+fn category_icon(name: &str) -> &'static crate::icons::Icon {
+    use crate::icons::icons as icon;
+    use crate::studies::IndicatorFactory as F;
+    match name {
+        F::MOVING_AVERAGES => &icon::CHART_LINE,
+        F::BANDS => &icon::PARALLEL_CHANNEL,
+        F::TREND => &icon::TREND_LINE,
+        F::STOPS => &icon::HORIZONTAL_LINE,
+        F::MOMENTUM => &icon::CHART_COLUMNS,
+        F::OSCILLATORS => &icon::SINE_LINE,
+        F::VOLATILITY => &icon::CHART_AREA,
+        F::VOLUME => &icon::VOLUME_BARS,
+        F::AVERAGE_PRICE => &icon::ANCHORED_VWAP,
+        F::LEVELS => &icon::HORIZONTAL_RAY,
+        F::STATISTICS => &icon::REGRESSION_TREND,
+        F::PRICE => &icon::CHART_CANDLES,
+        F::BREADTH => &icon::CHART_BASELINE,
+        F::ORDER_FLOW => &icon::VOLUME_DELTA,
+        _ => &icon::INDICATORS,
+    }
+}
 
 /// Indicator Dialog
 ///
@@ -54,6 +111,8 @@ pub struct IndicatorDialog {
     active_tab: IndicatorTab,
     /// Selected category
     sel_category: IndicatorCategory,
+    /// Built-in category within the Indicators page. `None` lists every category.
+    sel_group: Option<String>,
     /// Favorite indicator IDs
     pub favorites: HashSet<String>,
     /// Creates the studies the dialog lists
@@ -100,6 +159,7 @@ impl IndicatorDialog {
             focus_first_row: false,
             active_tab: IndicatorTab::Indicators,
             sel_category: IndicatorCategory::BuiltIns,
+            sel_group: None,
             favorites: HashSet::new(),
             indicators: IndicatorInfo::from_factory(&factory),
             factory,
@@ -233,6 +293,7 @@ impl IndicatorDialog {
         if tab != IndicatorTab::Indicators {
             self.sel_category = IndicatorCategory::BuiltIns;
         }
+        self.sel_group = None;
         self.source = None;
         self.source_error = None;
         self.active_tab = tab;
@@ -335,74 +396,235 @@ impl IndicatorDialog {
         self.focus_first_row = search.has_focus() && ui.input(|i| i.key_pressed(Key::ArrowDown));
         ui.add_space(theme.spacing.lg);
 
-        // Only destinations with studies are offered.
-        let offered: Vec<_> = IndicatorCategory::all()
-            .iter()
-            .copied()
-            .filter(|category| self.offers(*category))
-            .collect();
-        if !offered.contains(&self.sel_category) {
-            self.sel_category = offered
+        let entries = self.picker_entries();
+        if !entries.iter().any(|entry| self.entry_selected(entry))
+            && let Some(entry) = entries
                 .iter()
-                .copied()
-                .find(|category| *category != IndicatorCategory::Favorites)
-                .unwrap_or(IndicatorCategory::Favorites);
+                .find(|entry| entry.category != IndicatorCategory::Favorites)
+                .or_else(|| entries.first())
+        {
+            self.apply_entry(entry);
         }
         let mut action = IndicatorDialogAction::None;
+        let mut entries_for_ui = entries.clone();
+        for entry in &mut entries_for_ui {
+            entry.selected = self.entry_selected(entry);
+        }
         if ui.available_width() < 600.0 {
+            let selected = entries_for_ui
+                .iter()
+                .find(|entry| self.entry_selected(entry))
+                .map(|entry| entry.label.clone())
+                .unwrap_or_else(|| "All indicators".to_owned());
             egui::ComboBox::from_label(l10n::text(ui.ctx(), "Category"))
-                .selected_text(l10n::text(ui.ctx(), self.sel_category.name()))
+                .selected_text(l10n::text(ui.ctx(), &selected))
                 .show_ui(ui, |ui| {
-                    for &category in &offered {
-                        ui.selectable_value(
-                            &mut self.sel_category,
-                            category,
-                            l10n::text(ui.ctx(), category.name()),
+                    for entry in &entries_for_ui {
+                        let label = l10n::format_text(
+                            ui.ctx(),
+                            "{name} ({count})",
+                            &[
+                                ("name", l10n::text(ui.ctx(), &entry.label)),
+                                ("count", entry.count.to_string()),
+                            ],
                         );
+                        if ui
+                            .selectable_label(self.entry_selected(entry), label)
+                            .clicked()
+                        {
+                            self.apply_entry(entry);
+                        }
                     }
                 });
-            self.draw_tabs(ui, theme);
             return self.draw_indicator_list(ui, config, theme);
         }
         // The sidebar runs before the list, so the list shows a category clicked this frame.
-        let category = Cell::new(self.sel_category);
+        let chosen = Cell::new(None);
         SidebarLayout::new(SIDEBAR_WIDTH).show(
             ui,
             |ui| {
-                use IndicatorCategory as C;
-                for (heading, items) in [
-                    ("PERSONAL", &[C::Favorites, C::MyScripts][..]),
-                    ("BUILT-IN", &[C::BuiltIns]),
-                    ("COMMUNITY", &[C::Community]),
-                ] {
-                    let items: Vec<_> = items.iter().filter(|c| offered.contains(c)).collect();
-                    if items.is_empty() {
-                        continue;
-                    }
-                    ui.add_space(theme.spacing.xxl);
-                    ui.label(
-                        RichText::new(l10n::text(ui.ctx(), heading))
-                            .size(theme.text.small)
-                            .color(theme.ui.text_secondary),
-                    );
-                    ui.add_space(theme.spacing.lg);
-                    for &item in items {
-                        if SidebarTab::new(item.name(), category.get() == item)
-                            .icon(item.icon())
-                            .show(ui)
-                        {
-                            category.set(item);
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let mut last = "";
+                        for entry in &entries_for_ui {
+                            if entry.heading != last {
+                                ui.add_space(theme.spacing.xxl);
+                                ui.label(
+                                    RichText::new(l10n::text(ui.ctx(), entry.heading))
+                                        .size(theme.text.small)
+                                        .color(theme.ui.text_secondary),
+                                );
+                                ui.add_space(theme.spacing.lg);
+                                last = entry.heading;
+                            }
+                            if SidebarTab::new(&entry.label, entry.selected)
+                                .icon(entry.icon)
+                                .count(entry.count)
+                                .show(ui)
+                            {
+                                chosen.set(Some(entry.clone()));
+                            }
                         }
-                    }
-                }
+                    });
             },
             |ui| {
-                self.sel_category = category.get();
-                self.draw_tabs(ui, theme);
+                if let Some(entry) = chosen.take() {
+                    self.apply_entry(&entry);
+                }
                 action = self.draw_indicator_list(ui, config, theme);
             },
         );
         action
+    }
+
+    fn apply_entry(&mut self, entry: &PickerEntry) {
+        self.sel_category = entry.category;
+        self.active_tab = entry.tab;
+        self.sel_group = entry.group.clone();
+    }
+
+    fn entry_selected(&self, entry: &PickerEntry) -> bool {
+        self.sel_category == entry.category
+            && self.active_tab == entry.tab
+            && self.sel_group == entry.group
+    }
+
+    /// Sidebar and narrow-combo rows, in display order, omitting empty destinations.
+    fn picker_entries(&self) -> Vec<PickerEntry> {
+        let count = |pred: &dyn Fn(&IndicatorInfo) -> bool| {
+            self.indicators
+                .iter()
+                .filter(|ind| self.accepts_source(ind) && pred(ind))
+                .count()
+        };
+        let mut entries = Vec::new();
+        entries.push(PickerEntry::new(
+            "PERSONAL",
+            "Favorites",
+            IndicatorCategory::Favorites,
+            IndicatorTab::Indicators,
+            None,
+            self.favorites
+                .iter()
+                .filter(|id| {
+                    self.indicators
+                        .iter()
+                        .any(|ind| ind.id == **id && self.accepts_source(ind))
+                })
+                .count(),
+            &icons::STAR_EMPTY,
+        ));
+        let scripts = count(&|ind| Self::destination(ind).0 == IndicatorCategory::MyScripts);
+        if scripts > 0 {
+            entries.push(PickerEntry::new(
+                "PERSONAL",
+                "My scripts",
+                IndicatorCategory::MyScripts,
+                IndicatorTab::Indicators,
+                None,
+                scripts,
+                &icons::CODE,
+            ));
+        }
+        let indicators = count(&|ind| {
+            Self::destination(ind) == (IndicatorCategory::BuiltIns, IndicatorTab::Indicators)
+        });
+        if indicators > 0 {
+            entries.push(PickerEntry::new(
+                "BUILT-IN",
+                "All indicators",
+                IndicatorCategory::BuiltIns,
+                IndicatorTab::Indicators,
+                None,
+                indicators,
+                &icons::INDICATORS,
+            ));
+        }
+        for name in IndicatorFactory::INDICATOR_CATEGORIES {
+            let studies = count(&|ind| ind.category == name);
+            if studies > 0 {
+                entries.push(PickerEntry::new(
+                    "BUILT-IN",
+                    name,
+                    IndicatorCategory::BuiltIns,
+                    IndicatorTab::Indicators,
+                    Some(name.to_owned()),
+                    studies,
+                    category_icon(name),
+                ));
+            }
+        }
+        let mut hosts: Vec<_> = self
+            .indicators
+            .iter()
+            .map(|ind| ind.category.as_str())
+            .filter(|name| {
+                !IndicatorFactory::INDICATOR_CATEGORIES.contains(name)
+                    && !matches!(
+                        *name,
+                        IndicatorFactory::PROFILES
+                            | IndicatorFactory::PATTERNS
+                            | IndicatorFactory::PERSONAL
+                            | IndicatorFactory::COMMUNITY
+                    )
+            })
+            .collect();
+        hosts.sort_unstable();
+        hosts.dedup();
+        for name in hosts {
+            let studies = count(&|ind| ind.category == name);
+            if studies > 0 {
+                entries.push(PickerEntry::new(
+                    "BUILT-IN",
+                    name,
+                    IndicatorCategory::BuiltIns,
+                    IndicatorTab::Indicators,
+                    Some(name.to_owned()),
+                    studies,
+                    &icons::INDICATORS,
+                ));
+            }
+        }
+        for (name, tab, icon) in [
+            (
+                IndicatorFactory::PROFILES,
+                IndicatorTab::Profiles,
+                &icons::CHART_SESSION_VOLUME_PROFILE,
+            ),
+            (
+                IndicatorFactory::PATTERNS,
+                IndicatorTab::Patterns,
+                &icons::HEAD_AND_SHOULDERS,
+            ),
+        ] {
+            let studies =
+                count(&|ind| Self::destination(ind) == (IndicatorCategory::BuiltIns, tab));
+            if studies > 0 {
+                entries.push(PickerEntry::new(
+                    "BUILT-IN",
+                    name,
+                    IndicatorCategory::BuiltIns,
+                    tab,
+                    None,
+                    studies,
+                    icon,
+                ));
+            }
+        }
+        let community = count(&|ind| Self::destination(ind).0 == IndicatorCategory::Community);
+        if community > 0 {
+            entries.push(PickerEntry::new(
+                "COMMUNITY",
+                "Community",
+                IndicatorCategory::Community,
+                IndicatorTab::Indicators,
+                None,
+                community,
+                &icons::USERS,
+            ));
+        }
+        entries
     }
 
     /// The sidebar category and built-in page that list `ind`, from its factory category.
@@ -417,38 +639,14 @@ impl IndicatorDialog {
         }
     }
 
-    /// Favourites remain available when empty; other categories need registered studies.
+    /// Test helper: favourites stay available when empty; other categories need studies.
+    #[cfg(test)]
     fn offers(&self, category: IndicatorCategory) -> bool {
         category == IndicatorCategory::Favorites
             || self
                 .indicators
                 .iter()
                 .any(|ind| Self::destination(ind).0 == category && self.accepts_source(ind))
-    }
-
-    /// The built-in pages that have studies, above the built-in results. A search covers
-    /// every page, so they are hidden while one is typed.
-    fn draw_tabs(&mut self, ui: &mut Ui, theme: &Theme) {
-        let tabs: Vec<_> = IndicatorTab::all()
-            .iter()
-            .copied()
-            .filter(|tab| {
-                self.indicators.iter().any(|ind| {
-                    Self::destination(ind) == (IndicatorCategory::BuiltIns, *tab)
-                        && self.accepts_source(ind)
-                })
-            })
-            .collect();
-        if !tabs.contains(&self.active_tab) {
-            self.active_tab = tabs.first().copied().unwrap_or(IndicatorTab::Indicators);
-        }
-        if self.sel_category == IndicatorCategory::BuiltIns
-            && tabs.len() > 1
-            && self.search.is_empty()
-        {
-            TabBar::new(&tabs, &mut self.active_tab).pills().show(ui);
-            ui.add_space(theme.spacing.xl);
-        }
     }
 
     fn accepts_source(&self, ind: &IndicatorInfo) -> bool {
@@ -479,7 +677,15 @@ impl IndicatorDialog {
             IndicatorCategory::BuiltIns => {
                 category == IndicatorCategory::BuiltIns
                     && !ind.is_premium
-                    && (!self.search.is_empty() || tab == self.active_tab)
+                    && if let Some(group) = &self.sel_group {
+                        ind.category == *group
+                    } else if !self.search.is_empty() {
+                        true
+                    } else if self.active_tab != IndicatorTab::Indicators {
+                        tab == self.active_tab
+                    } else {
+                        tab == IndicatorTab::Indicators
+                    }
             }
             selected => category == selected,
         }
@@ -497,7 +703,34 @@ impl IndicatorDialog {
             .filter(|ind| self.matches(ui.ctx(), ind))
             .cloned()
             .collect();
-        filtered.sort_by_key(|indicator| !self.favorites.contains(&indicator.id));
+        let grouped = self.sel_category == IndicatorCategory::BuiltIns
+            && (self.sel_group.is_none() || !self.search.is_empty());
+        let order = |category: &str| {
+            IndicatorFactory::INDICATOR_CATEGORIES
+                .iter()
+                .position(|name| *name == category)
+                .unwrap_or(IndicatorFactory::INDICATOR_CATEGORIES.len())
+        };
+        filtered.sort_by(|left, right| {
+            if grouped {
+                let by_group = order(&left.category).cmp(&order(&right.category));
+                if by_group != std::cmp::Ordering::Equal {
+                    return by_group;
+                }
+                let by_name = left.category.cmp(&right.category);
+                if by_name != std::cmp::Ordering::Equal {
+                    return by_name;
+                }
+            }
+            let favorite = self
+                .favorites
+                .contains(&right.id)
+                .cmp(&self.favorites.contains(&left.id));
+            if favorite != std::cmp::Ordering::Equal {
+                return favorite;
+            }
+            left.name.to_lowercase().cmp(&right.name.to_lowercase())
+        });
         if filtered.is_empty() {
             self.draw_empty_state(ui);
             return IndicatorDialogAction::None;
@@ -508,18 +741,38 @@ impl IndicatorDialog {
         ui.spacing_mut().scroll.floating = false;
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 // Room above the first row and below the last for the focus ring.
                 let ring = theme.spacing.xs;
                 ui.add_space(ring);
-                for (i, indicator) in filtered.iter().enumerate() {
-                    if let Some(a) = self.draw_indicator_item(ui, config, theme, indicator, i == 0)
-                    {
+                let mut previous = String::new();
+                let mut first = true;
+                for indicator in &filtered {
+                    if grouped && indicator.category != previous {
+                        previous = indicator.category.clone();
+                        let header = l10n::text(ui.ctx(), &indicator.category).to_uppercase();
+                        ui.add_space(theme.spacing.sm);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), 28.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.label(
+                                    RichText::new(header)
+                                        .size(theme.text.small)
+                                        .strong()
+                                        .color(theme.ui.text_secondary),
+                                );
+                            },
+                        );
+                    }
+                    if let Some(a) = self.draw_indicator_item(ui, config, theme, indicator, first) {
                         action = a;
                     }
+                    first = false;
                 }
-                ui.add_space(ring);
+                ui.add_space(ring + theme.spacing.xl);
             });
         action
     }
@@ -528,7 +781,24 @@ impl IndicatorDialog {
     fn draw_empty_state(&self, ui: &mut Ui) {
         let query = self.search.query();
         let no_match = format!("No indicators match \"{query}\"");
+        let category_message =
+            self.sel_group
+                .as_ref()
+                .filter(|_| !query.is_empty())
+                .map(|category| {
+                    l10n::format_text(
+                        ui.ctx(),
+                        "No indicators in {category} match \"{query}\"",
+                        &[
+                            ("category", l10n::text(ui.ctx(), category)),
+                            ("query", query.to_owned()),
+                        ],
+                    )
+                });
         let state = match self.sel_category {
+            IndicatorCategory::BuiltIns if category_message.is_some() => {
+                EmptyState::new(category_message.as_deref().unwrap_or(""))
+            }
             _ if !query.is_empty() => EmptyState::new(&no_match)
                 .description("Check the spelling or try another category."),
             IndicatorCategory::Favorites => EmptyState::new("No favorites yet")
@@ -570,7 +840,21 @@ impl IndicatorDialog {
                 .rect_filled(rect, theme.radius.md, config.hover_color);
         }
         let star_res = Self::draw_favorite_star(ui, config, rect, is_favorite);
-        let text_right = Self::draw_item_badges(ui, theme, rect, indicator, config.muted_color);
+        let mut text_right = Self::draw_item_badges(ui, theme, rect, indicator, config.muted_color);
+        if !self.search.is_empty() {
+            let galley = ui.painter().layout_no_wrap(
+                l10n::text(ui.ctx(), &indicator.category),
+                FontId::proportional(theme.text.small),
+                config.muted_color,
+            );
+            let x = text_right - theme.spacing.sm - galley.size().x;
+            ui.painter().galley(
+                Pos2::new(x, rect.center().y - galley.size().y / 2.0),
+                galley,
+                config.muted_color,
+            );
+            text_right = x - theme.spacing.sm;
+        }
         Self::draw_item_text(ui, rect, text_right, indicator, config.text_color);
         draw_focus_ring(ui, &response, theme.radius.md);
 
@@ -947,11 +1231,22 @@ mod tests {
                 .iter()
                 .find(|info| info.id == "BB")
                 .unwrap();
-            assert_eq!(
-                first.as_deref(),
-                Some(favorite.name.as_str()),
-                "{category:?}"
-            );
+            let first_name = first.expect("a study name is painted");
+            let painted = restored
+                .indicators
+                .iter()
+                .find(|info| info.name == first_name)
+                .unwrap();
+            if category == IndicatorCategory::Favorites {
+                assert_eq!(painted.id, favorite.id, "{category:?}");
+            } else {
+                // All indicators is grouped, so the favourite is not the first row.
+                assert_eq!(
+                    painted.category,
+                    IndicatorFactory::MOVING_AVERAGES,
+                    "{category:?}"
+                );
+            }
         }
     }
 
@@ -1245,5 +1540,50 @@ mod tests {
         assert_eq!(dialog.config.width, 900.0);
         assert_eq!(dialog.config.text_color, Color32::RED);
         assert_eq!(dialog.config.hover_color, hover);
+    }
+
+    /// A selected built-in category lists only its own studies.
+    #[test]
+    fn selecting_a_category_lists_only_it() {
+        let ctx = egui::Context::default();
+        let mut dialog = IndicatorDialog::new();
+        dialog.sel_category = IndicatorCategory::BuiltIns;
+        dialog.active_tab = IndicatorTab::Indicators;
+        dialog.sel_group = Some(IndicatorFactory::VOLUME.to_owned());
+        let mut listed = 0;
+        for info in dialog.indicators.clone() {
+            if dialog.matches(&ctx, &info) {
+                assert_eq!(info.category, IndicatorFactory::VOLUME, "{}", info.id);
+                listed += 1;
+            }
+        }
+        assert!(listed > 0);
+        let rsi = dialog
+            .indicators
+            .iter()
+            .find(|info| info.id == "RSI")
+            .unwrap()
+            .clone();
+        assert!(!dialog.matches(&ctx, &rsi));
+    }
+
+    /// Profiles and Patterns are their own pages, not mixed into All indicators.
+    #[test]
+    fn profiles_and_patterns_are_sidebar_items() {
+        let ctx = egui::Context::default();
+        for (tab, category) in [
+            (IndicatorTab::Profiles, IndicatorFactory::PROFILES),
+            (IndicatorTab::Patterns, IndicatorFactory::PATTERNS),
+        ] {
+            let mut dialog = IndicatorDialog::new();
+            dialog.open_tab(tab);
+            assert_eq!(dialog.active_tab, tab);
+            assert!(dialog.sel_group.is_none());
+            for info in dialog.indicators.clone() {
+                if dialog.matches(&ctx, &info) {
+                    assert_eq!(info.category, category, "{}", info.id);
+                }
+            }
+        }
     }
 }

@@ -101,6 +101,10 @@ impl ChoppinessIndex {
 }
 
 impl Indicator for ChoppinessIndex {
+    fn shading_labels(&self) -> Option<[&'static str; 2]> {
+        Some(["Trending", "Choppy"])
+    }
+
     fn shading(&self) -> Option<crate::studies::StudyShading> {
         Some(
             crate::studies::StudyShading::bounded(0, 61.8, 38.2, 100.0, 0.0)

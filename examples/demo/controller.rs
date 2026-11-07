@@ -106,9 +106,10 @@ fn study_input_summary(study: &dyn egui_charts::studies::Indicator) -> String {
             (_, egui_charts::studies::InputValue::Length(value)) => value.to_string(),
             (_, egui_charts::studies::InputValue::Integer(value)) => value.to_string(),
             (_, egui_charts::studies::InputValue::Number(value)) => value.to_string(),
-            (_, egui_charts::studies::InputValue::Toggle(value)) => value.to_string(),
+            (_, egui_charts::studies::InputValue::Toggle(_)) => String::new(),
             _ => String::new(),
         })
+        .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }

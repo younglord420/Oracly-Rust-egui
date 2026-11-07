@@ -817,7 +817,7 @@ impl IndicatorRenderer {
                         .x
                         .min(context.rect.right() - 90.0)
                         .max(context.rect.left()),
-                    last.0.y,
+                    last.0.y.max(context.rect.top() + 16.0),
                 );
                 context.painter.with_clip_rect(context.rect).text(
                     at,

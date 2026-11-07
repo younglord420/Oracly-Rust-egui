@@ -46,6 +46,10 @@ impl Default for ChaikinVolatility {
 }
 
 impl Indicator for ChaikinVolatility {
+    fn shading_labels(&self) -> Option<[&'static str; 2]> {
+        Some(["Expansion", "Bearish"])
+    }
+
     fn shading(&self) -> Option<crate::studies::StudyShading> {
         Some(
             crate::studies::StudyShading::centered(0, 0.0)
