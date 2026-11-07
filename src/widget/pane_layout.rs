@@ -4,7 +4,9 @@ use super::{Chart, SeriesId};
 use crate::config::NavigationButtons;
 #[cfg(feature = "drawings")]
 use crate::drawings::persistence::StoredPane;
+use crate::icons::icons;
 use crate::localization as l10n;
+use crate::theme::ThemeExt;
 use egui::{Color32, Pos2, Rect, Sense, Ui};
 
 /// A study's name and input values, which identify it across charts.
@@ -158,15 +160,16 @@ impl Chart {
             || pane.members.iter().any(|id| self.pane_member(*id))
     }
 
-    /// Whether `pane` is drawn below or above the price pane: it is empty or has a visible member.
+    /// Whether `pane` is drawn below or above the price pane: it is empty, holds a study
+    /// (hidden studies stay, so the eye can bring them back), or a visible host series.
     pub(super) fn pane_shown(&self, pane: &Pane) -> bool {
         pane.id != PaneId::MAIN
             && self.pane_listed(pane)
             && (pane.members.is_empty()
-                || pane
-                    .members
-                    .iter()
-                    .any(|id| self.pane_member(*id) && self.is_series_visible(*id)))
+                || pane.members.iter().any(|id| {
+                    let study = self.study_ids.iter().any(|study| study == id);
+                    self.pane_member(*id) && (study || self.is_series_visible(*id))
+                }))
     }
 
     /// Whether the chart draws any pane besides the price pane.
@@ -878,6 +881,88 @@ impl Chart {
         let panes = &self.pane_layout.panes;
         let above = pane_idx.checked_sub(1).map(|at| panes[at].id);
         let below = panes.get(pane_idx + 1).map(|pane| pane.id);
+        // Up, down and collapse sit left of the existing menu. A collapsed pane keeps Expand.
+        if self.config.pane_buttons != NavigationButtons::Never {
+            let theme = ui.ctx().active_theme();
+            let tools = [
+                (
+                    "Move pane up",
+                    above.is_some(),
+                    0u8,
+                    &icons::CHEVRON_UP,
+                    false,
+                ),
+                (
+                    "Move pane down",
+                    below.is_some(),
+                    1,
+                    &icons::CHEVRON_DOWN,
+                    false,
+                ),
+                (
+                    if collapsed {
+                        "Expand pane"
+                    } else {
+                        "Collapse pane"
+                    },
+                    true,
+                    2,
+                    if collapsed {
+                        &icons::CHEVRON_DOWN
+                    } else {
+                        &icons::CHEVRON_UP
+                    },
+                    collapsed,
+                ),
+            ];
+            let origin = Pos2::new(
+                plot.right() - 42.0 - 22.0 * tools.len() as f32,
+                rect.top() + 2.0,
+            );
+            if visible || collapsed {
+                ui.painter().rect(
+                    Rect::from_min_size(origin, egui::vec2(22.0 * tools.len() as f32, 24.0)),
+                    theme.radius.md,
+                    theme.chart.bg.gamma_multiply(0.9),
+                    egui::Stroke::new(1.0, theme.ui.border),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            for (offset, (label, enabled, command, icon, emphasize)) in
+                tools.into_iter().enumerate()
+            {
+                let at = Rect::from_min_size(
+                    origin + egui::vec2(offset as f32 * 22.0 + 1.0, 2.0),
+                    egui::vec2(20.0, 20.0),
+                );
+                let show = visible || emphasize;
+                if !show {
+                    continue;
+                }
+                let response = ui
+                    .interact(at, ui.scope_id().with((id, label)), Sense::click())
+                    .on_hover_text(l10n::text(ui.ctx(), label));
+                if emphasize {
+                    ui.painter()
+                        .rect_filled(at, theme.radius.sm, theme.ui.accent);
+                } else if response.hovered() {
+                    ui.painter()
+                        .rect_filled(at, theme.radius.sm, theme.ui.btn_bg_hover);
+                }
+                let tint = if enabled {
+                    theme.ui.text_secondary
+                } else {
+                    theme.ui.text_muted.gamma_multiply(0.3)
+                };
+                icon.as_image_tinted(egui::vec2(14.0, 14.0), tint).paint_at(
+                    ui,
+                    Rect::from_center_size(at.center(), egui::vec2(14.0, 14.0)),
+                );
+                if enabled && response.clicked() {
+                    action = Some(command as i32);
+                }
+            }
+        }
         child.menu_button("...", |ui| {
             for (label, enabled, command) in [
                 ("Move pane up", above.is_some(), 0),

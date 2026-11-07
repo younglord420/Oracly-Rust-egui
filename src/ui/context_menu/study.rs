@@ -133,6 +133,8 @@ pub(crate) struct StudyContextMenu {
     /// Other panes by their stable ids, with their titles.
     panes: Vec<(PaneId, String)>,
     has_interval: bool,
+    /// When set, the menu lists only the move targets.
+    moves_only: bool,
     next_scale: u64,
     shared_scales: Vec<u64>,
     /// Controls the host hid, set through
@@ -148,29 +150,11 @@ impl StudyContextMenu {
             return;
         };
         self.is_open = true;
+        self.moves_only = false;
         self.volume = study.is_volume();
         self.name = if self.volume { "Vol" } else { study.name() }.to_owned();
         self.catalogue_name = study.name().to_owned();
-        self.alert = chart
-            .indicator_value_at(id, bar)
-            .filter(|_| !chart.symbol.is_empty())
-            .map(|(output, value)| {
-                let mut alert = Alert::new(chart.symbol.clone(), AlertCondition::Crossing(value));
-                alert.source = if self.volume {
-                    AlertSource::Volume
-                } else {
-                    AlertSource::Study {
-                        id: id.0.to_string(),
-                        output,
-                    }
-                };
-                (
-                    alert,
-                    chart
-                        .indicator_value_text(id, value)
-                        .unwrap_or_else(|| study.format_value(value)),
-                )
-            });
+        self.alert = study_alert(chart, id, bar);
         self.visible = study.is_visible();
         self.overlay = study.is_overlay();
         self.scale = Some(study.scale());
@@ -203,6 +187,12 @@ impl StudyContextMenu {
         self.has_interval = chart.timeframe().is_some();
     }
 
+    /// Open a menu that only offers the "Move to" targets.
+    pub(crate) fn open_moves(&mut self, chart: &Chart, id: SeriesId) {
+        self.open(chart, id, 0);
+        self.moves_only = true;
+    }
+
     pub(crate) fn close(&mut self) {
         self.is_open = false;
     }
@@ -219,8 +209,21 @@ impl StudyContextMenu {
         if !self.is_open {
             return Vec::new();
         }
-        let name = &self.name;
         let item = |label: &str, action| MenuEntry::Item(MenuItem::new(label, action));
+        if self.moves_only {
+            let mut moves = vec![
+                item("New pane above", A::MoveTo(PaneTarget::NewPaneAbove)),
+                item("New pane below", A::MoveTo(PaneTarget::NewPaneBelow)),
+            ];
+            for (pane, title) in &self.panes {
+                moves.push(item(title, A::MoveTo(PaneTarget::Pane(*pane))));
+            }
+            if !self.overlay {
+                moves.push(item("Main pane", A::MoveTo(PaneTarget::Main)));
+            }
+            return moves;
+        }
+        let name = &self.name;
         let mut items = Vec::new();
         if let Some((alert, value)) = &self.alert {
             items.push(MenuEntry::Item(
@@ -369,6 +372,30 @@ impl StudyContextMenu {
         trim_separators(&mut items);
         items
     }
+}
+
+/// The alert the study menu and the legend button both create for `id` at `bar`.
+pub(crate) fn study_alert(chart: &Chart, id: SeriesId, bar: usize) -> Option<(Alert, String)> {
+    let (_, study) = chart.indicators().find(|(study, _)| *study == id)?;
+    if chart.symbol.is_empty() {
+        return None;
+    }
+    let (output, value) = chart.indicator_value_at(id, bar)?;
+    let mut alert = Alert::new(chart.symbol.clone(), AlertCondition::Crossing(value));
+    alert.source = if study.is_volume() {
+        AlertSource::Volume
+    } else {
+        AlertSource::Study {
+            id: id.0.to_string(),
+            output,
+        }
+    };
+    Some((
+        alert,
+        chart
+            .indicator_value_text(id, value)
+            .unwrap_or_else(|| study.format_value(value)),
+    ))
 }
 
 /// Apply a chart-owned action to study `id`. The caller wraps it in a user action.

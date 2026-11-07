@@ -9,7 +9,6 @@ use crate::chart::indicators::{
 };
 use crate::chart::selection::ChartElementId;
 use crate::chart::series::calculate_dot_interval;
-use crate::localization as l10n;
 use crate::studies::{CustomIndicator, Indicator};
 use crate::theme::ThemeExt;
 use egui::{Pos2, Rect, Response, Sense, Ui};
@@ -247,7 +246,6 @@ impl Chart {
         let mut pending_indicator_action = None;
         // A host series whose legend asked to remove it, hide it, or open its settings.
         let mut pending_series_action = None;
-        let mut pending_pane_collapse = None;
         let mut pending_pane_maximize = None;
         let current_selection = self.selection.selected_id();
         // Draws the background, grid, axis and crosshair of a pane without a visible study.
@@ -529,9 +527,7 @@ impl Chart {
                 .iter()
                 .filter_map(
                     |id| match self.study_ids.iter().position(|study| study == id) {
-                        Some(idx) => studies.indicators()[idx]
-                            .is_visible()
-                            .then_some((*id, Some(idx))),
+                        Some(idx) => Some((*id, Some(idx))),
                         None => legends
                             .iter()
                             .any(|(series, _)| series == id)
@@ -625,6 +621,8 @@ impl Chart {
                 panel.overlay = paint_row > 0;
 
                 panel.legend_offset = member_row as f32 * legend_row_height;
+                panel.legend_moves = self.legend_menus.moves;
+                panel.legend_alerts = self.legend_menus.alerts && !self.symbol.is_empty();
                 panel.pane_controls = true;
                 // Parent already filled the shared stack surface.
                 panel.skip_background = true;
@@ -768,6 +766,8 @@ impl Chart {
                         close_response,
                         visibility_response,
                         settings_response,
+                        move_response,
+                        alert_response,
                         menu,
                     } = interaction;
 
@@ -781,8 +781,14 @@ impl Chart {
                     let visibility_clicked =
                         visibility_response.as_ref().is_some_and(|r| r.clicked());
                     let settings_clicked = settings_response.as_ref().is_some_and(|r| r.clicked());
-                    let control_clicked =
-                        close_clicked || visibility_clicked || settings_clicked || menu.is_some();
+                    let move_clicked = move_response.as_ref().is_some_and(|r| r.clicked());
+                    let alert_clicked = alert_response.as_ref().is_some_and(|r| r.clicked());
+                    let control_clicked = close_clicked
+                        || visibility_clicked
+                        || settings_clicked
+                        || move_clicked
+                        || alert_clicked
+                        || menu.is_some();
                     use crate::chart::renderers::StudyAction;
                     match (study, id) {
                         (Some(idx), _) if close_clicked => {
@@ -794,6 +800,18 @@ impl Chart {
                         (Some(idx), _) if settings_clicked => {
                             pending_indicator_action = Some(StudyAction::Settings(idx));
                         }
+                        (Some(idx), _) if move_clicked => {
+                            pending_indicator_action = Some(StudyAction::Move {
+                                index: idx,
+                                pos: move_response
+                                    .as_ref()
+                                    .map(|response| response.rect.left_bottom())
+                                    .unwrap_or(Pos2::ZERO),
+                            });
+                        }
+                        (Some(idx), _) if alert_clicked => {
+                            pending_indicator_action = Some(StudyAction::AddAlert(idx));
+                        }
                         (Some(idx), _) if menu.is_some() => {
                             pending_indicator_action = Some(StudyAction::Menu {
                                 index: idx,
@@ -804,49 +822,6 @@ impl Chart {
                             pending_series_action = Some((id, close_clicked, visibility_clicked));
                         }
                         _ => {}
-                    }
-                    let header = Rect::from_min_max(
-                        chart_rect.min + egui::vec2(0.0, panel.legend_offset),
-                        Pos2::new(
-                            visibility_response
-                                .as_ref()
-                                .map_or(chart_rect.right() - 42.0, |r| {
-                                    r.rect.left().min(chart_rect.right())
-                                }),
-                            (chart_rect.top() + panel.legend_offset + legend_row_height)
-                                .min(chart_rect.bottom()),
-                        ),
-                    );
-                    let toggle = ui
-                        .interact(header, ui.scope_id().with((key, "toggle")), Sense::click())
-                        .on_hover_text(l10n::text(
-                            ui.ctx(),
-                            if collapsed {
-                                "Expand pane"
-                            } else {
-                                "Collapse pane"
-                            },
-                        ));
-                    let translated_label = l10n::text(
-                        ui.ctx(),
-                        if collapsed {
-                            "Expand pane"
-                        } else {
-                            "Collapse pane"
-                        },
-                    );
-                    toggle.widget_info(|| {
-                        egui::WidgetInfo::labeled(
-                            egui::Role::Button,
-                            toggle.enabled(),
-                            &translated_label,
-                        )
-                    });
-                    ui.ctx()
-                        .accesskit_node_builder(toggle.id, |node| node.set_expanded(!collapsed));
-                    if toggle.clicked() && !control_clicked {
-                        pending_pane_collapse = Some((pane_id, !collapsed));
-                        ui.ctx().request_repaint();
                     }
                     let mut pane_coords = coords.to_mapping(chart_rect, y_min, y_max);
                     pane_coords.price = map;
@@ -927,7 +902,6 @@ impl Chart {
                             })
                     };
                     if !collapsed
-                        && !toggle.clicked()
                         && !control_clicked
                         && pane_response.clicked()
                         && !drawing_tool_active
@@ -1217,18 +1191,6 @@ impl Chart {
                 chart.pane_layout.maximized = (!maximized).then_some(id);
             });
         }
-        if let Some((id, collapsed)) = pending_pane_collapse {
-            self.user_action(|chart| {
-                if let Some(pane) = chart
-                    .pane_layout
-                    .panes
-                    .iter_mut()
-                    .find(|pane| pane.id == id)
-                {
-                    pane.collapsed = Some(collapsed);
-                }
-            });
-        }
         if let Some(action) = pending_indicator_action {
             self.apply_study_action(action);
         }
@@ -1282,6 +1244,39 @@ mod tests {
         pointer(ctx, chart, to, None);
         pointer(ctx, chart, to, Some(false));
         pointer(ctx, chart, to, None);
+    }
+
+    /// Hiding a study keeps its pane and a clickable eye, and does not paint its line.
+    #[test]
+    fn hidden_study_keeps_its_pane_and_eye() {
+        use crate::widget::test_frames::shapes;
+        let ctx = Context::default();
+        let mut chart = chart(&[100.0, 105.0], &[110.0, 115.0]);
+        let study = chart.add_indicator(Box::new(RSI::new(14)));
+        crate::widget::test_frames::frame(&ctx, &mut chart, 0.0, Vec::new());
+        let before = chart.get_rendered_indicator_panes()[0].panel_rect;
+        chart.set_indicator_visible(study, false);
+        let painted = shapes(&ctx, &mut chart, 1.0, Vec::new());
+        let after = &chart.get_rendered_indicator_panes()[0];
+        assert_eq!(after.panel_rect, before);
+        let legend = painted
+            .iter()
+            .find_map(|shape| match shape {
+                egui::Shape::Text(text) if text.galley.text().contains("RSI") => Some(text),
+                _ => None,
+            })
+            .expect("the hidden study keeps its legend");
+        assert!(legend.galley.job.sections[0].format.color.a() <= 128);
+        let eye = Pos2::new(
+            legend.pos.x + legend.galley.size().x + 12.0,
+            legend.pos.y + legend.galley.size().y / 2.0,
+        );
+        click(&ctx, &mut chart, eye);
+        assert!(
+            chart
+                .indicators()
+                .any(|(id, indicator)| id == study && indicator.is_visible())
+        );
     }
 
     /// Maximized panes retain shared navigation and leave the hidden price range alone.
@@ -1985,12 +1980,16 @@ mod tests {
         click(&ctx, &mut chart, maximize);
         assert_eq!(chart.get_rendered_indicator_panes().len(), 1);
         assert_eq!(chart.get_rendered_indicator_panes()[0].indicator_idx, 0);
+        let price_height = chart.get_rendered_price_rect().height();
         for id in [first, second] {
             chart.set_indicator_visible(id, false);
         }
         crate::widget::test_frames::frame(&ctx, &mut chart, 25.0, Vec::new());
-        assert_eq!(chart.pane_layout.maximized, None);
-        assert!(chart.get_rendered_price_rect().height() > 500.0);
+        assert!(
+            !chart.get_rendered_indicator_panes().is_empty(),
+            "hiding a study keeps its pane"
+        );
+        assert!((chart.get_rendered_price_rect().height() - price_height).abs() < 2.0);
     }
 
     #[test]

@@ -6,10 +6,11 @@ use crate::theme::ThemeExt;
 use crate::ui::Control;
 use crate::ui::app_state::set_control_visible;
 use crate::ui::context_menu::drawing::DRAWING_MENU_OFFSET;
-use crate::ui::context_menu::study::{self as study_context_menu, StudyContextMenu};
+use crate::ui::context_menu::study::{self as study_context_menu, StudyContextMenu, study_alert};
 use crate::ui::context_menu::tpo::TpoMenu;
 use crate::ui::dialogs::{DrawingContextMenu, SeriesContextMenu};
-use crate::widget::{Chart, RightClickTarget};
+use crate::ui::dialogs::StudyContextMenuAction;
+use crate::widget::{Chart, RightClickTarget, StudyMenuRequest};
 use egui::{Context, Id};
 
 /// The original click retained while a host menu action is being chosen.
@@ -158,6 +159,37 @@ impl ChartMenus {
     /// Opens the menu for the chart's last right-click, shows the open one and returns the
     /// chosen action. While a menu is open the chart draws no crosshair or tooltip under it.
     pub fn show(&mut self, ctx: &Context, chart: &mut Chart) -> Option<ChartContextAction> {
+        let menus_on = !self.chart.hidden.contains(&Control::ContextMenus);
+        chart.legend_menus = crate::widget::LegendMenus {
+            moves: menus_on,
+            alerts: menus_on && !self.study.hidden.contains(&Control::Alerts),
+        };
+        if let Some(request) = chart.study_menu_request.take() {
+            match request {
+                StudyMenuRequest::Alert { id, bar } => {
+                    if let Some((alert, _)) = study_alert(chart, id, bar) {
+                        return Some(ChartContextAction::Study {
+                            id,
+                            action: StudyContextMenuAction::AddAlert(Box::new(alert)),
+                        });
+                    }
+                }
+                StudyMenuRequest::Move { id, pos } => {
+                    self.study.open_moves(chart, id);
+                    self.context = Some(HostMenuContext {
+                        target: RightClickTarget::Element {
+                            id: ChartElementId::Indicator(id),
+                            bar_idx: 0,
+                            pos,
+                            price: f64::NAN,
+                        },
+                        time: None,
+                        price: f64::NAN,
+                    });
+                    self.just_opened = true;
+                }
+            }
+        }
         if self.chart.hidden.contains(&Control::ContextMenus) {
             self.chart.close();
             self.series.close();

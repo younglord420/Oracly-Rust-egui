@@ -109,19 +109,20 @@ impl Chart {
             StudyAction::Settings(index)
             | StudyAction::ToggleVisibility(index)
             | StudyAction::Remove(index)
-            | StudyAction::Menu { index, .. } => index,
+            | StudyAction::AddAlert(index)
+            | StudyAction::Menu { index, .. }
+            | StudyAction::Move { index, .. } => index,
         };
         let Some(id) = self.study_ids.get(index).copied() else {
             return;
         };
+        let bars = self.state.shown().len();
+        let bar_idx = self
+            .last_hover_bar_idx
+            .map(|index| index.round() as usize)
+            .filter(|index| *index < bars)
+            .unwrap_or(bars.saturating_sub(1));
         if let StudyAction::Menu { pos, .. } = action {
-            // The bar the legend shows: the hovered one, or the latest.
-            let bars = self.state.shown().len();
-            let bar_idx = self
-                .last_hover_bar_idx
-                .map(|index| index.round() as usize)
-                .filter(|index| *index < bars)
-                .unwrap_or(bars.saturating_sub(1));
             let element = ChartElementId::Indicator(id);
             self.selection.select(element, Some(bar_idx));
             self.right_click = Some(RightClickTarget::Element {
@@ -134,6 +135,14 @@ impl Chart {
             });
             return;
         }
+        if let StudyAction::Move { pos, .. } = action {
+            self.study_menu_request = Some(super::StudyMenuRequest::Move { id, pos });
+            return;
+        }
+        if let StudyAction::AddAlert(_) = action {
+            self.study_menu_request = Some(super::StudyMenuRequest::Alert { id, bar: bar_idx });
+            return;
+        }
         self.user_action(|chart| match action {
             StudyAction::Settings(_) => chart.indicator_settings_request = Some(id),
             StudyAction::ToggleVisibility(_) => {
@@ -142,7 +151,7 @@ impl Chart {
             StudyAction::Remove(_) => {
                 chart.remove_series(id);
             }
-            StudyAction::Menu { .. } => {}
+            StudyAction::Menu { .. } | StudyAction::Move { .. } | StudyAction::AddAlert(_) => {}
         });
     }
 }

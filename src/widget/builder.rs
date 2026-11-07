@@ -176,6 +176,8 @@ impl Chart {
             server_time_offset: None,
             bar_close_time: None,
             indicator_settings_request: None,
+            study_menu_request: None,
+            legend_menus: super::LegendMenus::default(),
             session_quote: None,
             session_provider: None,
             horizontal_scale: None,

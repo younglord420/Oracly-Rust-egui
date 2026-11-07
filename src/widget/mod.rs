@@ -346,6 +346,10 @@ pub struct Chart {
     server_time_offset: Option<chrono::TimeDelta>,
     bar_close_time: Option<chrono::DateTime<chrono::Utc>>,
     pub(crate) indicator_settings_request: Option<SeriesId>,
+    /// A legend Move or Alert button pressed this frame.
+    pub(crate) study_menu_request: Option<StudyMenuRequest>,
+    /// Whether the legend may show Move and Alert. Set by [`crate::ui::context_menu::ChartMenus`].
+    pub(crate) legend_menus: LegendMenus,
     session_quote: Option<crate::model::quote::SessionQuote>,
     session_provider: Option<std::sync::Arc<dyn crate::model::SessionProvider>>,
     horizontal_scale: Option<std::sync::Arc<dyn crate::scales::HorizontalScale>>,
@@ -481,6 +485,28 @@ pub struct Chart {
 /// This type intentionally carries no `ui`-feature types, so the core chart can
 /// surface right-clicks even when built without the `ui` feature; the host
 /// (or `ChartMenus` with the `ui` feature) maps it to a concrete menu.
+/// Which extra legend buttons the host turned on.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct LegendMenus {
+    /// Show the move button.
+    pub moves: bool,
+    /// Show the alert button when the study has a value.
+    pub alerts: bool,
+}
+
+/// A legend button that [`crate::ui::context_menu::ChartMenus`] finishes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum StudyMenuRequest {
+    /// Open the move menu under `pos`.
+    Move { id: SeriesId, pos: Pos2 },
+    /// Build an alert for the study at `bar`.
+    Alert { id: SeriesId, bar: usize },
+}
+
+/// The object a right-click landed on, with the data needed to position and populate a context menu.
+///
+/// Captured during [`Chart::show`] when the user right-clicks inside the chart area. Drain it once
+/// per frame with [`Chart::take_right_click`]. Right-clicking also selects the hit object.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum RightClickTarget {

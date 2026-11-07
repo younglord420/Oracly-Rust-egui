@@ -353,6 +353,15 @@ impl DrawingManager {
         self.pane_members.contains(&drawing.pane)
     }
 
+    /// Drops screen points of the drawings on the active pane so a hidden study cannot be hit.
+    pub(crate) fn hide_pane_screen_coords(&mut self) {
+        for drawing in self.drawings.iter_mut().chain(self.curr_drawing.iter_mut()) {
+            if self.pane_members.contains(&drawing.pane) {
+                drawing.points.clear();
+            }
+        }
+    }
+
     pub(crate) fn update_pane_screen_coords(
         &mut self,
         bar_to_x: impl Fn(f32) -> f32 + Copy,

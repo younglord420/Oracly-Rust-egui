@@ -288,8 +288,11 @@ pub struct PaneInteraction {
     pub visibility_response: Option<Response>,
     /// Settings button response, when the legend is shown.
     pub settings_response: Option<Response>,
-    /// Corner of the study menu, when the legend's more-actions button was clicked or its row
-    /// secondary-clicked this frame.
+    /// Move button response, when the host can move the study.
+    pub move_response: Option<Response>,
+    /// Alert button response, when the host accepts an alert and the study has a value.
+    pub alert_response: Option<Response>,
+    /// Corner of the study menu, when the legend's row was secondary-clicked this frame.
     pub menu: Option<Pos2>,
 }
 
@@ -318,6 +321,8 @@ pub struct IndicatorPane {
     pub(super) legend_backdrop: f32,
     /// When true, the host paints the chart surface; the pane skips its solid fill.
     pub(super) skip_background: bool,
+    pub(super) legend_moves: bool,
+    pub(super) legend_alerts: bool,
 }
 
 impl IndicatorPane {
@@ -341,6 +346,8 @@ impl IndicatorPane {
             axis_options,
             legend_backdrop: 0.92,
             skip_background: false,
+            legend_moves: false,
+            legend_alerts: false,
         }
     }
 
@@ -581,9 +588,7 @@ impl IndicatorPane {
         bar_series: bool,
         time_grid: Option<&SharedTimeGrid>,
     ) -> Option<PaneInteraction> {
-        if !indicator.is_visible() {
-            return None;
-        }
+        let study_visible = indicator.is_visible();
 
         // Get chart background and text colors from theme
         let colors = ui.active_theme().chart;
@@ -670,7 +675,8 @@ impl IndicatorPane {
         let crosshair = hover.map(|(mut pos, options)| {
             if let Some(index) = self.bar_index {
                 pos.x = mapping.idx_to_x(index);
-                if options.mode.snaps()
+                if study_visible
+                    && options.mode.snaps()
                     && chart_rect.contains(pos)
                     && let Some(value) = crate::chart::renderers::snap_to_values(
                         pos.y,
@@ -695,8 +701,8 @@ impl IndicatorPane {
         });
         if !collapsed {
             let plot_painter = &painter.with_clip_rect(chart_rect.intersect(painter.clip_rect()));
-            // Draw zone fills (colored bands)
-            if self.config.show_zones && self.config.zones.len() >= 2 {
+            // A hidden study keeps the pane, the grid and the legend. Its plots do not paint.
+            if study_visible && self.config.show_zones && self.config.zones.len() >= 2 {
                 self.draw_zone_fills(plot_painter, chart_rect, y_min, y_max, indicator);
             }
 
@@ -716,24 +722,27 @@ impl IndicatorPane {
             }
 
             use crate::chart::primitives::PrimitivePass;
-            draw(plot_painter, PrimitivePass::Below);
-            // Draw indicator lines with aligned coordinates, unless a renderer draws them
-            if !primitives.iter().any(|item| item.replaces) {
-                self.draw_indicator_lines_aligned(
-                    plot_painter,
-                    chart_rect,
-                    indicator,
-                    bars,
-                    y_min,
-                    y_max,
-                    &coords,
-                );
-            }
-            if !bar_series {
-                draw(plot_painter, PrimitivePass::Series);
+            if study_visible {
+                draw(plot_painter, PrimitivePass::Below);
+                // Draw indicator lines with aligned coordinates, unless a renderer draws them
+                if !primitives.iter().any(|item| item.replaces) {
+                    self.draw_indicator_lines_aligned(
+                        plot_painter,
+                        chart_rect,
+                        indicator,
+                        bars,
+                        y_min,
+                        y_max,
+                        &coords,
+                    );
+                }
+                if !bar_series {
+                    draw(plot_painter, PrimitivePass::Series);
+                }
             }
 
-            if let (Some(view), Some(side)) = (&view, axis)
+            if study_visible
+                && let (Some(view), Some(side)) = (&view, axis)
                 && indicator.scale() != crate::studies::StudyScale::None
             {
                 let (axis_rect, axis_edge) = if side == crate::scales::PriceScaleId::Left {
@@ -840,19 +849,6 @@ impl IndicatorPane {
             );
         }
         let controls = self.legend_controls_rect(painter, chart_rect, indicator);
-        let responses = controls.map(|controls| {
-            let row = Rect::from_min_max(
-                chart_rect.min + egui::vec2(0.0, self.legend_offset),
-                controls.right_bottom(),
-            );
-            crate::chart::renderers::study_controls(
-                ui,
-                row,
-                controls,
-                response.id.with("study_controls"),
-                indicator.is_visible(),
-            )
-        });
         let legend_rect = Rect::from_min_max(
             chart_rect.min,
             Pos2::new(
@@ -866,12 +862,41 @@ impl IndicatorPane {
             indicator,
             text_color,
         );
-        let (visibility_response, settings_response, close_response, menu) = match responses {
-            Some(([visibility, settings, close], menu)) => {
-                (Some(visibility), Some(settings), Some(close), menu)
-            }
-            None => (None, None, None, None),
-        };
+        let responses = controls.map(|controls| {
+            let row = Rect::from_min_max(
+                Pos2::new(chart_rect.left(), controls.top()),
+                controls.right_bottom(),
+            );
+            let alert = self.legend_alerts
+                && (0..indicator.line_count()).any(|line| {
+                    indicator.plot_style(line).visible
+                        && self
+                            .bar_index
+                            .and_then(|bar| indicator.plot_value(line, bar))
+                            .is_some_and(|value| value.is_finite())
+                });
+            crate::chart::renderers::study_controls(
+                ui,
+                row,
+                controls,
+                response.id.with("study_controls"),
+                indicator.is_visible(),
+                self.legend_moves,
+                alert,
+            )
+        });
+        let (visibility_response, settings_response, close_response, move_response, alert_response, menu) =
+            match responses {
+                Some(([visibility, settings, close], move_to, alert, menu)) => (
+                    Some(visibility),
+                    Some(settings),
+                    Some(close),
+                    move_to,
+                    alert,
+                    menu,
+                ),
+                None => (None, None, None, None, None, None),
+            };
 
         // Return panel info for hit testing
         Some(PaneInteraction {
@@ -883,6 +908,8 @@ impl IndicatorPane {
             close_response,
             visibility_response,
             settings_response,
+            move_response,
+            alert_response,
             menu,
         })
     }
@@ -1502,21 +1529,13 @@ impl IndicatorPane {
                     continue;
                 };
                 let color = indicator.plot_style(line).color;
-                let readable = crate::theme::contrast(color, background) >= 4.5;
-                if !readable {
-                    let mut swatch = format(color);
-                    swatch.background = color;
-                    swatch.font_id.size = 8.0;
-                    swatch.valign = egui::Align::Center;
-                    job.append("  ", 0.0, swatch);
-                    job.append(" ", 0.0, format(text_color));
-                }
+                let ink = if color.a() == 0 {
+                    text_color
+                } else {
+                    crate::theme::readable_color(color.to_opaque(), text_color, &[background], 4.5)
+                };
                 let label = indicator.format_value(value);
-                job.append(
-                    &label,
-                    0.0,
-                    format(if readable { color } else { text_color }),
-                );
+                job.append(&label, 0.0, format(ink));
             }
         }
         job.wrap.max_width = max_width;
@@ -1548,21 +1567,16 @@ impl IndicatorPane {
             f32::INFINITY,
             status.as_deref(),
         ));
+        let buttons = 3 + usize::from(self.legend_moves) + usize::from(self.legend_alerts);
+        let controls_w = (buttons * 18 + buttons.saturating_sub(1) * 6) as f32;
         let x = (rect.left() + theme.spacing.sm + galley.size().x + theme.spacing.md)
-            .min(rect.right() - if self.pane_controls { 120.0 } else { 80.0 })
+            .min(rect.right() - if self.pane_controls { controls_w + 40.0 } else { controls_w })
             .max(rect.left());
-        Some(
-            Rect::from_min_size(
-                Pos2::new(
-                    x,
-                    rect.top()
-                        + self.legend_offset
-                        + (galley.size().y + theme.spacing.md - 20.0).max(0.0) / 2.0,
-                ),
-                egui::vec2(80.0, 20.0),
-            )
-            .intersect(rect),
-        )
+        let row_h = (galley.size().y + 4.0).max(22.0);
+        let top = rect.top()
+            + self.legend_offset
+            + (galley.size().y + theme.spacing.md - row_h).max(0.0) / 2.0;
+        Some(Rect::from_min_size(Pos2::new(x, top), egui::vec2(controls_w, row_h)).intersect(rect))
     }
 
     /// Draws the selected bar's study values beside its name and inputs.
@@ -1594,11 +1608,17 @@ impl IndicatorPane {
             max_width,
             status.as_deref(),
         ));
+        let row_h = (galley.size().y + 4.0).max(22.0);
+        let top = rect.top()
+            + self.legend_offset
+            + (galley.size().y + theme.spacing.md - row_h).max(0.0) / 2.0;
         painter.rect_filled(
-            Rect::from_min_size(pos, galley.size())
-                .expand(2.0)
-                .intersect(rect),
-            0.0,
+            Rect::from_min_max(
+                Pos2::new(rect.left(), top),
+                Pos2::new(pos.x + galley.size().x + theme.spacing.md, top + row_h),
+            )
+            .intersect(rect),
+            theme.radius.sm,
             theme
                 .chart
                 .bg
@@ -1874,7 +1894,7 @@ mod tests {
                         .rect
                         .contains_rect(Rect::from_min_size(text.pos, text.galley.size()))
                 );
-                for (i, color) in colors.iter().enumerate() {
+                for (i, _color) in colors.iter().enumerate() {
                     let value = format!("{:.2}", (i + 1) as f64);
                     let section = sections
                         .iter()
@@ -1885,8 +1905,10 @@ mod tests {
                         .unwrap();
                     assert!(crate::theme::contrast(section.format.color, theme.chart.bg) >= 4.5);
                     assert!(
-                        sections.iter().any(|s| s.format.color == *color),
-                        "missing plot colour {color:?}"
+                        sections
+                            .iter()
+                            .all(|s| s.format.background == Color32::TRANSPARENT),
+                        "legend values have no colour swatch"
                     );
                 }
                 assert_eq!(sections[0].format.color, theme.ui.text);

@@ -1622,6 +1622,8 @@ mod tests {
         assert!(study > rect.center().y, "{study} {main}");
         assert_eq!(at(&chart, main + 1.0), main);
         chart.set_indicator_visible(id, false);
+        // This study is an overlay on the price pane. Hiding it drops its own
+        // candidates, so the magnet falls back to the main bar.
         assert_eq!(at(&chart, rect.bottom() - 1.0), main);
     }
 

@@ -48,6 +48,15 @@ pub enum StudyAction {
         /// Screen position of the menu's corner.
         pos: Pos2,
     },
+    /// Open the move menu under the button.
+    Move {
+        /// Zero-based study index.
+        index: usize,
+        /// Screen position of the menu's corner.
+        pos: Pos2,
+    },
+    /// Ask the host to save an alert on the study's current value.
+    AddAlert(usize),
 }
 
 /// An action the host can apply to the main series (settings, visibility, remove).
@@ -116,6 +125,10 @@ pub struct Legend<'a> {
     /// The order quantity shown in a box under the quote buttons' spread, which the user clicks
     /// to change it.
     pub(crate) quantity: Option<f64>,
+    /// The host can move a study from its legend button.
+    pub(crate) study_moves: bool,
+    /// The host accepts an alert from the legend button.
+    pub(crate) study_alerts: bool,
 }
 
 impl<'a> Legend<'a> {
@@ -147,6 +160,8 @@ impl<'a> Legend<'a> {
             day_change: None,
             study_backdrop: 0.92,
             quantity: None,
+            study_moves: false,
+            study_alerts: false,
         }
     }
 
@@ -435,6 +450,7 @@ impl<'a> Legend<'a> {
                     continue;
                 }
                 let row_start = layout.pos;
+                layout.pos.x += 4.0;
                 if self.show_indicator_titles {
                     let title_color = if study.is_visible() {
                         colors.text
@@ -533,25 +549,20 @@ impl<'a> Legend<'a> {
                         } else if plot.a() == 0 {
                             colors.text
                         } else {
-                            let opaque = plot.to_opaque();
-                            if crate::theme::contrast(opaque, theme.chart.bg) >= 4.5 {
-                                opaque
-                            } else {
-                                colors.text
-                            }
+                            crate::theme::readable_color(
+                                plot.to_opaque(),
+                                colors.text,
+                                &[theme.chart.bg],
+                                4.5,
+                            )
                         };
                         layout.text(text, theme.text.ohlc, color, bounds.width());
                     }
                 }
                 // The value row is the hover target. The 80px controls are reserved only
-                // while that row is revealed, and they start after the text, so they never
-                // cover another study's values.
+                // while that row is revealed, and they sit immediately after the text so
+                // the collapse chevron stays outside the study capsule.
                 let text_end = layout.pos;
-                let text_tail = LegendTail {
-                    pos: text_end,
-                    background: layout.background,
-                    height: layout.height,
-                };
                 let text_right = if text_end.y > row_start.y {
                     bounds.right()
                 } else {
@@ -562,29 +573,33 @@ impl<'a> Legend<'a> {
                     Pos2::new(text_right, text_end.y + layout.height),
                 )
                 .intersect(bounds);
-                // The collapse chevron owns the first 29px after the text on the last
-                // row, so the controls start after it and the chevron does not move.
-                let control_size = Vec2::new(80.0, 20.0);
-                let after_chevron = text_end.x + 29.0 + 8.0;
+                let alert = self.study_alerts
+                    && (0..study.line_count()).any(|line| {
+                        study.plot_style(line).visible
+                            && study
+                                .plot_value(line, self.bar_index)
+                                .is_some_and(|value| value.is_finite())
+                    });
+                let button_count =
+                    3 + usize::from(self.study_moves) + usize::from(alert);
+                let control_size = Vec2::new(
+                    (button_count * 18 + button_count.saturating_sub(1) * 6) as f32,
+                    layout.height,
+                );
                 let wraps =
-                    text_end.x > bounds.left() && after_chevron + control_size.x > bounds.right();
+                    text_end.x > bounds.left() && text_end.x + control_size.x > bounds.right();
                 let slot_y = if wraps {
-                    text_end.y + layout.height + (22.0 - control_size.y) / 2.0
+                    text_end.y + layout.height
                 } else {
-                    text_end.y + (layout.height.max(control_size.y) - control_size.y) / 2.0
+                    text_end.y
                 };
                 let slot = Rect::from_min_size(
-                    Pos2::new(if wraps { bounds.left() } else { after_chevron }, slot_y),
+                    Pos2::new(if wraps { bounds.left() } else { text_end.x }, slot_y),
                     control_size,
                 );
                 let study_id = id.with(("study", index));
                 let revealed = legend_row_revealed(ui, text_row.union(slot), study_id);
                 let controls = if revealed {
-                    if wraps {
-                        layout.new_row();
-                    } else {
-                        layout.pos.x = after_chevron;
-                    }
                     layout.reserve_space(control_size).intersect(bounds)
                 } else {
                     Rect::from_min_size(text_end, Vec2::ZERO)
@@ -594,8 +609,15 @@ impl<'a> Legend<'a> {
                 } else {
                     text_row
                 };
-                let (responses, menu) =
-                    study_controls(ui, row, controls, study_id, study.is_visible());
+                let (responses, move_to, alert_button, menu) = study_controls(
+                    ui,
+                    row,
+                    controls,
+                    study_id,
+                    study.is_visible(),
+                    self.study_moves,
+                    alert,
+                );
                 for (response, intent) in responses.iter().zip([
                     StudyAction::ToggleVisibility(index),
                     StudyAction::Settings(index),
@@ -605,12 +627,32 @@ impl<'a> Legend<'a> {
                         study_settings = Some(intent);
                     }
                 }
+                if let Some(response) = move_to
+                    && response.clicked()
+                {
+                    study_settings = Some(StudyAction::Move {
+                        index,
+                        pos: response.rect.left_bottom(),
+                    });
+                }
+                if alert_button.is_some_and(|response| response.clicked()) {
+                    study_settings = Some(StudyAction::AddAlert(index));
+                }
                 if let Some(pos) = menu {
                     study_settings = Some(StudyAction::Menu { index, pos });
                 }
-                // Anchor the chevron to the text end, not to the position after the
-                // controls, and keep the backdrop shape that sits behind this text.
-                last_tail = Some(text_tail);
+                // Place the collapse chevron after the 80px control slot so it stays outside
+                // the study capsule and does not shift when the row is hovered or focused.
+                let chevron_x = if wraps {
+                    bounds.left() + control_size.x + 8.0
+                } else {
+                    text_end.x + control_size.x + 8.0
+                };
+                last_tail = Some(LegendTail {
+                    pos: Pos2::new(chevron_x, slot_y),
+                    background: layout.background,
+                    height: layout.height,
+                });
                 layout.new_row();
             }
         }
@@ -805,14 +847,16 @@ pub(crate) fn study_controls(
     controls: Rect,
     id: egui::Id,
     visible: bool,
-) -> ([Response; 3], Option<Pos2>) {
+    moves: bool,
+    alerts: bool,
+) -> ([Response; 3], Option<Response>, Option<Response>, Option<Pos2>) {
     let theme = ui.active_theme();
     let touch = legend_touch(ui);
     let row_response = ui.interact(row, id.with("row"), Sense::click());
     let controls_label = l10n::text(ui.ctx(), "Study controls");
     row_response
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &controls_label));
-    let mut menu = row_response
+    let menu = row_response
         .secondary_clicked()
         .then(|| row_response.interact_pointer_pos())
         .flatten();
@@ -831,14 +875,128 @@ pub(crate) fn study_controls(
     // Keep controls focusable while Tab transfers focus from their row.
     let focused = row_response.has_focus()
         || row_response.lost_focus()
-        || (0..4_usize).any(|index| ui.memory(|memory| memory.has_focus(id.with(index))));
+        || (0..5_usize).any(|index| ui.memory(|memory| memory.has_focus(id.with(index))));
     let hovered = !touch
         && ui.input(|input| input.pointer.hover_pos().is_some())
         && ui.rect_contains_pointer(row);
     let revealed = selected || focused || hovered;
     if revealed {
+        let fill_rect = Rect::from_min_max(
+            Pos2::new(controls.left(), row.top()),
+            Pos2::new(row.right(), row.bottom()),
+        )
+        .intersect(row);
         ui.painter()
-            .rect_filled(controls, theme.radius.sm, theme.chart.bg);
+            .rect_filled(fill_rect, theme.radius.sm, theme.chart.bg);
+        if fill_rect != controls {
+            ui.painter()
+                .rect_filled(controls, theme.radius.sm, theme.chart.bg);
+        }
+    }
+    let btn_h = controls.height().max(18.0);
+    let mut kinds = vec![0u8, 1];
+    if moves {
+        kinds.push(2);
+    }
+    if alerts {
+        kinds.push(3);
+    }
+    kinds.push(4);
+    let mut hide = None;
+    let mut settings = None;
+    let mut move_to = None;
+    let mut alert = None;
+    let mut remove = None;
+    for (slot, kind) in kinds.iter().copied().enumerate() {
+        let rect = Rect::from_min_size(
+            Pos2::new(
+                controls.min.x + slot as f32 * 24.0,
+                controls.center().y - btn_h / 2.0,
+            ),
+            Vec2::new(18.0, btn_h),
+        )
+        .intersect(controls);
+        let label = l10n::text(
+            ui.ctx(),
+            match kind {
+                0 if visible => "Hide",
+                0 => "Show",
+                1 => "Settings",
+                2 => "Move to pane",
+                3 => "Add alert",
+                _ => "Remove",
+            },
+        );
+        let response = ui.interact(
+            rect,
+            id.with(slot),
+            if revealed || (kind == 0 && !visible) {
+                Sense::click()
+            } else {
+                Sense::hover()
+            },
+        );
+        if !revealed && !(kind == 0 && !visible) {
+            match kind {
+                0 => hide = Some(response),
+                1 => settings = Some(response),
+                2 => move_to = Some(response),
+                3 => alert = Some(response),
+                _ => remove = Some(response),
+            }
+            continue;
+        }
+        let response = response.on_hover_text(&label);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect.shrink(1.0), theme.radius.sm, theme.ui.btn_bg_hover);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        #[cfg(feature = "icons")]
+        {
+            let icon = match kind {
+                0 if visible => &crate::icons::icons::EYE,
+                0 => &crate::icons::icons::EYE_HIDE,
+                1 => &crate::icons::icons::SETTINGS,
+                2 => &crate::icons::icons::MOVE_PANE,
+                3 => &crate::icons::icons::ALERT_ADD,
+                _ => &crate::icons::icons::TRASH,
+            };
+            let tint = if response.hovered() {
+                theme.ui.text
+            } else {
+                theme.ui.text_secondary
+            };
+            icon.as_image_tinted(Vec2::splat(16.0), tint).paint_at(
+                ui,
+                Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
+            );
+        }
+        #[cfg(not(feature = "icons"))]
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            match kind {
+                0 if visible => "−",
+                0 => "+",
+                1 => "*",
+                2 => "M",
+                3 => "A",
+                _ => "×",
+            },
+            FontId::proportional(14.0),
+            theme.ui.text_secondary,
+        );
+        match kind {
+            0 => hide = Some(response),
+            1 => settings = Some(response),
+            2 => move_to = Some(response),
+            3 => alert = Some(response),
+            _ => remove = Some(response),
+        }
+    }
+    if revealed {
         ui.painter().rect_stroke(
             row,
             theme.radius.sm,
@@ -846,73 +1004,12 @@ pub(crate) fn study_controls(
             egui::StrokeKind::Inside,
         );
     }
-    let buttons: [Response; 4] = std::array::from_fn(|index| {
-        let rect = Rect::from_min_size(
-            controls.min + Vec2::new(index as f32 * 20.0, 0.0),
-            Vec2::splat(20.0),
-        )
-        .intersect(controls);
-        let label = l10n::text(
-            ui.ctx(),
-            match index {
-                0 if visible => "Hide study",
-                0 => "Show study",
-                1 => "Study settings",
-                2 => "Remove study",
-                _ => "More actions",
-            },
-        );
-        let response = ui.interact(
-            rect,
-            id.with(index),
-            if revealed {
-                Sense::click()
-            } else {
-                Sense::hover()
-            },
-        );
-        if !revealed {
-            return response;
-        }
-        let response = response.on_hover_text(&label);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-        if response.hovered() {
-            ui.painter()
-                .rect_filled(rect, theme.radius.sm, theme.ui.btn_bg_hover);
-            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        }
-        #[cfg(feature = "icons")]
-        {
-            let icon = match index {
-                0 if visible => &crate::icons::icons::EYE,
-                0 => &crate::icons::icons::EYE_HIDE,
-                1 => &crate::icons::icons::SETTINGS,
-                2 => &crate::icons::icons::TRASH,
-                _ => &crate::icons::icons::UI_MORE_HORIZONTAL,
-            };
-            let tint = if response.hovered() {
-                theme.ui.text
-            } else {
-                theme.ui.text_secondary
-            };
-            icon.as_image_tinted(Vec2::splat(14.0), tint)
-                .paint_at(ui, rect.shrink(3.0));
-        }
-        #[cfg(not(feature = "icons"))]
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            [if visible { "−" } else { "+" }, "...", "×", "•••"][index],
-            FontId::proportional(14.0),
-            theme.ui.text_secondary,
-        );
-        response
-    });
-    let [hide, settings, remove, more] = buttons;
-    if more.clicked() {
-        menu = Some(more.rect.left_bottom());
-    }
-    ([hide, settings, remove], menu)
+    (
+        [hide.unwrap(), settings.unwrap(), remove.unwrap()],
+        move_to,
+        alert,
+        menu,
+    )
 }
 
 struct Layout<'a> {
@@ -1273,7 +1370,7 @@ mod tests {
             l10n::set_translator(&ctx, |english| Some(format!("{english}!")));
             let row = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(220.0, 20.0));
             let controls = Rect::from_min_size(Pos2::new(150.0, 10.0), Vec2::new(80.0, 20.0));
-            let settings = controls.min + Vec2::new(30.0, 10.0);
+            let settings = controls.min + Vec2::new(33.0, 10.0);
             let frame = |events| {
                 let mut clicked = [false; 3];
                 let mut menu = None;
@@ -1283,8 +1380,15 @@ mod tests {
                         ..Default::default()
                     },
                     |ui| {
-                        let (buttons, opened) =
-                            study_controls(ui, row, controls, egui::Id::unique("study"), true);
+                        let (buttons, _, _, opened) = study_controls(
+                            ui,
+                            row,
+                            controls,
+                            egui::Id::unique("study"),
+                            true,
+                            false,
+                            false,
+                        );
                         clicked = buttons.map(|response| response.clicked());
                         menu = opened;
                     },
@@ -1369,15 +1473,9 @@ mod tests {
                 assert_eq!(clicked.3, (!pressed).then_some(pos));
             }
             assert!(!frame(vec![Event::PointerGone]).0);
-            for (index, label) in [
-                "Study controls",
-                "Hide study",
-                "Study settings",
-                "Remove study",
-                "More actions",
-            ]
-            .into_iter()
-            .enumerate()
+            for (index, label) in ["Study controls", "Hide", "Settings", "Remove"]
+                .into_iter()
+                .enumerate()
             {
                 let focused = frame(vec![Event::Key {
                     key: Key::Tab,
@@ -1400,11 +1498,7 @@ mod tests {
                     activated.1,
                     std::array::from_fn(|button| index == button + 1)
                 );
-                // The menu opens below the more-actions button.
-                assert_eq!(
-                    activated.3,
-                    (index == 4).then(|| controls.min + Vec2::new(60.0, 20.0))
-                );
+                assert!(activated.3.is_none());
             }
 
             // A wrapped row is selectable over its text, even when the controls wrap below it.

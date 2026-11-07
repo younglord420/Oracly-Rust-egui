@@ -130,8 +130,26 @@ impl Chart {
         };
         let translate_price = |price, from, to| price_map.translate_price(price, from, to);
 
-        // Update all drawings' screen coords before rendering (handles pan/zoom)
-        drawing_manager.update_pane_screen_coords(bar_to_x, price_to_y);
+        // A pane whose studies are all hidden keeps its strip, but its drawings
+        // must not hit: drop their screen points until a study is shown again.
+        let studies_hidden = pane.is_some_and(|pane| {
+            self.pane_layout
+                .panes
+                .iter()
+                .find(|item| item.id == pane)
+                .is_some_and(|item| {
+                    !item.members.is_empty()
+                        && item.members.iter().all(|id| {
+                            self.study_ids.iter().any(|study| study == id)
+                                && !self.is_series_visible(*id)
+                        })
+                })
+        });
+        if studies_hidden {
+            drawing_manager.hide_pane_screen_coords();
+        } else {
+            drawing_manager.update_pane_screen_coords(bar_to_x, price_to_y);
+        }
 
         // Only gather bars within the pointer's screen-space tolerance. Rebuild after pan/zoom.
         drawing_manager.snap_targets.clear();
@@ -319,7 +337,11 @@ impl Chart {
             text::begin_edit(drawing_manager, id);
         }
 
-        drawing_manager.update_pane_screen_coords(bar_to_x, price_to_y);
+        if studies_hidden {
+            drawing_manager.hide_pane_screen_coords();
+        } else {
+            drawing_manager.update_pane_screen_coords(bar_to_x, price_to_y);
+        }
 
         // Render existing drawings against the chart's bars
         let view = ChartView {
