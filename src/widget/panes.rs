@@ -622,7 +622,6 @@ impl Chart {
 
                 panel.legend_offset = member_row as f32 * legend_row_height;
                 panel.legend_moves = self.legend_menus.moves;
-                panel.legend_alerts = self.legend_menus.alerts && !self.symbol.is_empty();
                 panel.pane_controls = true;
                 // Parent already filled the shared stack surface.
                 panel.skip_background = true;
@@ -767,7 +766,6 @@ impl Chart {
                         visibility_response,
                         settings_response,
                         move_response,
-                        alert_response,
                         menu,
                     } = interaction;
 
@@ -782,12 +780,10 @@ impl Chart {
                         visibility_response.as_ref().is_some_and(|r| r.clicked());
                     let settings_clicked = settings_response.as_ref().is_some_and(|r| r.clicked());
                     let move_clicked = move_response.as_ref().is_some_and(|r| r.clicked());
-                    let alert_clicked = alert_response.as_ref().is_some_and(|r| r.clicked());
                     let control_clicked = close_clicked
                         || visibility_clicked
                         || settings_clicked
                         || move_clicked
-                        || alert_clicked
                         || menu.is_some();
                     use crate::chart::renderers::StudyAction;
                     match (study, id) {
@@ -808,9 +804,6 @@ impl Chart {
                                     .map(|response| response.rect.left_bottom())
                                     .unwrap_or(Pos2::ZERO),
                             });
-                        }
-                        (Some(idx), _) if alert_clicked => {
-                            pending_indicator_action = Some(StudyAction::AddAlert(idx));
                         }
                         (Some(idx), _) if menu.is_some() => {
                             pending_indicator_action = Some(StudyAction::Menu {
@@ -2162,8 +2155,10 @@ mod tests {
                     check(&shape.shape, last.bottom(), shape.clip_rect, &mut count);
                 }
                 assert!(count > 0, "missing time labels at {size:?}");
+                let pane = &chart.get_rendered_indicator_panes()[0];
+                // Collapse sits in the pane's top-right control, left of the menu.
                 let header =
-                    chart.get_rendered_indicator_panes()[0].chart_rect.min + egui::vec2(10.0, 12.0);
+                    egui::pos2(pane.chart_rect.right() - 53.0, pane.panel_rect.top() + 14.0);
                 let was_collapsed = size.1 <= 200.0;
                 for events in [
                     vec![Event::PointerMoved(header)],

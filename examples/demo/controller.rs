@@ -387,6 +387,15 @@ pub struct DemoApp {
         (egui_charts::model::AlertId, String),
         alert_monitor::AlertMonitor,
     >,
+    /// Length and last bar of the chart the last time on-chart alerts were evaluated.
+    alert_chart_key: Option<(usize, Option<Bar>)>,
+    /// Ids of the on-chart alerts included in that evaluation, so a new alert is checked
+    /// even when the bars have not changed.
+    alert_on_chart_ids: Vec<egui_charts::model::AlertId>,
+    /// How many times alerts were evaluated. Pointer movement must not raise it.
+    alert_evaluations: u64,
+    /// Exchange symbols already told that they wait for the chart to show them.
+    exchange_alert_notices: std::collections::HashSet<(egui_charts::model::AlertId, String)>,
 
     // Session-only paper account, connected from the broker picker and traded through the
     // library's order ticket and account panel.
@@ -704,6 +713,10 @@ impl DemoApp {
             },
             audio: Default::default(),
             alert_monitors: Default::default(),
+            alert_chart_key: None,
+            alert_on_chart_ids: Vec::new(),
+            alert_evaluations: 0,
+            exchange_alert_notices: Default::default(),
             trading: Default::default(),
             paper: Arc::new(
                 egui_charts::services::PaperAccount::new("USD", 100_000.0).leverage(10.0),
@@ -7390,11 +7403,7 @@ mod tests {
                 symbols.sort_unstable();
                 assert_eq!(
                     symbols,
-                    if watchlist {
-                        vec!["AAPL", "BTCUSDT"]
-                    } else {
-                        vec!["AAPL"]
-                    },
+                    vec!["AAPL"],
                     "watchlist={watchlist}, replay={replay}"
                 );
                 app.switch_timeframe(Timeframe::Min1);
@@ -7405,7 +7414,7 @@ mod tests {
                     })
                     .drop_without_applying_deltas();
                 }
-                assert_eq!(app.alerts.log().len(), if watchlist { 3 } else { 1 });
+                assert_eq!(app.alerts.log().len(), if watchlist { 2 } else { 1 });
                 if watchlist && !replay {
                     let feed = LiveFeed::new("MSFT", app.live.now());
                     let bars = feed.snapshot(
@@ -7457,7 +7466,7 @@ mod tests {
                     })
                     .drop_without_applying_deltas();
                 }
-                assert_eq!(app.alerts.log().len(), if watchlist { 3 } else { 1 });
+                assert_eq!(app.alerts.log().len(), if watchlist { 2 } else { 1 });
                 app.switch_timeframe(Timeframe::Min1);
                 let replacement = app
                     .chart
@@ -7476,7 +7485,7 @@ mod tests {
                 }
                 assert_eq!(
                     app.alerts.log().len(),
-                    if watchlist { 4 } else { 2 },
+                    if watchlist { 3 } else { 2 },
                     "an edited alert must use its newly selected study"
                 );
                 let bars = LiveFeed::new("EURUSD", app.live.now()).snapshot(

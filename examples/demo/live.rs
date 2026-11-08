@@ -32,6 +32,23 @@ const CHURN_PER_TRADE: usize = 6;
 /// Driven by the UI timer on both native and web; there is no background worker.
 pub(super) struct LiveFeed(Mutex<Simulation>);
 
+/// Resampled bars for one view, without the empty bar of the current period.
+struct SnapshotCache {
+    symbol: String,
+    continuous: bool,
+    adjusted: bool,
+    dividend: Option<(DateTime<Utc>, f64)>,
+    timeframe: Timeframe,
+    extended: bool,
+    clock: BarClock,
+    history_len: usize,
+    history_tail: Option<Bar>,
+    trades_len: usize,
+    bars: Vec<Bar>,
+    /// Minute bars that fall in the last resampled bar, so the next trades only redo that tail.
+    tail_minutes: Vec<Bar>,
+}
+
 struct Simulation {
     symbol: String,
     tick_size: f64,
@@ -56,6 +73,9 @@ struct Simulation {
     metrics: Vec<MetricSubscription>,
     /// The order book of the subscription, around the last price it was shown.
     market: Option<Market>,
+    /// Bumped when [`LiveFeed::advance`] creates trades or crosses a second.
+    generation: u64,
+    snapshot_cache: Option<SnapshotCache>,
 }
 
 impl LiveFeed {
@@ -89,6 +109,8 @@ impl LiveFeed {
             options: Vec::new(),
             metrics: Vec::new(),
             market: None,
+            generation: 0,
+            snapshot_cache: None,
         };
         while sim.next_trade <= now {
             sim.trade();
@@ -125,7 +147,14 @@ impl LiveFeed {
             options: Vec::new(),
             metrics: Vec::new(),
             market: None,
+            generation: sim.generation,
+            snapshot_cache: None,
         }))
+    }
+
+    /// How many times [`advance`](Self::advance) has created trades or crossed a second.
+    pub(super) fn generation(&self) -> u64 {
+        self.state().generation
     }
 
     pub(super) fn view(&self, extended_hours: bool) -> (SessionType, bool) {
@@ -166,42 +195,8 @@ impl LiveFeed {
         clock: BarClock,
         extended_hours: bool,
     ) -> Vec<Bar> {
-        let sim = self.state();
-        let trades: Vec<_> = sim
-            .trades
-            .iter()
-            .filter_map(|trade| sim.shown_trade(trade, extended_hours))
-            .collect();
-        let mut bars = if timeframe.duration_ms() < 60_000 || timeframe.duration_ms() % 60_000 != 0
-        {
-            egui_charts::data::aggregate_trades_with_tick_size(
-                &trades,
-                clock.clone(),
-                Some(sim.tick_size),
-            )
-            .expect("generated executions")
-        } else {
-            let mut minutes = sim.shown_history(extended_hours);
-            minutes
-                .extend(aggregate_trades(&trades, Timeframe::Min1).expect("generated executions"));
-            resample(&minutes, Timeframe::Min1, clock.clone()).expect("nested minute history")
-        };
-        let open = clock.bar_open(sim.now);
-        if timeframe.duration_ms() > 0
-            && sim
-                .shown_trade(
-                    &Tick::new(sim.now, sim.price_ticks as f64 * sim.tick_size, 0.0, None),
-                    extended_hours,
-                )
-                .is_some()
-            && let Some(last) = bars.last()
-            && last.time < open
-        {
-            bars.push(Bar::new(
-                open, last.close, last.close, last.close, last.close, 0.0,
-            ));
-        }
-        bars
+        let mut sim = self.state();
+        sim.cached_snapshot(timeframe, clock, extended_hours)
     }
 
     /// The same synthetic metric history supplied through the feed contract.
@@ -371,6 +366,7 @@ impl LiveFeed {
         }
         let second_changed = sim.now.timestamp() != now.timestamp();
         sim.now = now;
+        let mut created_trades = false;
         if let Some(sub) = &sim.subscription {
             sub.sink.set_server_time(now);
         }
@@ -380,6 +376,10 @@ impl LiveFeed {
         }
         while sim.next_trade <= now {
             sim.trade();
+            created_trades = true;
+        }
+        if created_trades || second_changed {
+            sim.generation = sim.generation.wrapping_add(1);
         }
         if second_changed {
             sim.options.retain(|(_, sink)| sink.is_active());
@@ -407,6 +407,22 @@ impl LiveFeed {
             (1000 - now.timestamp_millis().rem_euclid(1000)) as u64,
         );
         to_trade.min(to_second)
+    }
+}
+
+/// Folds minute bars that share an open into one bar and appends the rest in order.
+fn merge_minutes(into: &mut Vec<Bar>, extra: Vec<Bar>) {
+    for bar in extra {
+        if let Some(last) = into.last_mut()
+            && last.time == bar.time
+        {
+            last.high = last.high.max(bar.high);
+            last.low = last.low.min(bar.low);
+            last.close = bar.close;
+            last.volume += bar.volume;
+        } else {
+            into.push(bar);
+        }
     }
 }
 
@@ -511,6 +527,169 @@ impl Quotes for DemoQuotes {
 }
 
 impl Simulation {
+    /// The bars `snapshot` would build, reusing the completed tail when only new trades arrived.
+    fn cached_snapshot(
+        &mut self,
+        timeframe: Timeframe,
+        clock: BarClock,
+        extended: bool,
+    ) -> Vec<Bar> {
+        let history_tail = self.history.last().cloned();
+        let history_len = self.history.len();
+        let trades_len = self.trades.len();
+        let reusable = self.snapshot_cache.as_ref().is_some_and(|cache| {
+            cache.symbol == self.symbol
+                && cache.continuous == self.continuous
+                && cache.adjusted == self.adjusted
+                && cache.dividend == self.dividend
+                && cache.timeframe == timeframe
+                && cache.extended == extended
+                && cache.clock == clock
+                && cache.history_len == history_len
+                && cache.history_tail == history_tail
+                && cache.trades_len <= trades_len
+        });
+        let minute_nested =
+            timeframe.duration_ms() >= 60_000 && timeframe.duration_ms() % 60_000 == 0;
+        let (bars, tail_minutes) = if reusable {
+            let (cached_bars, tail, from) = {
+                let cache = self.snapshot_cache.as_ref().unwrap();
+                if cache.trades_len == trades_len {
+                    return self.with_open_bar(cache.bars.clone(), &clock, extended, timeframe);
+                }
+                (
+                    cache.bars.clone(),
+                    cache.tail_minutes.clone(),
+                    cache.trades_len,
+                )
+            };
+            if minute_nested {
+                self.extend_snapshot(&cached_bars, &tail, from, &clock, extended)
+            } else {
+                self.rebuild_snapshot(timeframe, &clock, extended)
+            }
+        } else {
+            self.rebuild_snapshot(timeframe, &clock, extended)
+        };
+        self.snapshot_cache = Some(SnapshotCache {
+            symbol: self.symbol.clone(),
+            continuous: self.continuous,
+            adjusted: self.adjusted,
+            dividend: self.dividend,
+            timeframe,
+            extended,
+            clock: clock.clone(),
+            history_len,
+            history_tail,
+            trades_len,
+            bars: bars.clone(),
+            tail_minutes,
+        });
+        self.with_open_bar(bars, &clock, extended, timeframe)
+    }
+
+    fn rebuild_snapshot(
+        &self,
+        timeframe: Timeframe,
+        clock: &BarClock,
+        extended: bool,
+    ) -> (Vec<Bar>, Vec<Bar>) {
+        if timeframe.duration_ms() < 60_000 || timeframe.duration_ms() % 60_000 != 0 {
+            let trades = self.shown_trades(extended, 0);
+            let bars = egui_charts::data::aggregate_trades_with_tick_size(
+                &trades,
+                clock.clone(),
+                Some(self.tick_size),
+            )
+            .expect("generated executions");
+            return (bars, Vec::new());
+        }
+        let mut minutes = self.shown_history(extended);
+        minutes.extend(self.minute_trades(extended, 0));
+        let bars =
+            resample(&minutes, Timeframe::Min1, clock.clone()).expect("nested minute history");
+        let tail_minutes = match bars.last() {
+            Some(last) => minutes
+                .into_iter()
+                .filter(|minute| clock.bar_open(minute.time) == last.time)
+                .collect(),
+            None => Vec::new(),
+        };
+        (bars, tail_minutes)
+    }
+
+    fn extend_snapshot(
+        &self,
+        cached_bars: &[Bar],
+        tail_minutes: &[Bar],
+        trades_from: usize,
+        clock: &BarClock,
+        extended: bool,
+    ) -> (Vec<Bar>, Vec<Bar>) {
+        let mut tail = tail_minutes.to_vec();
+        merge_minutes(&mut tail, self.minute_trades(extended, trades_from));
+        let resampled =
+            resample(&tail, Timeframe::Min1, clock.clone()).expect("nested minute history");
+        let mut bars = cached_bars.to_vec();
+        if let Some(open) = cached_bars.last().map(|bar| bar.time)
+            && let Some(at) = bars.iter().position(|bar| bar.time == open)
+        {
+            bars.truncate(at);
+        }
+        bars.extend(resampled);
+        let tail_minutes = match bars.last() {
+            Some(last) => tail
+                .into_iter()
+                .filter(|minute| clock.bar_open(minute.time) == last.time)
+                .collect(),
+            None => Vec::new(),
+        };
+        (bars, tail_minutes)
+    }
+
+    fn shown_trades(&self, extended: bool, from: usize) -> Vec<Tick> {
+        self.trades
+            .iter()
+            .skip(from)
+            .filter_map(|trade| self.shown_trade(trade, extended))
+            .collect()
+    }
+
+    fn minute_trades(&self, extended: bool, from: usize) -> Vec<Bar> {
+        aggregate_trades(&self.shown_trades(extended, from), Timeframe::Min1)
+            .expect("generated executions")
+    }
+
+    fn with_open_bar(
+        &self,
+        mut bars: Vec<Bar>,
+        clock: &BarClock,
+        extended: bool,
+        timeframe: Timeframe,
+    ) -> Vec<Bar> {
+        let open = clock.bar_open(self.now);
+        if timeframe.duration_ms() > 0
+            && self
+                .shown_trade(
+                    &Tick::new(
+                        self.now,
+                        self.price_ticks as f64 * self.tick_size,
+                        0.0,
+                        None,
+                    ),
+                    extended,
+                )
+                .is_some()
+            && let Some(last) = bars.last()
+            && last.time < open
+        {
+            bars.push(Bar::new(
+                open, last.close, last.close, last.close, last.close, 0.0,
+            ));
+        }
+        bars
+    }
+
     fn options_volume(&self, query: &OptionsVolumeQuery) -> Vec<OptionsVolume> {
         if query.symbol != self.symbol || query.expiries.is_empty() {
             return Vec::new();
@@ -1594,5 +1773,40 @@ mod tests {
         let next_minute = after + TimeDelta::minutes(1);
         assert!(frame(&mut panel, next_minute) < Duration::MAX);
         assert_eq!(panel.quote("SPX"), live.quote(next_minute).as_ref());
+    }
+
+    #[test]
+    fn incremental_snapshots_match_a_full_rebuild() {
+        let start = "2026-06-01T14:30:00Z".parse().unwrap();
+        for symbol in ["BTCUSDT", "AAPL"] {
+            for timeframe in [Timeframe::Min1, Timeframe::Hour1, Timeframe::Day1] {
+                for extended in [false, true] {
+                    let feed = LiveFeed::new(symbol, start);
+                    if DemoSymbol::has_hours(symbol) {
+                        feed.set_view(
+                            if extended {
+                                SessionType::ETH
+                            } else {
+                                SessionType::RTH
+                            },
+                            false,
+                        );
+                    }
+                    let mut now = start;
+                    for step in 0..30 {
+                        now += TimeDelta::milliseconds(2_500);
+                        feed.advance(now);
+                        let clock = BarClock::new(timeframe);
+                        let cached = feed.snapshot(timeframe, clock.clone(), extended);
+                        let fresh = feed.fork();
+                        let rebuilt = fresh.snapshot(timeframe, clock, extended);
+                        assert_eq!(
+                            cached, rebuilt,
+                            "{symbol} {timeframe:?} extended={extended} step={step}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

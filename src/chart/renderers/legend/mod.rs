@@ -55,8 +55,6 @@ pub enum StudyAction {
         /// Screen position of the menu's corner.
         pos: Pos2,
     },
-    /// Ask the host to save an alert on the study's current value.
-    AddAlert(usize),
 }
 
 /// An action the host can apply to the main series (settings, visibility, remove).
@@ -127,8 +125,6 @@ pub struct Legend<'a> {
     pub(crate) quantity: Option<f64>,
     /// The host can move a study from its legend button.
     pub(crate) study_moves: bool,
-    /// The host accepts an alert from the legend button.
-    pub(crate) study_alerts: bool,
 }
 
 impl<'a> Legend<'a> {
@@ -161,7 +157,6 @@ impl<'a> Legend<'a> {
             study_backdrop: 0.92,
             quantity: None,
             study_moves: false,
-            study_alerts: false,
         }
     }
 
@@ -573,15 +568,7 @@ impl<'a> Legend<'a> {
                     Pos2::new(text_right, text_end.y + layout.height),
                 )
                 .intersect(bounds);
-                let alert = self.study_alerts
-                    && (0..study.line_count()).any(|line| {
-                        study.plot_style(line).visible
-                            && study
-                                .plot_value(line, self.bar_index)
-                                .is_some_and(|value| value.is_finite())
-                    });
-                let button_count =
-                    3 + usize::from(self.study_moves) + usize::from(alert);
+                let button_count = 3 + usize::from(self.study_moves);
                 let control_size = Vec2::new(
                     (button_count * 18 + button_count.saturating_sub(1) * 6) as f32,
                     layout.height,
@@ -609,14 +596,13 @@ impl<'a> Legend<'a> {
                 } else {
                     text_row
                 };
-                let (responses, move_to, alert_button, menu) = study_controls(
+                let (responses, move_to, menu) = study_controls(
                     ui,
                     row,
                     controls,
                     study_id,
                     study.is_visible(),
                     self.study_moves,
-                    alert,
                 );
                 for (response, intent) in responses.iter().zip([
                     StudyAction::ToggleVisibility(index),
@@ -634,9 +620,6 @@ impl<'a> Legend<'a> {
                         index,
                         pos: response.rect.left_bottom(),
                     });
-                }
-                if alert_button.is_some_and(|response| response.clicked()) {
-                    study_settings = Some(StudyAction::AddAlert(index));
                 }
                 if let Some(pos) = menu {
                     study_settings = Some(StudyAction::Menu { index, pos });
@@ -848,8 +831,7 @@ pub(crate) fn study_controls(
     id: egui::Id,
     visible: bool,
     moves: bool,
-    alerts: bool,
-) -> ([Response; 3], Option<Response>, Option<Response>, Option<Pos2>) {
+) -> ([Response; 3], Option<Response>, Option<Pos2>) {
     let theme = ui.active_theme();
     let touch = legend_touch(ui);
     let row_response = ui.interact(row, id.with("row"), Sense::click());
@@ -898,14 +880,10 @@ pub(crate) fn study_controls(
     if moves {
         kinds.push(2);
     }
-    if alerts {
-        kinds.push(3);
-    }
     kinds.push(4);
     let mut hide = None;
     let mut settings = None;
     let mut move_to = None;
-    let mut alert = None;
     let mut remove = None;
     for (slot, kind) in kinds.iter().copied().enumerate() {
         let rect = Rect::from_min_size(
@@ -923,7 +901,6 @@ pub(crate) fn study_controls(
                 0 => "Show",
                 1 => "Settings",
                 2 => "Move to pane",
-                3 => "Add alert",
                 _ => "Remove",
             },
         );
@@ -941,7 +918,6 @@ pub(crate) fn study_controls(
                 0 => hide = Some(response),
                 1 => settings = Some(response),
                 2 => move_to = Some(response),
-                3 => alert = Some(response),
                 _ => remove = Some(response),
             }
             continue;
@@ -960,7 +936,6 @@ pub(crate) fn study_controls(
                 0 => &crate::icons::icons::EYE_HIDE,
                 1 => &crate::icons::icons::SETTINGS,
                 2 => &crate::icons::icons::MOVE_PANE,
-                3 => &crate::icons::icons::ALERT_ADD,
                 _ => &crate::icons::icons::TRASH,
             };
             let tint = if response.hovered() {
@@ -968,10 +943,8 @@ pub(crate) fn study_controls(
             } else {
                 theme.ui.text_secondary
             };
-            icon.as_image_tinted(Vec2::splat(16.0), tint).paint_at(
-                ui,
-                Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
-            );
+            icon.as_image_tinted(Vec2::splat(16.0), tint)
+                .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
         }
         #[cfg(not(feature = "icons"))]
         ui.painter().text(
@@ -982,7 +955,6 @@ pub(crate) fn study_controls(
                 0 => "+",
                 1 => "*",
                 2 => "M",
-                3 => "A",
                 _ => "×",
             },
             FontId::proportional(14.0),
@@ -992,7 +964,6 @@ pub(crate) fn study_controls(
             0 => hide = Some(response),
             1 => settings = Some(response),
             2 => move_to = Some(response),
-            3 => alert = Some(response),
             _ => remove = Some(response),
         }
     }
@@ -1007,7 +978,6 @@ pub(crate) fn study_controls(
     (
         [hide.unwrap(), settings.unwrap(), remove.unwrap()],
         move_to,
-        alert,
         menu,
     )
 }
@@ -1380,13 +1350,12 @@ mod tests {
                         ..Default::default()
                     },
                     |ui| {
-                        let (buttons, _, _, opened) = study_controls(
+                        let (buttons, _, opened) = study_controls(
                             ui,
                             row,
                             controls,
                             egui::Id::unique("study"),
                             true,
-                            false,
                             false,
                         );
                         clicked = buttons.map(|response| response.clicked());

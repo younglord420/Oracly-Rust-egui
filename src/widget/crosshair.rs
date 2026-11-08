@@ -109,7 +109,6 @@ impl Chart {
             StudyAction::Settings(index)
             | StudyAction::ToggleVisibility(index)
             | StudyAction::Remove(index)
-            | StudyAction::AddAlert(index)
             | StudyAction::Menu { index, .. }
             | StudyAction::Move { index, .. } => index,
         };
@@ -139,10 +138,6 @@ impl Chart {
             self.study_menu_request = Some(super::StudyMenuRequest::Move { id, pos });
             return;
         }
-        if let StudyAction::AddAlert(_) = action {
-            self.study_menu_request = Some(super::StudyMenuRequest::Alert { id, bar: bar_idx });
-            return;
-        }
         self.user_action(|chart| match action {
             StudyAction::Settings(_) => chart.indicator_settings_request = Some(id),
             StudyAction::ToggleVisibility(_) => {
@@ -151,7 +146,7 @@ impl Chart {
             StudyAction::Remove(_) => {
                 chart.remove_series(id);
             }
-            StudyAction::Menu { .. } | StudyAction::Move { .. } | StudyAction::AddAlert(_) => {}
+            StudyAction::Menu { .. } | StudyAction::Move { .. } => {}
         });
     }
 }
