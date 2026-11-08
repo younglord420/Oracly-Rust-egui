@@ -110,7 +110,8 @@ impl Chart {
             | StudyAction::ToggleVisibility(index)
             | StudyAction::Remove(index)
             | StudyAction::Menu { index, .. }
-            | StudyAction::Move { index, .. } => index,
+            | StudyAction::Move { index, .. }
+            | StudyAction::AddAlert(index) => index,
         };
         let Some(id) = self.study_ids.get(index).copied() else {
             return;
@@ -138,6 +139,10 @@ impl Chart {
             self.study_menu_request = Some(super::StudyMenuRequest::Move { id, pos });
             return;
         }
+        if let StudyAction::AddAlert(_) = action {
+            self.study_menu_request = Some(super::StudyMenuRequest::Alert { id, bar: bar_idx });
+            return;
+        }
         self.user_action(|chart| match action {
             StudyAction::Settings(_) => chart.indicator_settings_request = Some(id),
             StudyAction::ToggleVisibility(_) => {
@@ -146,7 +151,7 @@ impl Chart {
             StudyAction::Remove(_) => {
                 chart.remove_series(id);
             }
-            StudyAction::Menu { .. } | StudyAction::Move { .. } => {}
+            StudyAction::Menu { .. } | StudyAction::Move { .. } | StudyAction::AddAlert(_) => {}
         });
     }
 }

@@ -290,6 +290,8 @@ pub struct PaneInteraction {
     pub settings_response: Option<Response>,
     /// Move button response, when the host can move the study.
     pub move_response: Option<Response>,
+    /// Alert button response, when the host accepts an alert and the study has a value.
+    pub alert_response: Option<Response>,
     /// Corner of the study menu, when the legend's row was secondary-clicked this frame.
     pub menu: Option<Pos2>,
 }
@@ -320,6 +322,8 @@ pub struct IndicatorPane {
     /// When true, the host paints the chart surface; the pane skips its solid fill.
     pub(super) skip_background: bool,
     pub(super) legend_moves: bool,
+    pub(super) legend_alerts: bool,
+    pub(super) legend_more: bool,
 }
 
 impl IndicatorPane {
@@ -344,6 +348,8 @@ impl IndicatorPane {
             legend_backdrop: 0.92,
             skip_background: false,
             legend_moves: false,
+            legend_alerts: false,
+            legend_more: false,
         }
     }
 
@@ -870,15 +876,37 @@ impl IndicatorPane {
                 response.id.with("study_controls"),
                 indicator.is_visible(),
                 self.legend_moves,
+                self.legend_alerts
+                    && indicator.is_visible()
+                    && self.bar_index.is_some_and(|bar| {
+                        (0..indicator.line_count()).any(|line| {
+                            indicator.plot_style(line).visible
+                                && indicator
+                                    .plot_value(line, bar)
+                                    .is_some_and(|value| value.is_finite())
+                        })
+                    }),
+                self.legend_more,
             )
         });
-        let (visibility_response, settings_response, close_response, move_response, menu) =
-            match responses {
-                Some(([visibility, settings, close], move_to, menu)) => {
-                    (Some(visibility), Some(settings), Some(close), move_to, menu)
-                }
-                None => (None, None, None, None, None),
-            };
+        let (
+            visibility_response,
+            settings_response,
+            close_response,
+            move_response,
+            alert_response,
+            menu,
+        ) = match responses {
+            Some(([visibility, settings, close], move_to, alert, menu)) => (
+                Some(visibility),
+                Some(settings),
+                Some(close),
+                move_to,
+                alert,
+                menu,
+            ),
+            None => (None, None, None, None, None, None),
+        };
 
         // Return panel info for hit testing
         Some(PaneInteraction {
@@ -891,6 +919,7 @@ impl IndicatorPane {
             visibility_response,
             settings_response,
             move_response,
+            alert_response,
             menu,
         })
     }
@@ -1548,7 +1577,18 @@ impl IndicatorPane {
             f32::INFINITY,
             status.as_deref(),
         ));
-        let buttons = 3 + usize::from(self.legend_moves);
+        let alert = self.legend_alerts
+            && indicator.is_visible()
+            && self.bar_index.is_some_and(|bar| {
+                (0..indicator.line_count()).any(|line| {
+                    indicator.plot_style(line).visible
+                        && indicator
+                            .plot_value(line, bar)
+                            .is_some_and(|value| value.is_finite())
+                })
+            });
+        let buttons =
+            3 + usize::from(self.legend_moves) + usize::from(alert) + usize::from(self.legend_more);
         let controls_w = (buttons * 18 + buttons.saturating_sub(1) * 6) as f32;
         let x = (rect.left() + theme.spacing.sm + galley.size().x + theme.spacing.md)
             .min(

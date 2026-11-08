@@ -55,6 +55,8 @@ pub enum StudyAction {
         /// Screen position of the menu's corner.
         pos: Pos2,
     },
+    /// Ask the host to open a prefilled alert for the study's current value.
+    AddAlert(usize),
 }
 
 /// An action the host can apply to the main series (settings, visibility, remove).
@@ -125,6 +127,10 @@ pub struct Legend<'a> {
     pub(crate) quantity: Option<f64>,
     /// The host can move a study from its legend button.
     pub(crate) study_moves: bool,
+    /// The host accepts an alert from the legend button.
+    pub(crate) study_alerts: bool,
+    /// The row shows the more-actions button.
+    pub(crate) study_more: bool,
 }
 
 impl<'a> Legend<'a> {
@@ -157,6 +163,8 @@ impl<'a> Legend<'a> {
             study_backdrop: 0.92,
             quantity: None,
             study_moves: false,
+            study_alerts: false,
+            study_more: false,
         }
     }
 
@@ -568,7 +576,18 @@ impl<'a> Legend<'a> {
                     Pos2::new(text_right, text_end.y + layout.height),
                 )
                 .intersect(bounds);
-                let button_count = 3 + usize::from(self.study_moves);
+                let alert = self.study_alerts
+                    && study.is_visible()
+                    && (0..study.line_count()).any(|line| {
+                        study.plot_style(line).visible
+                            && study
+                                .plot_value(line, self.bar_index)
+                                .is_some_and(|value| value.is_finite())
+                    });
+                let button_count = 3
+                    + usize::from(self.study_moves)
+                    + usize::from(alert)
+                    + usize::from(self.study_more);
                 let control_size = Vec2::new(
                     (button_count * 18 + button_count.saturating_sub(1) * 6) as f32,
                     layout.height,
@@ -588,6 +607,10 @@ impl<'a> Legend<'a> {
                 let revealed = legend_row_revealed(ui, text_row.union(slot), study_id);
                 let controls = if revealed {
                     layout.reserve_space(control_size).intersect(bounds)
+                } else if !study.is_visible() {
+                    layout
+                        .reserve_space(Vec2::new(18.0, layout.height))
+                        .intersect(bounds)
                 } else {
                     Rect::from_min_size(text_end, Vec2::ZERO)
                 };
@@ -596,13 +619,15 @@ impl<'a> Legend<'a> {
                 } else {
                     text_row
                 };
-                let (responses, move_to, menu) = study_controls(
+                let (responses, move_to, alert_button, menu) = study_controls(
                     ui,
                     row,
                     controls,
                     study_id,
                     study.is_visible(),
                     self.study_moves,
+                    alert,
+                    self.study_more,
                 );
                 for (response, intent) in responses.iter().zip([
                     StudyAction::ToggleVisibility(index),
@@ -620,6 +645,9 @@ impl<'a> Legend<'a> {
                         index,
                         pos: response.rect.left_bottom(),
                     });
+                }
+                if alert_button.is_some_and(|response| response.clicked()) {
+                    study_settings = Some(StudyAction::AddAlert(index));
                 }
                 if let Some(pos) = menu {
                     study_settings = Some(StudyAction::Menu { index, pos });
@@ -816,7 +844,7 @@ fn legend_row_revealed(ui: &Ui, row: Rect, id: egui::Id) -> bool {
         .data(|data| data.get_temp::<bool>(id).unwrap_or(false));
     let focused = ui.memory(|memory| {
         memory.has_focus(id.with("row"))
-            || (0..4_usize).any(|index| memory.has_focus(id.with(index)))
+            || (0..6_usize).any(|index| memory.has_focus(id.with(index)))
     });
     let hovered = !touch
         && ui.input(|input| input.pointer.hover_pos().is_some())
@@ -831,14 +859,21 @@ pub(crate) fn study_controls(
     id: egui::Id,
     visible: bool,
     moves: bool,
-) -> ([Response; 3], Option<Response>, Option<Pos2>) {
+    alerts: bool,
+    more: bool,
+) -> (
+    [Response; 3],
+    Option<Response>,
+    Option<Response>,
+    Option<Pos2>,
+) {
     let theme = ui.active_theme();
     let touch = legend_touch(ui);
     let row_response = ui.interact(row, id.with("row"), Sense::click());
     let controls_label = l10n::text(ui.ctx(), "Study controls");
     row_response
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &controls_label));
-    let menu = row_response
+    let mut menu = row_response
         .secondary_clicked()
         .then(|| row_response.interact_pointer_pos())
         .flatten();
@@ -857,7 +892,7 @@ pub(crate) fn study_controls(
     // Keep controls focusable while Tab transfers focus from their row.
     let focused = row_response.has_focus()
         || row_response.lost_focus()
-        || (0..5_usize).any(|index| ui.memory(|memory| memory.has_focus(id.with(index))));
+        || (0..6_usize).any(|index| ui.memory(|memory| memory.has_focus(id.with(index))));
     let hovered = !touch
         && ui.input(|input| input.pointer.hover_pos().is_some())
         && ui.rect_contains_pointer(row);
@@ -880,10 +915,17 @@ pub(crate) fn study_controls(
     if moves {
         kinds.push(2);
     }
+    if alerts {
+        kinds.push(3);
+    }
     kinds.push(4);
+    if more {
+        kinds.push(5);
+    }
     let mut hide = None;
     let mut settings = None;
     let mut move_to = None;
+    let mut alert = None;
     let mut remove = None;
     for (slot, kind) in kinds.iter().copied().enumerate() {
         let rect = Rect::from_min_size(
@@ -901,7 +943,9 @@ pub(crate) fn study_controls(
                 0 => "Show",
                 1 => "Settings",
                 2 => "Move to pane",
-                _ => "Remove",
+                3 => "Add alert",
+                4 => "Remove",
+                _ => "More actions",
             },
         );
         let response = ui.interact(
@@ -918,7 +962,9 @@ pub(crate) fn study_controls(
                 0 => hide = Some(response),
                 1 => settings = Some(response),
                 2 => move_to = Some(response),
-                _ => remove = Some(response),
+                3 => alert = Some(response),
+                4 => remove = Some(response),
+                _ => {}
             }
             continue;
         }
@@ -936,7 +982,9 @@ pub(crate) fn study_controls(
                 0 => &crate::icons::icons::EYE_HIDE,
                 1 => &crate::icons::icons::SETTINGS,
                 2 => &crate::icons::icons::MOVE_PANE,
-                _ => &crate::icons::icons::TRASH,
+                3 => &crate::icons::icons::ALERT_ADD,
+                4 => &crate::icons::icons::TRASH,
+                _ => &crate::icons::icons::UI_MORE_HORIZONTAL,
             };
             let tint = if response.hovered() {
                 theme.ui.text
@@ -955,7 +1003,9 @@ pub(crate) fn study_controls(
                 0 => "+",
                 1 => "*",
                 2 => "M",
-                _ => "×",
+                3 => "A",
+                4 => "×",
+                _ => "•••",
             },
             FontId::proportional(14.0),
             theme.ui.text_secondary,
@@ -964,7 +1014,13 @@ pub(crate) fn study_controls(
             0 => hide = Some(response),
             1 => settings = Some(response),
             2 => move_to = Some(response),
-            _ => remove = Some(response),
+            3 => alert = Some(response),
+            4 => remove = Some(response),
+            _ => {
+                if response.clicked() {
+                    menu = Some(rect.left_bottom());
+                }
+            }
         }
     }
     if revealed {
@@ -978,6 +1034,7 @@ pub(crate) fn study_controls(
     (
         [hide.unwrap(), settings.unwrap(), remove.unwrap()],
         move_to,
+        alert,
         menu,
     )
 }
@@ -1339,7 +1396,7 @@ mod tests {
             // A translator that changes every key must reach the control labels.
             l10n::set_translator(&ctx, |english| Some(format!("{english}!")));
             let row = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(220.0, 20.0));
-            let controls = Rect::from_min_size(Pos2::new(150.0, 10.0), Vec2::new(80.0, 20.0));
+            let controls = Rect::from_min_size(Pos2::new(150.0, 10.0), Vec2::new(96.0, 20.0));
             let settings = controls.min + Vec2::new(33.0, 10.0);
             let frame = |events| {
                 let mut clicked = [false; 3];
@@ -1350,13 +1407,15 @@ mod tests {
                         ..Default::default()
                     },
                     |ui| {
-                        let (buttons, _, opened) = study_controls(
+                        let (buttons, _, _, opened) = study_controls(
                             ui,
                             row,
                             controls,
                             egui::Id::unique("study"),
                             true,
                             false,
+                            false,
+                            true,
                         );
                         clicked = buttons.map(|response| response.clicked());
                         menu = opened;
@@ -1442,9 +1501,15 @@ mod tests {
                 assert_eq!(clicked.3, (!pressed).then_some(pos));
             }
             assert!(!frame(vec![Event::PointerGone]).0);
-            for (index, label) in ["Study controls", "Hide", "Settings", "Remove"]
-                .into_iter()
-                .enumerate()
+            for (index, label) in [
+                "Study controls",
+                "Hide",
+                "Settings",
+                "Remove",
+                "More actions",
+            ]
+            .into_iter()
+            .enumerate()
             {
                 let focused = frame(vec![Event::Key {
                     key: Key::Tab,
@@ -1467,7 +1532,8 @@ mod tests {
                     activated.1,
                     std::array::from_fn(|button| index == button + 1)
                 );
-                assert!(activated.3.is_none());
+                let more = Pos2::new(controls.min.x + 3.0 * 24.0, controls.max.y);
+                assert_eq!(activated.3, (index == 4).then_some(more));
             }
 
             // A wrapped row is selectable over its text, even when the controls wrap below it.
@@ -1752,5 +1818,187 @@ mod tests {
         assert!(!is_live_dot_status("D"));
         assert_eq!(live_dot_hint("LIVE"), Some("Live data"));
         assert_eq!(live_dot_hint("SIM"), Some("Simulated data"));
+    }
+
+    #[test]
+    fn legend_shows_bell_and_more_actions() {
+        let labels_for = |moves, alerts, more| -> Vec<String> {
+            let ctx = Context::default();
+            crate::theme::apply_to_egui(&ctx, &crate::theme::Theme::dark());
+            let row = Rect::from_min_size(Pos2::new(8.0, 8.0), Vec2::new(420.0, 24.0));
+            let count = 3 + usize::from(moves) + usize::from(alerts) + usize::from(more);
+            let width = (count * 18 + count.saturating_sub(1) * 6) as f32;
+            let controls = Rect::from_min_size(Pos2::new(8.0, 8.0), Vec2::new(width, 24.0));
+            let frame = |events| {
+                let output = ctx.run_ui(
+                    egui::RawInput {
+                        events,
+                        ..Default::default()
+                    },
+                    |ui| {
+                        study_controls(
+                            ui,
+                            row,
+                            controls,
+                            egui::Id::unique("legend-buttons"),
+                            true,
+                            moves,
+                            alerts,
+                            more,
+                        );
+                    },
+                );
+                let label = output.platform_output.events.iter().find_map(|event| {
+                    if let egui::output::OutputEvent::FocusGained(info) = event {
+                        info.label.clone()
+                    } else {
+                        None
+                    }
+                });
+                output.drop_without_applying_deltas();
+                label
+            };
+            frame(vec![Event::PointerMoved(row.center())]);
+            let mut labels = Vec::new();
+            for _ in 0..8 {
+                let Some(label) = frame(vec![Event::Key {
+                    key: Key::Tab,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: Default::default(),
+                }]) else {
+                    break;
+                };
+                labels.push(label);
+            }
+            assert_eq!(
+                controls.width(),
+                width,
+                "the capsule is n buttons of 18 with a 6 gap"
+            );
+            labels
+        };
+        assert_eq!(
+            labels_for(true, true, true),
+            [
+                "Study controls",
+                "Hide",
+                "Settings",
+                "Move to pane",
+                "Add alert",
+                "Remove",
+                "More actions",
+            ]
+        );
+        assert_eq!(
+            labels_for(true, false, true),
+            [
+                "Study controls",
+                "Hide",
+                "Settings",
+                "Move to pane",
+                "Remove",
+                "More actions",
+            ]
+        );
+    }
+
+    #[test]
+    fn hidden_study_keeps_a_clickable_eye_and_no_bell() {
+        let ctx = Context::default();
+        crate::theme::apply_to_egui(&ctx, &crate::theme::Theme::dark());
+        let start = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let bars: Vec<Bar> = (0..4)
+            .map(|index| {
+                let price = 10.0 + index as f64;
+                Bar::new(
+                    start + chrono::TimeDelta::minutes(index),
+                    price,
+                    price,
+                    price,
+                    price,
+                    1.0,
+                )
+            })
+            .collect();
+        let mut study = crate::studies::SMA::new(2);
+        study.update_data(&bars, 0, &[]);
+        assert!(
+            study
+                .plot_value(0, 3)
+                .is_some_and(|value| value.is_finite())
+        );
+        study.set_visible(false);
+        let studies: Vec<Box<dyn Indicator>> = vec![Box::new(study)];
+        let bar = bars.last().unwrap();
+        let mut clicked = false;
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let mut legend = Legend::new("SAMPLE", "1m", bar);
+            legend.studies = &studies;
+            legend.bar_index = 3;
+            legend.study_alerts = true;
+            legend.study_more = true;
+            legend.show_ohlc = false;
+            legend.show_volume = false;
+            legend.show_change = false;
+            legend.show_change_percent = false;
+            let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(480.0, 200.0));
+            let _ = legend.show_with_study_actions(ui, plot);
+        });
+        let eye = output.shapes.iter().find_map(|shape| match &shape.shape {
+            Shape::Text(text) if text.galley.text() == "SMA" => Some(text.pos),
+            _ => None,
+        });
+        output.drop_without_applying_deltas();
+        let eye = eye.expect("hidden study keeps its title");
+        let mut click = |pressed| {
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    events: vec![
+                        Event::PointerMoved(eye + Vec2::new(40.0, 4.0)),
+                        Event::PointerButton {
+                            pos: eye + Vec2::new(40.0, 4.0),
+                            button: PointerButton::Primary,
+                            pressed,
+                            modifiers: Default::default(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                |ui| {
+                    let mut legend = Legend::new("SAMPLE", "1m", bar);
+                    legend.studies = &studies;
+                    legend.bar_index = 3;
+                    legend.study_alerts = true;
+                    legend.study_more = true;
+                    legend.show_ohlc = false;
+                    legend.show_volume = false;
+                    legend.show_change = false;
+                    legend.show_change_percent = false;
+                    if let Some(StudyAction::ToggleVisibility(_)) = legend
+                        .show_with_study_actions(
+                            ui,
+                            Rect::from_min_size(Pos2::ZERO, Vec2::new(480.0, 200.0)),
+                        )
+                        .1
+                    {
+                        clicked = true;
+                    }
+                },
+            );
+            let bell = output.shapes.iter().any(|shape| match &shape.shape {
+                Shape::Text(text) => text.galley.text() == "Add alert",
+                _ => false,
+            });
+            output.drop_without_applying_deltas();
+            bell
+        };
+        assert!(!click(true), "a hidden study offers no alert button");
+        assert!(!click(false));
+        assert!(
+            clicked,
+            "the eye of a hidden study is clickable without a prior hover"
+        );
     }
 }

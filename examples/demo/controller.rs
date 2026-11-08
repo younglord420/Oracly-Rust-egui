@@ -3241,7 +3241,12 @@ impl DemoApp {
         action: StudyContextMenuAction,
     ) {
         match action {
-            StudyContextMenuAction::AddAlert(alert) => self.alerts.save(*alert),
+            StudyContextMenuAction::AddAlert(alert) => {
+                let mut alert = *alert;
+                alert.timeframe = Some(self.state.timeframe);
+                self.list_alert_sources();
+                self.alert_dialog.edit(alert);
+            }
             StudyContextMenuAction::AddIndicator => {
                 let source = self
                     .chart
@@ -7645,5 +7650,157 @@ mod tests {
         app.edit_drawing_label(7);
         assert!(!app.drawing_props.is_open);
         assert!(app.chart.drawings().is_editing_text());
+    }
+
+    #[test]
+    fn study_alerts_open_the_create_dialog() {
+        use egui::{Event, PointerButton, Shape};
+        use egui_charts::model::{Alert, AlertCondition, AlertSource};
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+        let study = app
+            .chart
+            .add_indicator(Box::new(egui_charts::studies::SMA::new(2)));
+        let mut alert = Alert::new(app.chart.symbol(), AlertCondition::Crossing(12.5));
+        alert.source = AlertSource::Study {
+            id: study.0.to_string(),
+            output: 0,
+        };
+        let before = app.alerts.alerts().len();
+        app.handle_study_context(
+            &ctx,
+            study,
+            StudyContextMenuAction::AddAlert(Box::new(alert)),
+        );
+        assert!(app.alert_dialog.is_open);
+        assert_eq!(app.alert_dialog.alert.timeframe, Some(app.state.timeframe));
+        assert_eq!(
+            app.alert_dialog.alert.condition,
+            AlertCondition::Crossing(12.5)
+        );
+        assert!(matches!(
+            app.alert_dialog.alert.source,
+            AlertSource::Study { .. }
+        ));
+        assert!(app.alert_dialog.sources.iter().any(|(source, _)| {
+            matches!(source, AlertSource::Study { id, .. } if id == &study.0.to_string())
+        }));
+        assert_eq!(app.alerts.alerts().len(), before);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(960.0, 800.0));
+        let show = |app: &mut DemoApp, events| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ui| app.show_dialogs(ui.ctx()),
+            )
+        };
+        let texts = |output: &egui::FullOutput| {
+            fn walk(shape: &Shape, out: &mut Vec<(egui::Pos2, String)>) {
+                match shape {
+                    Shape::Text(text) => out.push((
+                        text.pos + text.galley.size() / 2.0,
+                        text.galley.text().to_string(),
+                    )),
+                    Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, out)),
+                    _ => {}
+                }
+            }
+            let mut found = Vec::new();
+            for shape in &output.shapes {
+                walk(&shape.shape, &mut found);
+            }
+            found
+        };
+        let mut labels = Vec::new();
+        for _ in 0..2 {
+            let output = show(&mut app, vec![]);
+            labels = texts(&output);
+            output.drop_without_applying_deltas();
+        }
+        let at = |label: &str| {
+            labels
+                .iter()
+                .rev()
+                .find(|(_, text)| text == label)
+                .map(|(pos, _)| *pos)
+                .unwrap_or_else(|| panic!("missing {label} in {labels:?}"))
+        };
+        let _title = at("Create Alert");
+        let save = at("Save alert");
+        show(&mut app, vec![Event::PointerMoved(save)]).drop_without_applying_deltas();
+        show(
+            &mut app,
+            vec![Event::PointerButton {
+                pos: save,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        )
+        .drop_without_applying_deltas();
+        show(
+            &mut app,
+            vec![Event::PointerButton {
+                pos: save,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        )
+        .drop_without_applying_deltas();
+        app.alerts.poll(&ctx, &mut app.toasts);
+        assert!(!app.alert_dialog.is_open, "saving closes the dialog");
+        assert_eq!(app.alerts.alerts().len(), before + 1);
+
+        let mut again = Alert::new(app.chart.symbol(), AlertCondition::Crossing(12.5));
+        again.source = AlertSource::Study {
+            id: study.0.to_string(),
+            output: 0,
+        };
+        app.handle_study_context(
+            &ctx,
+            study,
+            StudyContextMenuAction::AddAlert(Box::new(again)),
+        );
+        let mut labels = Vec::new();
+        for _ in 0..2 {
+            let output = show(&mut app, vec![]);
+            labels = texts(&output);
+            output.drop_without_applying_deltas();
+        }
+        let cancel = labels
+            .iter()
+            .rev()
+            .find(|(_, text)| text == "Cancel")
+            .map(|(pos, _)| *pos)
+            .unwrap_or_else(|| panic!("missing cancel in {labels:?}"));
+        show(&mut app, vec![Event::PointerMoved(cancel)]).drop_without_applying_deltas();
+        show(
+            &mut app,
+            vec![Event::PointerButton {
+                pos: cancel,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        )
+        .drop_without_applying_deltas();
+        show(
+            &mut app,
+            vec![Event::PointerButton {
+                pos: cancel,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        )
+        .drop_without_applying_deltas();
+        app.alerts.poll(&ctx, &mut app.toasts);
+        assert!(!app.alert_dialog.is_open);
+        assert_eq!(app.alerts.alerts().len(), before + 1);
     }
 }

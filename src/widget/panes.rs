@@ -622,6 +622,8 @@ impl Chart {
 
                 panel.legend_offset = member_row as f32 * legend_row_height;
                 panel.legend_moves = self.legend_menus.moves;
+                panel.legend_alerts = self.legend_menus.alerts && !self.symbol.is_empty();
+                panel.legend_more = self.legend_menus.more;
                 panel.pane_controls = true;
                 // Parent already filled the shared stack surface.
                 panel.skip_background = true;
@@ -766,6 +768,7 @@ impl Chart {
                         visibility_response,
                         settings_response,
                         move_response,
+                        alert_response,
                         menu,
                     } = interaction;
 
@@ -780,10 +783,12 @@ impl Chart {
                         visibility_response.as_ref().is_some_and(|r| r.clicked());
                     let settings_clicked = settings_response.as_ref().is_some_and(|r| r.clicked());
                     let move_clicked = move_response.as_ref().is_some_and(|r| r.clicked());
+                    let alert_clicked = alert_response.as_ref().is_some_and(|r| r.clicked());
                     let control_clicked = close_clicked
                         || visibility_clicked
                         || settings_clicked
                         || move_clicked
+                        || alert_clicked
                         || menu.is_some();
                     use crate::chart::renderers::StudyAction;
                     match (study, id) {
@@ -804,6 +809,9 @@ impl Chart {
                                     .map(|response| response.rect.left_bottom())
                                     .unwrap_or(Pos2::ZERO),
                             });
+                        }
+                        (Some(idx), _) if alert_clicked => {
+                            pending_indicator_action = Some(StudyAction::AddAlert(idx));
                         }
                         (Some(idx), _) if menu.is_some() => {
                             pending_indicator_action = Some(StudyAction::Menu {

@@ -463,9 +463,12 @@ pub(super) fn watchlist_quote(symbol: &str, now: DateTime<Utc>) -> Option<Quote>
 /// other catalog symbols. The quotes follow the feed's simulation clock, which the pause freezes.
 /// The demo has no background worker, so the controller publishes once per frame. Repeating a
 /// quote only wakes the UI, so it is pushed again only when a displayed value changes.
+/// One watchlist quote subscription and the symbols it asked for.
+type QuoteStream = Mutex<Option<(Vec<String>, Events<(String, Quote)>)>>;
+
 pub(super) struct DemoQuotes {
     live: Arc<LiveFeed>,
-    stream: Mutex<Option<(Vec<String>, Events<(String, Quote)>)>>,
+    stream: QuoteStream,
     /// The last quote pushed per symbol, with times at display precision.
     last_pushed: Mutex<BTreeMap<String, Quote>>,
 }

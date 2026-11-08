@@ -104,7 +104,7 @@ pub(super) fn news(query: &NewsQuery, now: DateTime<Utc>) -> Vec<NewsStory> {
                 })
         })
         .collect();
-    stories.sort_by(|a, b| b.time.cmp(&a.time));
+    stories.sort_by_key(|story| std::cmp::Reverse(story.time));
     stories.truncate(query.limit);
     stories
 }
@@ -193,7 +193,7 @@ pub(super) fn calendar(query: &CalendarQuery, now: DateTime<Utc>) -> Vec<Calenda
                     }
                     events.push(event);
                 }
-                CalendarKind::Ipos if n % 2 == 0 => {
+                CalendarKind::Ipos if n.is_multiple_of(2) => {
                     let (symbol, name, price) = OFFERINGS[n / 2 % OFFERINGS.len()];
                     let mut event = CalendarEvent::new(id("ipo", 0), query.kind, at(14), name);
                     event.country = "US".into();

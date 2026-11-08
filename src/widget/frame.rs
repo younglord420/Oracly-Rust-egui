@@ -2959,6 +2959,8 @@ impl Chart {
                 let order_quantity = self.order_quantity.take();
                 let mut legend = super::Legend::new(&self.symbol, &timeframe, bar);
                 legend.study_moves = self.legend_menus.moves;
+                legend.study_alerts = self.legend_menus.alerts;
+                legend.study_more = self.legend_menus.more;
                 let statuses: Vec<_> = self
                     .legend_statuses
                     .iter()

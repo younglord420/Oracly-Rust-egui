@@ -1012,3 +1012,113 @@ fn study_menu_entries_act_on_the_study() {
     assert!(study(&chart, rsi).is_none());
     assert!(chart.can_undo(), "menu edits are undoable");
 }
+
+#[test]
+fn bell_returns_the_same_alert_as_the_menu_entry() {
+    use crate::model::Timeframe;
+    use crate::studies::SMA;
+    use crate::ui::context_menu::study::study_alert;
+    use crate::ui::dialogs::StudyContextMenuAction as A;
+    use crate::widget::StudyMenuRequest;
+    let ctx = Context::default();
+    crate::theme::apply_to_egui(&ctx, &Theme::dark());
+    let mut chart = crate::widget::test_frames::chart(&[100.0, 104.0], &[110.0, 120.0]);
+    chart.symbol = "SYNTH".into();
+    chart.set_timeframe(Timeframe::Day1);
+    let sma = chart.add_indicator(Box::new(SMA::new(2)));
+    let bar = chart.bars(crate::widget::SeriesId::MAIN).len() - 1;
+    let (expected, _) = study_alert(&chart, sma, bar).expect("the study has a value");
+    chart.study_menu_request = Some(StudyMenuRequest::Alert { id: sma, bar });
+    let mut menus = ChartMenus::default();
+    let mut action = None;
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        action = menus.show(ui.ctx(), &mut chart);
+    })
+    .drop_without_applying_deltas();
+    match action {
+        Some(ChartContextAction::Study {
+            id,
+            action: A::AddAlert(alert),
+        }) => {
+            assert_eq!(id, sma);
+            assert_eq!(alert.source, expected.source);
+            assert_eq!(alert.condition, expected.condition);
+        }
+        other => panic!("bell produced {other:?}"),
+    }
+    menus.set_control_visible(crate::ui::Control::Alerts, false);
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        assert!(menus.show(ui.ctx(), &mut chart).is_none());
+    })
+    .drop_without_applying_deltas();
+    assert!(!chart.legend_menus.alerts);
+}
+
+#[test]
+fn more_actions_opens_the_study_menu_under_the_button() {
+    use crate::model::Timeframe;
+    use crate::studies::SMA;
+    use egui::{Event, RawInput, Shape};
+    let ctx = Context::default();
+    crate::theme::apply_to_egui(&ctx, &Theme::dark());
+    let mut chart = crate::widget::test_frames::chart(&[100.0, 104.0], &[110.0, 120.0]);
+    chart.symbol = "SYNTH".into();
+    chart.set_timeframe(Timeframe::Day1);
+    let sma = chart.add_indicator(Box::new(SMA::new(2)));
+    let mut menus = ChartMenus::default();
+    let corner = Pos2::new(180.0, 40.0);
+    let target = RightClickTarget::Element {
+        id: ChartElementId::Indicator(sma),
+        bar_idx: 99,
+        pos: corner,
+        price: 0.0,
+    };
+    chart.right_click = Some(target);
+    let output = ctx.run_ui(
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0))),
+            ..Default::default()
+        },
+        |ui| {
+            chart.show(ui);
+            chart.right_click = Some(target);
+            menus.show(ui.ctx(), &mut chart);
+        },
+    );
+    output.drop_without_applying_deltas();
+    let output = ctx.run_ui(
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0))),
+            events: vec![Event::PointerMoved(corner + Vec2::new(8.0, 8.0))],
+            ..Default::default()
+        },
+        |ui| {
+            chart.show(ui);
+            menus.show(ui.ctx(), &mut chart);
+        },
+    );
+    let (found, texts) = {
+        fn flatten(shape: &Shape, out: &mut Vec<String>) {
+            match shape {
+                Shape::Text(text) => out.push(text.galley.text().to_string()),
+                Shape::Vec(shapes) => shapes.iter().for_each(|shape| flatten(shape, out)),
+                _ => {}
+            }
+        }
+        let mut texts = Vec::new();
+        for clipped in &output.shapes {
+            flatten(&clipped.shape, &mut texts);
+        }
+        (
+            texts
+                .iter()
+                .any(|text| text.starts_with("Add alert on SMA at")),
+            texts,
+        )
+    };
+    output.drop_without_applying_deltas();
+    assert!(
+        found,
+        "the menu opened from the button corner lists the study alert: {texts:?}"
+    );
+}
