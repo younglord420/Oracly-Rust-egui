@@ -791,14 +791,17 @@ mod tests {
             let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
             app.live.set_paused(true);
             assert!(
-                app.widget_bar.widgets.is_empty(),
-                "sample panels start hidden"
+                app.widget_bar.widgets.iter().all(|widget| widget.id == 5),
+                "only the OpineRust rail entry starts visible"
             );
             app.execute_search_command(&ctx, "samples");
-            assert_eq!(app.widget_bar.widgets.len(), 2);
+            assert_eq!(app.widget_bar.widgets.len(), 3, "samples add two entries");
             app.widget_bar.active_widget = Some(2);
             app.execute_search_command(&ctx, "samples");
-            assert!(app.widget_bar.widgets.is_empty());
+            assert!(
+                app.widget_bar.widgets.iter().all(|widget| widget.id == 5),
+                "toggling samples off leaves the OpineRust entry"
+            );
             assert_eq!(app.widget_bar.active_widget, None);
             app.execute_search_command(&ctx, "samples");
 

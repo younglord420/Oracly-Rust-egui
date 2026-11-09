@@ -83,6 +83,12 @@ pub struct StudyEditor {
     status: Option<Status>,
     /// A span to select and scroll to in the next frame.
     reveal: Option<Range<usize>>,
+    /// Hide Open and Save for hosts that cannot honour them.
+    hide_io: bool,
+    /// Label of the apply button, empty for the localized default.
+    apply_label: String,
+    /// Hide the apply button for hosts that draw their own Run action.
+    hide_apply: bool,
 }
 
 impl StudyEditor {
@@ -109,6 +115,12 @@ impl StudyEditor {
     /// The document text, with the user's edits.
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    /// Replaces the text without changing the saved baseline, as typing does.
+    /// Hosts and tests use this when they do not drive the widget directly.
+    pub fn replace_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
     }
 
     /// Whether the text differs from the text last opened or saved.
@@ -146,6 +158,22 @@ impl StudyEditor {
         self.reveal = Some(span);
     }
 
+    /// Hides Open and Save. Use when the host has no document store: showing the
+    /// buttons would promise something the host cannot do.
+    pub fn set_io_actions(&mut self, show: bool) {
+        self.hide_io = !show;
+    }
+
+    /// Renames the apply button, for hosts whose action is "Run".
+    pub fn set_apply_label(&mut self, label: impl Into<String>) {
+        self.apply_label = label.into();
+    }
+
+    /// Hides the apply button when the host owns the Run action in its own header.
+    pub fn set_apply_button(&mut self, show: bool) {
+        self.hide_apply = !show;
+    }
+
     /// The span as character offsets, clamped to the text.
     fn char_range(&self, span: &Range<usize>) -> Range<usize> {
         let at = |byte: usize| {
@@ -168,28 +196,39 @@ impl StudyEditor {
             if self.is_modified() {
                 ui.label(RichText::new(l10n::text(ui.ctx(), "Unsaved changes")).color(weak));
             }
+            let apply_label = if self.apply_label.is_empty() {
+                l10n::text(ui.ctx(), "Apply")
+            } else {
+                self.apply_label.clone()
+            };
+            let hide_io = self.hide_io;
+            let hide_apply = self.hide_apply;
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                if Button::new("Apply").show(ui).clicked() {
+                if !hide_apply && Button::new(&apply_label).show(ui).clicked() {
                     action = StudyEditorAction::Apply {
                         title: self.title.clone(),
                         text: self.text.clone(),
                     };
                 }
-                if Button::new("Save").show(ui).clicked() {
-                    action = StudyEditorAction::Save {
-                        title: self.title.clone(),
-                        text: self.text.clone(),
-                    };
-                }
-                if Button::new("Open").show(ui).clicked() {
-                    action = StudyEditorAction::Open;
+                if !hide_io {
+                    if Button::new("Save").show(ui).clicked() {
+                        action = StudyEditorAction::Save {
+                            title: self.title.clone(),
+                            text: self.text.clone(),
+                        };
+                    }
+                    if Button::new("Open").show(ui).clicked() {
+                        action = StudyEditorAction::Open;
+                    }
                 }
             });
         });
         match &self.status {
-            Some(Status::Applied) => {
-                status_message(ui, MessageKind::Success, &l10n::text(ui.ctx(), "Applied"));
-            }
+            Some(Status::Applied) => status_message(
+                ui,
+                MessageKind::Success,
+                &l10n::text(ui.ctx(), "OpineRust: script applied"),
+            ),
             Some(Status::Rejected(reason)) => {
                 status_message(ui, MessageKind::Error, reason);
             }

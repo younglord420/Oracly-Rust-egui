@@ -71,7 +71,16 @@ pub struct CustomIndicator {
     offsets: Vec<isize>,
     fills: Vec<super::StudyFill>,
     plot_color: Option<PlotColorFn>,
+    /// Status the study reports itself, such as a failed recalculation. The
+    /// chart's own data-status pass preserves it instead of overwriting it.
+    status: Option<super::StudyStatus>,
+    /// Live status owned by the study: consulted whenever the chart has no
+    /// status of its own to report, so a failed recalculation stays visible.
+    status_source: Option<StatusSource>,
 }
+
+/// Reports the study's own current status, such as a failed recalculation.
+pub type StatusSource = Arc<dyn Fn() -> Option<super::StudyStatus> + Send + Sync>;
 
 impl CustomIndicator {
     /// Create a new custom indicator.
@@ -104,6 +113,8 @@ impl CustomIndicator {
             offsets: Vec::new(),
             fills: Vec::new(),
             plot_color: None,
+            status: None,
+            status_source: None,
         }
     }
 
@@ -207,6 +218,20 @@ impl CustomIndicator {
         self.line_names = names;
         self
     }
+
+    /// Report a status the study owns, such as a failed recalculation.
+    ///
+    /// The chart's data-status pass can overwrite [`Indicator::study_status`]
+    /// with `None` when the study still has old values to draw. A status source
+    /// is consulted whenever the chart has nothing of its own to say, so a
+    /// stale result is never presented as a live one.
+    pub fn with_status_source<F>(mut self, status: F) -> Self
+    where
+        F: Fn() -> Option<super::StudyStatus> + Send + Sync + 'static,
+    {
+        self.status_source = Some(Arc::new(status));
+        self
+    }
 }
 
 impl Indicator for CustomIndicator {
@@ -290,6 +315,18 @@ impl Indicator for CustomIndicator {
 
     fn colors(&self) -> Vec<Color32> {
         self.colors.clone()
+    }
+
+    fn set_study_status(&mut self, status: Option<super::StudyStatus>) {
+        self.status = status;
+    }
+
+    fn study_status(&self) -> Option<super::StudyStatus> {
+        // A status the chart computed (hidden interval, missing data) wins; the
+        // study's own status shows whenever the chart has nothing to report.
+        self.status
+            .clone()
+            .or_else(|| self.status_source.as_ref().and_then(|source| source()))
     }
 
     fn set_colors(&mut self, colors: Vec<Color32>) {

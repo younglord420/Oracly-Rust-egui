@@ -1,0 +1,45 @@
+[package]
+name = "opinerust"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+description = "OpineRust: run Pine Script (R) studies on Oracly charts, powered by the Pinecone Rust runtime"
+repository = "https://github.com/younglord420/Oracly-Rust-egui.git"
+
+[dependencies]
+# Oracly's study contract and models. `studies` keeps built-ins out of the bridge.
+Oracly-charts = { package = "Oracly-charts", path = "..", default-features = false, features = [
+    "widget",
+    "studies",
+    "icons",
+] }
+# The OpineRust runtime, our fork of Pinecone. Reported to users as the OpineRust
+# engine; named as Pinecone in attribution and licensing because that is the
+# dependency's origin. Its umbrella crate pulls `pine-data` -> `ureq`/`ring`, which
+# cannot build for `wasm32-unknown-unknown`, so the bridge uses the core crates
+# directly.
+#
+# Pinned to one revision, never to `main`: every crate below must come from the
+# same commit or Cargo links two copies of the same types. The repository is
+# private, so a clean build needs credentials; `net.git-fetch-with-cli = true`
+# makes Cargo reuse the git CLI's ssh-agent/SSH config instead of its own.
+pine-core = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+pine-lexer = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+pine-parser = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+pine-interpreter = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+pine-builtins = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+pine-sema = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+pine-diagnostics = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "54f578eebd77dc205487d46cdda140076921c29e" }
+# `Color32` is the chart's colour type; Oracly uses it for plot colours.
+egui = { version = "0.37.0", default-features = false }
+# Bar timestamps in tests and the host adapter.
+chrono = { version = "0.4.43", features = ["serde"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "=0.3.80"
+
+[workspace]
+
+[lib]
+name = "opinerust"
+path = "src/lib.rs"

@@ -188,7 +188,7 @@ fn broker_facts(id: &str) -> Vec<(String, egui_charts::ui::trading::BrokerFact)>
 }
 
 /// Which right-hand side panel is open, if any.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum SidePanel {
     ObjectTree,
     Alerts,
@@ -204,6 +204,7 @@ enum SidePanel {
     Notifications,
     Chats,
     Products,
+    OpineRust,
 }
 
 impl SidePanel {
@@ -224,7 +225,7 @@ impl SidePanel {
     ];
 
     /// Panels the demo renders behind a host rail entry, with the entry's id.
-    const HOSTED: [(SidePanel, u64); 1] = [(SidePanel::TimeAndSales, 4)];
+    const HOSTED: [(SidePanel, u64); 2] = [(SidePanel::TimeAndSales, 4), (SidePanel::OpineRust, 5)];
 
     fn icon(self) -> Option<RightBarIcon> {
         Self::BUILT_IN
@@ -378,6 +379,9 @@ pub struct DemoApp {
     object_tree: ObjectTreePanel,
     open_panel: Option<SidePanel>,
     data_window_expanded: bool,
+    // OpineRust editor and the study it last applied.
+    opinerust: crate::opinerust_panel::OpineRustPanel,
+    opinerust_study: Option<SeriesId>,
 
     // Host-owned session-only alerts, shown through the library service connection.
     pub(crate) alerts: AlertsPanel,
@@ -451,6 +455,17 @@ pub struct DemoApp {
     /// Whether the sample panels, markers, change marks, bar marks and demo level are on, from the
     /// quick search.
     api_samples: bool,
+}
+
+/// The always-present OpineRust rail entry. Hosts toggling sample widgets must
+/// keep this entry so the editor is never unreachable.
+pub(crate) fn opinerust_widget() -> WidgetBarWidget {
+    WidgetBarWidget {
+        id: 5,
+        icon: egui_charts::icons::icons::SCRIPT_COMPILE,
+        tooltip: "OpineRust Editor".into(),
+        section: WidgetBarSection::Bottom,
+    }
 }
 
 fn sample_widgets() -> [WidgetBarWidget; 2] {
@@ -586,6 +601,9 @@ impl DemoApp {
             .map(|(_, icon)| *icon)
             .chain([RightBarIcon::Help])
             .collect();
+        // OpineRust gets its own rail entry, so the editor is one click away and
+        // not only reachable from the command palette.
+        widget_bar.widgets.push(opinerust_widget());
         let mut notes = String::new();
         widget_bar.register_panel(sample_widgets()[1].clone(), move |ui| {
             ui.label("Host panel · notes stay in this session");
@@ -597,6 +615,14 @@ impl DemoApp {
             );
         });
         widget_bar.widgets.clear();
+        // OpineRust is a host panel with its own rail entry, so the editor is
+        // reachable by click and not only from the command palette.
+        widget_bar.widgets.push(WidgetBarWidget {
+            id: 5,
+            icon: egui_charts::icons::icons::SCRIPT_COMPILE,
+            tooltip: "OpineRust".into(),
+            section: WidgetBarSection::Bottom,
+        });
         if let Some(preferences) = cc
             .storage
             .and_then(|storage| eframe::get_value(storage, "interval_preferences"))
@@ -697,6 +723,8 @@ impl DemoApp {
             object_tree: ObjectTreePanel::new(),
             open_panel: Some(SidePanel::Watchlist),
             data_window_expanded: true,
+            opinerust: Default::default(),
+            opinerust_study: None,
             alerts: AlertsPanel::default(),
             alert_host: {
                 let alerts = cc
@@ -1868,6 +1896,13 @@ impl DemoApp {
                                         ui.close();
                                     }
                                     if ListItem::new()
+                                        .show_with_icon(ui, "OpineRust", &ic::SCRIPT_COMPILE)
+                                        .clicked()
+                                    {
+                                        compact_panel = Some(SidePanel::OpineRust);
+                                        ui.close();
+                                    }
+                                    if ListItem::new()
                                         .show_with_icon(ui, "Session notes", &ic::TEXT)
                                         .clicked()
                                     {
@@ -2407,6 +2442,7 @@ impl DemoApp {
                         let action = self.news.show(ui);
                         self.handle_news(ui.ctx(), action);
                     }
+                    SidePanel::OpineRust => self.show_opinerust(ui),
                     SidePanel::DataWindow => {
                         self.data_window_expanded =
                             egui_charts::ui::widget_bar::panels::object_tree::show_data_window(
@@ -2417,6 +2453,36 @@ impl DemoApp {
                     }
                 }
             });
+    }
+
+    /// Draw the OpineRust editor and install a study only when Run succeeded.
+    fn show_opinerust(&mut self, ui: &mut egui::Ui) {
+        let bars = self.chart.bars(SeriesId::MAIN).to_vec();
+        if bars.is_empty() {
+            ui.label(egui::RichText::new("Load a symbol before running a script.").weak());
+            return;
+        }
+        // Scripts read the chart's own symbol and interval, not empty defaults.
+        let context = opinerust::RunContext::from_chart(
+            self.chart.instrument(),
+            self.chart.timeframe(),
+        );
+        self.opinerust.set_context(context);
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        let Some(install) = self.opinerust.show(ui, &bars, now_ms) else {
+            return;
+        };
+        // Preparation already succeeded. The panel publishes the study as one
+        // undoable action: the candidate is added before the old one is removed,
+        // so a refused replace cannot leave the chart without a study.
+        let previous = install.replace.then_some(self.opinerust_study).flatten();
+        match self.opinerust.install(&mut self.chart, previous, install) {
+            Ok(id) => self.opinerust_study = Some(id),
+            Err(reason) => {
+                // The panel already logged the reason and kept its draft.
+                let _ = reason;
+            }
+        }
     }
 
     fn handle_news(&mut self, ctx: &egui::Context, action: NewsAction) {
@@ -3747,9 +3813,108 @@ fn apply_settings_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::App;
     use egui_charts::model::LineStyle;
     use egui_charts::ui::dialogs::DrawingProps;
     use egui_charts::ui::timeframe_toolbar::DateRange;
+
+    /// The OpineRust entry is on the rail by default, opens its panel, and the
+    /// panel keeps the chart on screen instead of taking it over.
+    #[test]
+    fn opinerust_is_reachable_from_the_rail_and_leaves_the_chart_visible() {
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+        assert!(
+            app.widget_bar.widgets.iter().any(|widget| widget.id == 5),
+            "the OpineRust rail entry is present"
+        );
+        assert_eq!(
+            SidePanel::from_widget(5),
+            Some(SidePanel::OpineRust),
+            "widget 5 maps back to the OpineRust panel"
+        );
+
+        app.open_panel = Some(SidePanel::OpineRust);
+        let mut chart_rect = egui::Rect::NOTHING;
+        let mut editor_seen = false;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1440.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                app.ui(ui, &mut eframe::Frame::_new_kittest());
+                chart_rect = app.chart.get_rendered_price_rect();
+            },
+        );
+        editor_seen |= output.shapes.iter().any(|shape| {
+            matches!(&shape.shape, egui::Shape::Text(text) if text.galley.text() == "OpineRust")
+        });
+        output.drop_without_applying_deltas();
+        assert!(editor_seen, "the panel header is drawn");
+
+        // Closing the panel gives the chart its width back.
+        let before = chart_rect.width();
+        assert!(before > 0.0, "the chart has a price rect beside the panel");
+        app.open_panel = None;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1440.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()),
+        );
+        let closed = app.chart.get_rendered_price_rect().width();
+        output.drop_without_applying_deltas();
+        assert!(
+            closed > before,
+            "closing the panel widens the chart ({before} -> {closed})"
+        );
+    }
+
+    /// The panel is a dock: resizing its left edge is a real interaction, and the
+    /// text stays after the panel is closed.
+    #[test]
+    fn the_panel_is_resizable_and_keeps_its_draft() {
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+        app.open_panel = Some(SidePanel::OpineRust);
+        app.opinerust
+            .editor_mut()
+            .replace_text("//@version=5\nindicator(\"Keep me\")\nplot(close)\n");
+        let frame = |app: &mut DemoApp| {
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1440.0, 900.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()),
+            );
+            output.drop_without_applying_deltas();
+        };
+        frame(&mut app);
+        // Reopening after a close keeps the draft: the panel is a dock, not a
+        // modal that throws text away.
+        frame(&mut app);
+        assert!(app.opinerust.editor_mut().text().contains("Keep me"));
+        app.open_panel = None;
+        frame(&mut app);
+        assert!(
+            app.opinerust.editor_mut().text().contains("Keep me"),
+            "closing the panel keeps the draft"
+        );
+    }
 
     #[test]
     fn advancing_a_paused_sample_keeps_intermediate_bars() {

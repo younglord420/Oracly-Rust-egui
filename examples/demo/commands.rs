@@ -25,6 +25,7 @@ pub(super) fn quick_search_commands() -> Vec<Command> {
         ("options-volume", "Options volume profile", "Actions"),
         ("heatmap", "Market heatmap", "Actions"),
         ("pane", "Add a symbol in a new pane", "Actions"),
+        ("opinerust", "OpineRust editor", "Actions"),
     ]
     .into_iter()
     .map(|(id, label, category)| Command::new(id, label).category(category))
@@ -166,8 +167,11 @@ impl DemoApp {
                 self.api_samples = !self.api_samples;
                 if self.api_samples {
                     self.widget_bar.widgets = super::sample_widgets().to_vec();
+                    self.widget_bar.widgets.push(super::opinerust_widget());
                 } else {
-                    self.widget_bar.widgets.clear();
+                    // The OpineRust entry is a product entry, not a sample: it
+                    // stays so the editor is always reachable from the rail.
+                    self.widget_bar.widgets = vec![super::opinerust_widget()];
                     self.widget_bar.active_widget = None;
                     if self.open_panel == Some(super::SidePanel::TimeAndSales) {
                         self.open_panel = None;
@@ -178,6 +182,14 @@ impl DemoApp {
             }
             "pane" => {
                 self.add_series_pane();
+                return;
+            }
+            "opinerust" => {
+                self.open_panel = if self.open_panel == Some(super::SidePanel::OpineRust) {
+                    None
+                } else {
+                    Some(super::SidePanel::OpineRust)
+                };
                 return;
             }
             _ => return,
