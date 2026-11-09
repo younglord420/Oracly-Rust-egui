@@ -8,3 +8,7 @@
 .cursor/
 /Oracly-500-Icons/
 /oracly-brand-assets/
+# The bridge is its own workspace, so its build output is not covered by `/target`.
+/opinerust/target
+# Local editor settings, not project configuration.
+.vscode/
