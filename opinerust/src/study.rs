@@ -144,7 +144,7 @@ pub fn build_study_in_context(
     let bar_ms = bar_span_ms(bars);
     let engine_bars = engine_bars(bars, now_ms, bar_ms);
     let output: EngineOutput = execute_with_context(source, &engine_bars, now_ms, &context)?;
-    study_from_output(source.to_owned(), now_ms, bar_ms, context, clock, output)
+    study_from_output(source.to_owned(), now_ms, context, clock, output)
 }
 
 /// Like [`build_study`], but later recalculations read the host clock through
@@ -163,7 +163,6 @@ pub fn build_study_with_clock(
 fn study_from_output(
     source: String,
     now_ms: i64,
-    bar_ms: i64,
     context: RunContext,
     clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
     output: EngineOutput,
@@ -193,13 +192,27 @@ fn study_from_output(
 
     let published = Arc::new(Mutex::new(initial));
     let last_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    // `syminfo`/`timeframe` are chart state, not script state: the chart can
+    // change either while the study stays installed. Keep the live context in a
+    // cell the closure reads on every recalculation, so a symbol or interval
+    // change does not leave the script running with the previous chart's values.
+    let live_context = Arc::new(Mutex::new(context));
 
     let recalculate = {
         let snapshot = Arc::clone(&published);
         let errors = Arc::clone(&last_error);
         let clock = clock.clone();
+        let context = Arc::clone(&live_context);
         move |bars: &[ChartBar]| -> Vec<IndicatorValue> {
             let now = clock.as_ref().map_or(now_ms, |clock| clock());
+            let context = context
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            // The candle span is measured from the bars of *this* run. Caching the
+            // build-time span would keep deciding "forming" against the previous
+            // interval after the chart switched 1m -> 5m.
+            let bar_ms = bar_span_ms(bars);
             let fresh =
                 execute_with_context(&source, &engine_bars(bars, now, bar_ms), now, &context);
             let mut slot = snapshot
@@ -259,6 +272,10 @@ fn study_from_output(
     // recomputes through an infallible closure, so the study keeps the last good
     // snapshot and publishes the error as its own status; otherwise a stale line
     // would look exactly like a live one.
+    //
+    // This reads the error without consuming it. The panel separately drains the
+    // same slot to avoid logging one failure twice, so a `take()` here would make
+    // the chart's error disappear the moment the panel looked at it.
     let status_source = {
         let errors = Arc::clone(&last_error);
         move || {
@@ -279,7 +296,27 @@ fn study_from_output(
         .with_overlay(overlay)
         .with_plot_types(vec![PlotType::Line; count])
         .with_plot_color(move |line, bar, _values| per_bar(line, bar))
-        .with_status_source(status_source);
+        .with_status_source(status_source)
+        // The chart supplies live metadata through `Indicator::set_instrument`
+        // and `set_timeframe`; the study forwards a missing interval verbatim so
+        // scripts see an unset `timeframe.*` rather than a stale period.
+        .with_context_update({
+            let context = Arc::clone(&live_context);
+            move |instrument, timeframe| {
+                let mut slot = context
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                let next = RunContext::from_chart(instrument, timeframe);
+                // Only a real metadata change needs a full replay. Comparing the
+                // derived context also covers the case where the chart reports a
+                // symbol and interval separately, one call after the other.
+                if *slot == next {
+                    return false;
+                }
+                *slot = next;
+                true
+            }
+        });
 
     if let Some(short) = &info.short_title {
         study = study.with_description(short.clone());

@@ -49,6 +49,8 @@ pub struct OpineRustPanel {
     applied_before: bool,
     /// Where the installed study records recalculation failures.
     watching: Option<Arc<Mutex<Option<String>>>>,
+    /// The failure already written to the log, so it is logged once.
+    logged_error: Option<String>,
     /// Title waiting for the host's install result.
     pending: Option<String>,
     /// Symbol and interval the scripts should see. Empty until the host sets it.
@@ -68,6 +70,7 @@ impl Default for OpineRustPanel {
             logs: Vec::new(),
             applied_before: false,
             watching: None,
+            logged_error: None,
             pending: None,
             context: RunContext::default(),
         }
@@ -177,19 +180,29 @@ impl OpineRustPanel {
     /// Follow the installed study so recalculation failures reach the logs.
     pub fn watch(&mut self, last_error: Arc<Mutex<Option<String>>>) {
         self.watching = Some(last_error);
+        // A new study's slot starts empty; forget the previous one's message.
+        self.logged_error = None;
     }
 
-    /// The last recalculation failure, drained so it is logged once.
+    /// The last recalculation failure, logged once.
+    ///
+    /// The slot is read, not emptied: the chart reads the same value to show a
+    /// stale study, so a `take()` here would make the error disappear from the
+    /// chart the moment the panel looked at it. `logged_error` tracks what has
+    /// already been written to the log so one failure is not printed every frame.
     fn drain_recalculation_error(&mut self) {
         let Some(slot) = &self.watching else { return };
         let message = slot
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take();
-        if let Some(message) = message {
-            self.logs.push(format!("Recalculation failed: {message}"));
-            self.editor.apply_result(Err(message));
+            .clone();
+        let Some(message) = message else { return };
+        if self.logged_error.as_deref() == Some(message.as_str()) {
+            return;
         }
+        self.logs.push(format!("Recalculation failed: {message}"));
+        self.editor.apply_result(Err(message.clone()));
+        self.logged_error = Some(message);
     }
 
     /// Draw the panel and return a study to install when Run succeeded.
@@ -966,7 +979,7 @@ mod tests {
     fn a_recalculation_failure_reaches_the_logs() {
         let mut panel = OpineRustPanel::default();
         let slot: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(Some("bar failed".to_owned())));
-        panel.watch(slot);
+        panel.watch(slot.clone());
         panel.drain_recalculation_error();
         assert!(
             panel
@@ -985,6 +998,11 @@ mod tests {
                 .count(),
             1,
             "each failure is logged once"
+        );
+        assert_eq!(
+            slot.lock().unwrap().as_deref(),
+            Some("bar failed"),
+            "logging must not empty the slot the chart reads"
         );
     }
 }

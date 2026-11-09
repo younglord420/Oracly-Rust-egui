@@ -1,12 +1,16 @@
 # Tugas DeepSeek: OpineRust editor samping chart dan bridge Pine Script® berbasis Rust
 
-**Status: PROTOTIPE; P0–P5 masih terbuka dan milestone pertama BELUM selesai / belum aman untuk digunakan mengambil keputusan trading.** Dokumen ini terpisah dari redesign settings study. **OpineRust** adalah nama produk/fitur milik Oracly yang dilihat pengguna; [Pinecone](https://github.com/ferranbt/pinecone) adalah dependensi runtime Rust di balik layar. Versi sebelumnya terlalu optimistis menyebut P0–P3 selesai; pemeriksaan source menunjukkan masih ada kegagalan penting. Jangan menyebut seluruh Pine v6 didukung hanya karena `//@version=6` dikenali.
+**Status: PROTOTIPE; milestone pertama BELUM selesai / belum aman untuk digunakan mengambil keputusan trading.** Dokumen ini terpisah dari redesign settings study. **OpineRust** adalah nama produk/fitur milik Oracly; runtime fork berasal dari [Pinecone](https://github.com/ferranbt/pinecone). Jangan menyebut seluruh Pine v6 didukung hanya karena `//@version=6` dikenali.
 
-## 0. Koreksi status: apa yang terbukti dan apa yang masih kurang
+> **Penting — diagnosis historis, bukan status source saat ini.** Bagian §0 dan pernyataan kondisi awal di §7 merekam pemeriksaan prototipe terdahulu. Sejak itu implementasi berubah: misalnya filter kini berbasis token, nilai/warna menggunakan snapshot bersama, dan panel memiliki jalur rail. Itu **tidak** dengan sendirinya membuktikan fitur tersebut sudah benar atau milestone selesai. Jangan mengulangi klaim diagnosis lama sebagai fakta terkini, dan jangan menandai P0–P5 selesai hanya karena perubahan atau tes lama ada.
+>
+> Untuk status dan prioritas terbaru, baca [`opinerust-status.md`](opinerust-status.md) dan [`opinerust-runtime-fork-v6-roadmap.md`](opinerust-runtime-fork-v6-roadmap.md) seluruhnya, lalu cocokkan dengan source, `git status`/diff dan tes aktual. Secara khusus, audit status error melalui `ConfiguredStudy`, kegagalan kalkulasi saat Run/replace, konteks simbol/timeframe yang tertahan, serta pemetaan interval yang salah. **Spesifikasi produk, batas lisensi, kriteria penerimaan P0–P5, dan definition of done dalam dokumen ini tetap berlaku**; jika deskripsi kondisi awal bertentangan, gunakan source dan status terbaru, bukan tebakan.
+
+## 0. Koreksi status historis: apa yang dilaporkan dan apa yang saat itu masih kurang
 
 **Yang terbukti terbatas:** tes sebelumnya melaporkan 17 tes bridge, 6 tes panel, 82 tes demo, dan 1180 tes library lulus; probe Node/WASM terdahulu memanggil `opinerust::execute` aktual untuk contoh v5/v6 dan `timenow`. Source kini memakai `per_bar(...)` berbasis jam host untuk sema, tidak lagi pemanggilan upstream `per_bar_variables` yang memicu panic `SystemTime::now()` di WASM. Ini kemajuan, **bukan** bukti Run UI browser, data live lengkap, atau runtime yang aman untuk semua script. Jangan klaim suite/tes itu dijalankan kembali pada revisi dokumen ini.
 
-**Masalah yang masih terlihat langsung di source — wajib diselesaikan:**
+**Masalah yang dilaporkan pada pemeriksaan terdahulu — reproduksi ulang pada source aktual sebelum menentukan apa yang masih terbuka:**
 
 1. **Nilai dan warna live belum sinkron.** `opinerust/src/study.rs::study_from_output` menghitung nilai baru lewat `execute` saat menerima bar, tetapi `plot_color` tetap membaca `Arc` warna dari Run awal; candle baru atau historis yang diperbaiki bisa mendapat warna lama/salah. `rows_from` mengabaikan `last_run` (`let _ = last_run`) dan memakai urutan output baru, bukan mencocokkan identitas plot dengan deklarasi awal. `Err(_)` di recalculation menjadi gap tanpa menyampaikan error. Nilai hasil tes tambah satu candle saja tidak cukup untuk menyatakan P1 selesai.
 2. **Identitas `(title, occurrence)` tidak cukup untuk semua kasus.** Jika plot bertitel sama muncul/hilang pada bar berbeda, occurrence-nya bisa berubah; `engine.rs` menambah nilai plot yang baru muncul sebelum melakukan `resize(seen, None)`, sehingga untuk plot pertama muncul pada bar terlambat nilai tersebut berisiko ditempatkan di awal, bukan pada bar yang benar. Uji identitas, padding awal/tengah/akhir, output semua `na`, judul kosong/duplikat, dan perubahan urutan; bila upstream tidak menyediakan identitas yang stabil, tolak pola ambigu dengan diagnostik, bukan tebak.
@@ -82,7 +86,7 @@ Ikuti `.cursor/rules/codebase-memory.mdc` untuk `root-egui-charts`: `search_grap
 
 ## 7. Prioritas implementasi DeepSeek dan gerbang penerimaan
 
-**Kondisi awal:** implementasi di working tree adalah prototipe, bukan clean slate. Ikuti workflow CBM §3, periksa `git status`/diff, baca source yang flagged stale/not-tracked, dan jalankan baseline yang relevan. Jangan overwrite kode dan lockfile yang sudah ada. Untuk fungsi baru yang tidak terindeks, catat gap CBM, periksa pemanggil lewat source; reindex jika tersedia dan aman, lalu trace inbound sebelum edit. Jangan mengulang langkah UI yang menutupi bug data.
+**Kondisi awal historis:** butir-butir di bawah disusun terhadap revisi prototipe terdahulu; rincian seperti nama fungsi, snapshot warna, filter, alur tombol, atau versi pin mungkin sudah berubah. Baca penanda di awal dokumen dan roadmap/status terbaru terlebih dahulu, lalu reproduksi terhadap source aktual. Gerbang penerimaan dan urutan prioritas tetap wajib. Ikuti workflow CBM §3, periksa `git status`/diff, baca source yang flagged stale/not-tracked, dan jalankan baseline yang relevan. Jangan overwrite kode dan lockfile yang sudah ada. Untuk fungsi baru yang tidak terindeks, catat gap CBM, periksa pemanggil lewat source; reindex jika tersedia dan aman, lalu trace inbound sebelum edit. Jangan mengulang langkah UI yang menutupi bug data.
 
 ### P0 — Jalur runtime WASM aktual, bukan hanya spike
 

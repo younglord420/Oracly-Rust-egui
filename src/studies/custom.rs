@@ -48,6 +48,18 @@ pub type InputCalculateFn =
 /// Per-bar colour callback, receiving the output line, source bar and calculated columns.
 pub type PlotColorFn = Arc<dyn Fn(usize, usize, &IndicatorValues) -> Option<Color32> + Send + Sync>;
 
+/// Callback for the chart's symbol, interval or calendar metadata.
+///
+/// The chart calls it on add and again whenever any of those change, so a study
+/// whose calculation depends on them does not keep running against the previous
+/// chart's metadata. `timeframe` is `None` when the chart has no interval to
+/// report, which a study must not turn into a plausible default.
+pub type ContextUpdateFn = Arc<
+    dyn Fn(Option<&crate::model::Instrument>, Option<crate::model::Timeframe>) -> bool
+        + Send
+        + Sync,
+>;
+
 /// An indicator defined at runtime via a calculation closure.
 ///
 /// Build one with [`new`](Self::new) and customise it with the builder
@@ -77,6 +89,13 @@ pub struct CustomIndicator {
     /// Live status owned by the study: consulted whenever the chart has no
     /// status of its own to report, so a failed recalculation stays visible.
     status_source: Option<StatusSource>,
+    /// Receives the chart's symbol and interval, now and on every change.
+    context_update: Option<ContextUpdateFn>,
+    /// Latest instrument the chart supplied, so the callback always gets the
+    /// full pair even though the chart sets symbol and interval separately.
+    chart_instrument: Option<crate::model::Instrument>,
+    /// Latest interval the chart supplied.
+    chart_timeframe: Option<crate::model::Timeframe>,
 }
 
 /// Reports the study's own current status, such as a failed recalculation.
@@ -115,6 +134,9 @@ impl CustomIndicator {
             plot_color: None,
             status: None,
             status_source: None,
+            context_update: None,
+            chart_instrument: None,
+            chart_timeframe: None,
         }
     }
 
@@ -232,6 +254,23 @@ impl CustomIndicator {
         self.status_source = Some(Arc::new(status));
         self
     }
+
+    /// Follow the chart's symbol, interval and calendar metadata.
+    ///
+    /// The callback runs once when the study is added and again whenever the
+    /// chart's metadata changes. Returning `true` means cached values are stale
+    /// and the chart must recalculate from the first bar, which is what a study
+    /// reading `syminfo`/`timeframe` needs.
+    pub fn with_context_update<F>(mut self, update: F) -> Self
+    where
+        F: Fn(Option<&crate::model::Instrument>, Option<crate::model::Timeframe>) -> bool
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.context_update = Some(Arc::new(update));
+        self
+    }
 }
 
 impl Indicator for CustomIndicator {
@@ -319,6 +358,47 @@ impl Indicator for CustomIndicator {
 
     fn set_study_status(&mut self, status: Option<super::StudyStatus>) {
         self.status = status;
+    }
+
+    fn set_instrument(&mut self, instrument: Option<&crate::model::Instrument>) -> bool {
+        let Some(update) = self.context_update.clone() else {
+            return false;
+        };
+        if self.chart_instrument.as_ref() == instrument {
+            return false;
+        }
+        self.chart_instrument = instrument.cloned();
+        // Values that depend on `syminfo` are stale even when the interval is
+        // unchanged: the chart may have moved to another symbol.
+        update(self.chart_instrument.as_ref(), self.chart_timeframe)
+    }
+
+    fn set_timeframe(&mut self, timeframe: crate::model::Timeframe) {
+        let Some(update) = self.context_update.clone() else {
+            return;
+        };
+        if self.chart_timeframe == Some(timeframe) {
+            return;
+        }
+        self.chart_timeframe = Some(timeframe);
+        update(self.chart_instrument.as_ref(), self.chart_timeframe);
+    }
+
+    fn set_bar_clock(&mut self, clock: &crate::model::BarClock) -> bool {
+        // The clock carries the chart's interval (and its session). A study that
+        // reads `timeframe.*` must follow it when the chart switches interval
+        // without re-adding the study.
+        let Some(timeframe) = clock.timeframe() else {
+            return false;
+        };
+        let Some(update) = self.context_update.clone() else {
+            return false;
+        };
+        if self.chart_timeframe == Some(timeframe) {
+            return false;
+        }
+        self.chart_timeframe = Some(timeframe);
+        update(self.chart_instrument.as_ref(), self.chart_timeframe)
     }
 
     fn study_status(&self) -> Option<super::StudyStatus> {

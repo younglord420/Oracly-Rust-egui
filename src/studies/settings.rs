@@ -782,7 +782,11 @@ impl Indicator for ConfiguredStudy {
         &self.shade_stops
     }
     fn study_status(&self) -> Option<super::StudyStatus> {
-        self.status.clone()
+        // The chart's computed status wins; a failed recalculation reported by the
+        // wrapped study shows whenever the chart has nothing to report. Without
+        // this fallback the wrapper's own `None` hides a study that knows it failed,
+        // so the legend would look healthy while its values are stale.
+        self.status.clone().or_else(|| self.study.study_status())
     }
     fn set_study_status(&mut self, status: Option<super::StudyStatus>) {
         self.status = status;
