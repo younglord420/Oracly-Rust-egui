@@ -981,7 +981,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "pine-ast"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "serde",
 ]
@@ -989,7 +989,7 @@ dependencies = [
 [[package]]
 name = "pine-broker"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "pine-core",
  "serde",
@@ -998,7 +998,7 @@ dependencies = [
 [[package]]
 name = "pine-builtin-macro"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1008,7 +1008,7 @@ dependencies = [
 [[package]]
 name = "pine-builtins"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1024,7 +1024,7 @@ dependencies = [
 [[package]]
 name = "pine-core"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "serde",
  "thiserror",
@@ -1033,12 +1033,12 @@ dependencies = [
 [[package]]
 name = "pine-diagnostics"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 
 [[package]]
 name = "pine-interpreter"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "ahash",
  "pine-ast",
@@ -1052,7 +1052,7 @@ dependencies = [
 [[package]]
 name = "pine-lexer"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "eyre",
  "pine-core",
@@ -1062,7 +1062,7 @@ dependencies = [
 [[package]]
 name = "pine-parser"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "clap",
  "eyre",
@@ -1076,7 +1076,7 @@ dependencies = [
 [[package]]
 name = "pine-sema"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=54f578eebd77dc205487d46cdda140076921c29e#54f578eebd77dc205487d46cdda140076921c29e"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=3e4e6e40fc355c268743b867407a37e71201c0fd#3e4e6e40fc355c268743b867407a37e71201c0fd"
 dependencies = [
  "pine-ast",
  "pine-core",

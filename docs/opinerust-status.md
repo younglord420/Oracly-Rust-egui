@@ -14,7 +14,7 @@ masih lokal dan belum ada di origin, dan review visual browser masih terbatas.
 | Lokasi | `/root/OpineRust` | `/root/egui-charts` |
 | Origin | `younglord420/OpineRust` (private) | `younglord420/Oracly-Rust-Ugui` |
 | Upstream | `ferranbt/pinecone` | — |
-| HEAD | `7bb739d7` + perubahan lokal belum dikomit | perubahan lokal belum dikomit |
+| HEAD | `3e4e6e4` (fork, dipin bridge) | `02bf213` + `55711b95` |
 
 Runtime masih memakai nama display **OpineRust Runtime** dengan crate `pine-*` dipertahankan agar API
 tidak pecah. `LICENSE` MPL-2.0 dan `NOTICE` baru mencatat sumber Pinecone dan commit awal
@@ -76,10 +76,10 @@ Bridge (`/root/egui-charts`):
 
 ## 5. Belum lulus / blocker
 
-1. **Integrasi pin ke runtime fork belum selesai.** Bridge masih memakai `pine-* = "=0.2.6"` dari
-   registry. Perubahan runtime belum dikomit/dipush (roadmap melarang tanpa izin), jadi `rev` git
-   belum bisa menunjuk ke kode baru. Mekanisme pin sudah diuji berhasil dengan
-   `CARGO_NET_GIT_FETCH_WITH_CLI=true` terhadap commit `7bb739d7`; repo private butuh kredensial.
+1. **Build bersih butuh kredensial repo private.** Bridge sudah dipin ke `rev = 3e4e6e4` dan
+   `Cargo.lock` menunjuk revisi itu, tetapi repo `OpineRust` private: build/CI baru gagal
+   autentikasi tanpa akses, dan Cargo perlu `CARGO_NET_GIT_FETCH_WITH_CLI=true` agar memakai SSH
+   CLI. Ini blocker distribusi sampai repo dibuat public atau diberi token read-only.
 2. **Clippy runtime gagal** karena lint `approx_constant` di `pine-builtins` (`phi`), masalah upstream
    pada toolchain 1.99.
 3. **Review visual browser belum tuntas.** Capture WebGL headless mengembalikan area chart kosong,
@@ -113,5 +113,4 @@ Bridge (`/root/egui-charts`):
 
 Runtime berasal dari Pinecone (MPL-2.0). `LICENSE` dan `NOTICE` menyebut sumber, commit awal, dan
 kewajiban source saat distribusi. Repo private tidak otomatis memenuhi kewajiban distribusi.
-Tidak ada kode AGPL Vela-pinets yang disalin. Pine Script® adalah merek TradingView; OpineRust bukan
-implementasi resmi.
+Pine Script® adalah merek TradingView; OpineRust bukan implementasi resmi.
