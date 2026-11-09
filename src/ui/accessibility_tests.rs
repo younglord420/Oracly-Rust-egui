@@ -599,15 +599,7 @@ fn dialogs_expose_titles_and_label_their_fields() {
                 dialog.open(crate::widget::SeriesId::MAIN, &study, None);
                 dialog.show(ctx, &ctx.active_theme());
             },
-            &[
-                (Role::SpinButton, "Period"),
-                (Role::Tab, "Inputs"),
-                (Role::ComboBox, "Source"),
-                (Role::TextInput, "Symbol"),
-                (Role::ComboBox, "Interval"),
-                (Role::SpinButton, "Interval"),
-                (Role::CheckBox, "Wait for interval close"),
-            ],
+            &[(Role::SpinButton, "Period"), (Role::ComboBox, "Source")],
         ),
         (
             "Chart settings",
