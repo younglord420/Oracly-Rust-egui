@@ -35,6 +35,32 @@ plot(fast, title = "Fast", color = color.orange)
 plot(slow, title = "Slow", color = color.blue)
 "#;
 
+/// One entry in the run log.
+#[derive(Clone, Debug, PartialEq)]
+struct LogEntry {
+    severity: Severity,
+    message: String,
+}
+
+/// What the panel is showing about the script right now.
+///
+/// The order is the priority: a live failure outranks a successful install, and an
+/// installed study whose draft has since changed is not the same as one that is
+/// still live. Written as one enum so a frame cannot show two of them at once.
+#[derive(Clone, Debug, PartialEq)]
+enum RunState {
+    /// Nothing installed by this panel.
+    Draft,
+    /// Installed, and the editor holds exactly what the chart runs.
+    Applied(String),
+    /// Installed, but the draft has changed since.
+    Edited(String),
+    /// The last run or recalculation failed.
+    Failed(String),
+    /// The chart has no bars to run over.
+    NoData,
+}
+
 /// The OpineRust panel's state.
 pub struct OpineRustPanel {
     editor: StudyEditor,
@@ -42,8 +68,8 @@ pub struct OpineRustPanel {
     applied: Option<String>,
     /// The text at the last successful apply, to tell edits from it.
     applied_text: String,
-    /// One log line per run, newest last.
-    logs: Vec<String>,
+    /// One log entry per event, newest last.
+    logs: Vec<LogEntry>,
     /// True when a study from this panel is on the chart, so the next Run
     /// replaces rather than adds.
     applied_before: bool,
@@ -64,6 +90,17 @@ pub struct OpineRustPanel {
     installed_history: Vec<Installed>,
     /// Symbol and interval the scripts should see. Empty until the host sets it.
     context: RunContext,
+    /// Whether the Logs body is open.
+    logs_open: bool,
+    /// Where the header's Run button was drawn last frame, for hosts and tests
+    /// that need to press the real control instead of guessing a point.
+    run_rect: Option<egui::Rect>,
+    /// Why the current script is failing, cleared when a run or recalculation
+    /// succeeds again.
+    ///
+    /// Kept apart from the installed title so a failure never reads as success,
+    /// and cleared on recovery so a stale error does not outlive its cause.
+    last_failure: Option<String>,
 }
 
 impl Default for OpineRustPanel {
@@ -72,6 +109,10 @@ impl Default for OpineRustPanel {
         editor.open_document("My script", DEFAULT_SCRIPT);
         editor.set_io_actions(false);
         editor.set_apply_label("Run");
+        // The dock draws its own header, status and Run action; repeating them in
+        // the editor would be two places to read the same fact.
+        editor.set_chrome(false);
+        editor.set_line_numbers(true);
         Self {
             editor,
             applied: None,
@@ -84,6 +125,9 @@ impl Default for OpineRustPanel {
             installed: None,
             installed_history: Vec::new(),
             context: RunContext::default(),
+            logs_open: false,
+            run_rect: None,
+            last_failure: None,
         }
     }
 }
@@ -118,8 +162,11 @@ impl OpineRustPanel {
 
     /// The run log, for tests that check what the user is told.
     #[cfg(test)]
-    pub fn logs(&self) -> &[String] {
-        &self.logs
+    pub fn logs(&self) -> Vec<String> {
+        self.logs
+            .iter()
+            .map(|entry| entry.message.clone())
+            .collect()
     }
 
     /// Title the panel currently claims to have applied, for tests.
@@ -212,13 +259,14 @@ impl OpineRustPanel {
     /// Record that the host installed the study successfully. Only then does the
     /// panel say “Applied”.
     pub fn confirm_installed(&mut self, title: String, replaced: bool) {
-        self.logs.push(if replaced {
-            format!("Replaced “{title}”.")
+        if replaced {
+            self.log(Severity::Info, format!("Replaced “{title}”."));
         } else {
-            format!("Applied “{title}”.")
-        });
+            self.log(Severity::Info, format!("Applied “{title}”."));
+        }
         self.applied = Some(title);
         self.applied_text = self.editor.text().to_owned();
+        self.last_failure = None;
         self.applied_before = true;
         self.pending = None;
         self.editor.apply_result(Ok(()));
@@ -227,7 +275,8 @@ impl OpineRustPanel {
     /// The host could not install a prepared study. Nothing was applied, so the
     /// panel must not claim success.
     pub fn commit_failed(&mut self, reason: String) {
-        self.logs.push(format!("Install failed: {reason}"));
+        self.last_failure = Some(reason.clone());
+        self.log(Severity::Error, format!("Install failed: {reason}"));
         self.pending = None;
         self.editor.apply_result(Err(reason));
     }
@@ -263,9 +312,9 @@ impl OpineRustPanel {
         }
         self.installed = None;
         if self.applied.take().is_some() {
-            self.logs.push(
-                "The chart no longer holds this script (undo or redo changed it). Run installs it again."
-                    .to_owned(),
+            self.log(
+                Severity::Info,
+                "The chart no longer holds this script (undo or redo changed it). Run installs it again.",
             );
         }
         self.applied_before = false;
@@ -286,10 +335,10 @@ impl OpineRustPanel {
             self.applied = Some(entry.title.clone());
             self.applied_before = true;
             self.applied_text = entry.text;
-            self.logs.push(format!(
-                "The chart holds “{}” again; Run replaces it.",
-                entry.title
-            ));
+            self.log(
+                Severity::Info,
+                format!("The chart holds “{}” again; Run replaces it.", entry.title),
+            );
         }
     }
 
@@ -325,13 +374,73 @@ impl OpineRustPanel {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        let Some(message) = message else { return };
+        let Some(message) = message else {
+            // The study calculated cleanly again: the failure it reported is over.
+            if self.logged_error.take().is_some() {
+                self.last_failure = None;
+            }
+            return;
+        };
         if self.logged_error.as_deref() == Some(message.as_str()) {
             return;
         }
-        self.logs.push(format!("Recalculation failed: {message}"));
+        self.last_failure = Some(message.clone());
+        self.last_failure = Some(message.clone());
+        self.log(Severity::Error, format!("Recalculation failed: {message}"));
         self.editor.apply_result(Err(message.clone()));
         self.logged_error = Some(message);
+    }
+
+    /// Draw the panel and return a study to install when Run succeeded.
+    ///
+    /// Also reports whether the user closed the panel, so the host owns the dock
+    /// instead of the editor hiding itself.
+    pub fn show_with_close(
+        &mut self,
+        ui: &mut egui::Ui,
+        bars: &[ChartBar],
+        now_ms: i64,
+    ) -> (Option<InstallStudy>, bool) {
+        self.drain_recalculation_error();
+        let has_data = !bars.is_empty();
+        let (mut run, close) = self.header(ui, has_data);
+        // Only while the code editor has focus: typing must not be a chart
+        // shortcut, and the shortcut must not fire from the chart or the header.
+        // The key event carries its own modifiers, so this works even when the
+        // pass-level modifier state was not updated.
+        let editor_id = self.editor.text_id(ui);
+        let editor_focused = ui.memory(|memory| memory.focused().is_some_and(|id| id == editor_id));
+        let shortcut = editor_focused
+            && ui.input(|input| {
+                input.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::Enter,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } if modifiers.command || modifiers.ctrl
+                    )
+                })
+            });
+        run |= shortcut;
+        run &= has_data;
+        if !has_data {
+            self.logs_ui_pinned(ui);
+            ui.label(egui::RichText::new("Load a symbol before running a script.").weak());
+        } else {
+            self.logs_ui_pinned(ui);
+            // The editor draws no Run of its own: the header owns that action, and a
+            // second button with the same meaning would be a trap.
+            self.editor.set_apply_button(false);
+            let _ = self.editor.show(ui);
+        }
+        if run {
+            let text = self.editor.text().to_owned();
+            return (self.prepare(&text, bars, now_ms), close);
+        }
+        (None, close)
     }
 
     /// Draw the panel and return a study to install when Run succeeded.
@@ -341,65 +450,18 @@ impl OpineRustPanel {
         bars: &[ChartBar],
         now_ms: i64,
     ) -> Option<InstallStudy> {
-        self.drain_recalculation_error();
-        // Run is the panel's primary action, in its header as in Vela. Both the
-        // button and Ctrl/Cmd+Enter go through the same request slot.
-        self.header(ui);
-        let mut run = false;
-        ui.horizontal(|ui| {
-            let run_button = ui.add(
-                egui::Button::new(egui::RichText::new("Run").strong())
-                    .fill(ui.visuals().selection.bg_fill),
-            );
-            if run_button
-                .on_hover_text("Compile and apply (Ctrl+Enter)")
-                .clicked()
-            {
-                run = true;
-            }
-            if self.editor.is_modified() {
-                ui.label(egui::RichText::new("Unsaved changes").weak());
-            }
-        })
-        .response
-        .on_hover_text("Run compiles and applies the draft; a later Run replaces the study");
-        // Only while the editor has focus: typing in the code must not be a
-        // chart shortcut, and the shortcut must not fire from the chart. The key
-        // event carries its own modifiers, so this works even when the pass-level
-        // modifier state was not updated.
-        let shortcut = ui.input(|input| {
-            input.events.iter().any(|event| {
-                matches!(
-                    event,
-                    egui::Event::Key {
-                        key: egui::Key::Enter,
-                        pressed: true,
-                        modifiers,
-                        ..
-                    } if modifiers.command || modifiers.ctrl
-                )
-            })
-        });
-        run |= shortcut;
+        self.show_with_close(ui, bars, now_ms).0
+    }
 
-        // Pin the logs first: an editor that grows to fill the panel would push
-        // a bottom strip out of view.
-        let logs_height = 110.0_f32.min(ui.available_height() * 0.4);
+    /// Pin the Logs to the bottom so an editor that fills the panel cannot push
+    /// them out of view.
+    fn logs_ui_pinned(&mut self, ui: &mut egui::Ui) {
+        let height = logs_panel_height(self.logs_open, ui.available_height());
         egui::Panel::bottom("opinerust_logs")
-            .exact_size(logs_height)
+            .exact_size(height)
             .resizable(false)
             .frame(egui::Frame::NONE)
             .show(ui, |ui| self.logs_ui(ui));
-
-        // The editor no longer carries an Apply button of its own: Run is here,
-        // and a second button with the same meaning would be a trap.
-        self.editor.set_apply_button(false);
-        let _ = self.editor.show(ui);
-        if run {
-            let text = self.editor.text().to_owned();
-            return self.prepare(&text, bars, now_ms);
-        }
-        None
     }
 
     /// Chart metadata (`syminfo.*`, `timeframe.*`) the panel should report.
@@ -410,50 +472,167 @@ impl OpineRustPanel {
         self.context = context;
     }
 
-    /// Panel identity and run state. Run lives in the editor header beside it.
-    fn header(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("OpineRust").strong());
-            let edited = self.applied.is_some() && self.editor.text() != self.applied_text;
-            let state = match &self.applied {
-                Some(title) if edited => format!("{title} — edited"),
-                Some(title) => title.clone(),
-                None => "Draft".to_owned(),
-            };
-            ui.label(egui::RichText::new(state).weak()).on_hover_text(
-                "Run compiles and applies. A later Run replaces the applied study in place.",
-            );
-            if self.pending.is_some() {
-                ui.spinner();
-            }
-        });
-        ui.add_space(2.0);
+    /// Centre of the header's Run button, once it has been drawn.
+    pub fn run_button_center(&self) -> Option<egui::Pos2> {
+        self.run_rect.map(|rect| rect.center())
     }
 
+    /// What the panel claims about the script right now.
+    fn run_state(&self) -> RunState {
+        // A failure is the current truth about the chart: whatever title was
+        // installed before is not what the user should read as live.
+        if let Some(reason) = &self.last_failure {
+            return RunState::Failed(reason.clone());
+        }
+        let Some(title) = self.applied.clone() else {
+            return RunState::Draft;
+        };
+        if self.editor.text() != self.applied_text {
+            RunState::Edited(title)
+        } else {
+            RunState::Applied(title)
+        }
+    }
+
+    /// The single header: identity, run state, Run and Close.
+    ///
+    /// Returns `(run, close)`. Run and the shortcut share the flag so both go
+    /// through the host's install path; close is the host's to act on.
+    fn header(&mut self, ui: &mut egui::Ui, has_data: bool) -> (bool, bool) {
+        let mut run = false;
+        let mut close = false;
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("OpineRust").strong());
+            let state = if has_data {
+                self.run_state()
+            } else {
+                RunState::NoData
+            };
+            let (label, tooltip) = match &state {
+                RunState::Draft => ("Draft".to_owned(), "Not applied yet"),
+                RunState::Applied(title) => (title.clone(), "Running on the chart"),
+                RunState::Edited(title) => (
+                    format!("{title} · edited"),
+                    "The chart still runs the previous script",
+                ),
+                RunState::Failed(reason) => {
+                    (format!("Failed · {reason}"), "The last run failed")
+                }
+                RunState::NoData => ("No data".to_owned(), "Load a symbol before running"),
+            };
+            let mut text = egui::RichText::new(label).weak();
+            if matches!(state, RunState::Failed(_)) {
+                text = text.color(ui.visuals().error_fg_color);
+            }
+            ui.add(egui::Label::new(text).truncate()).on_hover_text(tooltip);
+            if self.pending.is_some() {
+                // Only while a run is actually in flight; the panel is synchronous,
+                // so this is a frame or two, not a promise of background work.
+                ui.spinner();
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let close_button = ui
+                    .add(egui::Button::new("\u{00d7}").frame(false))
+                    .on_hover_text("Close the editor (the draft is kept)");
+                if close_button.clicked() {
+                    close = true;
+                }
+                let run_button = ui.add(
+                    egui::Button::new(egui::RichText::new("Run").strong())
+                        .fill(ui.visuals().selection.bg_fill),
+                );
+                self.run_rect = Some(run_button.rect);
+                if run_button
+                    .on_hover_text("Run script (Ctrl+Enter)")
+                    .clicked()
+                {
+                    run = true;
+                }
+            });
+        });
+        (run, close)
+    }
+
+    /// The Logs summary row, plus the body when open.
+    ///
+    /// Collapsed it costs one row: an empty 110 px strip pushed the code out of the
+    /// panel for no reason.
     fn logs_ui(&mut self, ui: &mut egui::Ui) {
         let errors = self
             .logs
             .iter()
-            .filter(|line| line.contains("failed"))
+            .filter(|entry| entry.severity == Severity::Error)
             .count();
-        let title = format!("Logs ({}) — {errors} error(s)", self.logs.len());
-        egui::CollapsingHeader::new(title)
-            .id_salt("opinerust_logs_header")
-            .default_open(true)
+        let warnings = self
+            .logs
+            .iter()
+            .filter(|entry| entry.severity == Severity::Warning)
+            .count();
+        let mut summary = String::from("Logs");
+        if errors > 0 {
+            summary.push_str(&format!(" · {errors} error"));
+            if errors > 1 {
+                summary.push('s');
+            }
+        }
+        if warnings > 0 {
+            summary.push_str(&format!(" · {warnings} warning"));
+            if warnings > 1 {
+                summary.push('s');
+            }
+        }
+        let marker = if self.logs_open { "v" } else { ">" };
+        let row = ui
+            .horizontal(|ui| {
+                if ui
+                    .add(egui::Button::new(format!("{marker} {summary}")).frame(false))
+                    .clicked()
+                {
+                    self.logs_open = !self.logs_open;
+                }
+            })
+            .response;
+        row.on_hover_text("Show or hide the run log");
+        if !self.logs_open {
+            return;
+        }
+        let height = 140.0_f32.min(ui.available_height() * 0.45);
+        egui::ScrollArea::vertical()
+            .id_salt("opinerust_log_scroll")
+            .max_height(height)
+            .auto_shrink([false; 2])
+            .stick_to_bottom(true)
             .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("opinerust_log_scroll")
-                    .auto_shrink([false; 2])
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        if self.logs.is_empty() {
-                            ui.label(egui::RichText::new("No runs yet.").weak());
-                        }
-                        for line in &self.logs {
-                            ui.label(line.as_str());
-                        }
+                if self.logs.is_empty() {
+                    ui.label(egui::RichText::new("No runs yet.").weak());
+                }
+                for entry in &self.logs {
+                    let (color, label) = match entry.severity {
+                        Severity::Error => (ui.visuals().error_fg_color, "Error"),
+                        Severity::Warning => (ui.visuals().warn_fg_color, "Warning"),
+                        // `Severity` is non-exhaustive upstream: an unknown level
+                        // is shown as a hint rather than dropped.
+                        Severity::Info | _ => (ui.visuals().weak_text_color(), "Info"),
+                    };
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(egui::RichText::new(label).color(color));
+                        ui.label(&entry.message);
                     });
+                }
             });
+    }
+
+    /// Append a log entry.
+    fn log(&mut self, severity: Severity, message: impl Into<String>) {
+        self.logs.push(LogEntry {
+            severity,
+            message: message.into(),
+        });
+        // A failure is the reason the panel matters; open the log so it is not
+        // hidden behind a collapsed row the user has to discover.
+        if severity == Severity::Error {
+            self.logs_open = true;
+        }
     }
 
     /// Compile and run `source`, returning the prepared study on success.
@@ -481,16 +660,18 @@ impl OpineRustPanel {
             Ok(built) => {
                 let title = built.info.title.clone();
                 let lines = built.study.line_names().join(", ");
-                self.logs.push(format!(
-                    "Prepared “{title}” ({} line(s): {lines}).",
-                    built.study.line_count()
-                ));
+                self.log(
+                    Severity::Info,
+                    format!(
+                        "Prepared “{title}” ({} line(s): {lines}).",
+                        built.study.line_count()
+                    ),
+                );
                 for diagnostic in built.diagnostics {
-                    self.logs.push(format!(
-                        "{}: {}",
-                        label(diagnostic.severity),
-                        diagnostic.message
-                    ));
+                    self.log(
+                        severity_of(diagnostic.severity),
+                        diagnostic.message.clone(),
+                    );
                 }
                 self.editor.set_diagnostics(Vec::new());
                 self.pending = Some(title.clone());
@@ -503,13 +684,27 @@ impl OpineRustPanel {
             }
             Err(error) => {
                 let (message, edits) = describe(error, source);
-                self.logs.push(format!("Run failed: {message}"));
+                self.last_failure = Some(message.clone());
+                self.log(Severity::Error, format!("Run failed: {message}"));
                 self.editor.set_diagnostics(edits);
                 self.editor.apply_result(Err(message));
                 None
             }
         }
     }
+}
+
+/// Height the pinned Logs area asks for.
+///
+/// Collapsed it is the summary row alone; an empty strip of a fixed height used to
+/// push the code out of a short panel. Expanded it adds the body, capped so the
+/// editor keeps most of the panel.
+fn logs_panel_height(open: bool, available: f32) -> f32 {
+    let summary = 32.0_f32;
+    if !open {
+        return summary.min(available);
+    }
+    (summary + 140.0).min(available * 0.6).max(summary.min(available))
 }
 
 /// The host clock the engine reads on recalculation, in UNIX milliseconds.
@@ -522,6 +717,15 @@ fn label(severity: DiagnosticSeverity) -> &'static str {
         DiagnosticSeverity::Info => "Info",
         DiagnosticSeverity::Warning => "Warning",
         DiagnosticSeverity::Error => "Error",
+    }
+}
+
+/// The editor's severity for an engine diagnostic, so one log list can count them.
+fn severity_of(severity: DiagnosticSeverity) -> Severity {
+    match severity {
+        DiagnosticSeverity::Info => Severity::Info,
+        DiagnosticSeverity::Warning => Severity::Warning,
+        DiagnosticSeverity::Error => Severity::Error,
     }
 }
 
@@ -728,12 +932,12 @@ mod tests {
             "the failed candidate must not replace the applied title"
         );
         assert!(
-            !panel.logs.iter().any(|line| line.contains("Applied “Fragile”")),
+            !panel.logs().iter().any(|line| line.contains("Applied “Fragile”")),
             "the failed candidate must never be announced as applied: {:?}",
             panel.logs
         );
         assert!(
-            panel.logs.iter().any(|line| line.contains("Install failed")),
+            panel.logs().iter().any(|line| line.contains("Install failed")),
             "{:?}",
             panel.logs
         );
@@ -754,7 +958,7 @@ mod tests {
         assert!(panel.prepare(broken, &bars(10), 0).is_none());
         assert!(panel.applied.is_none(), "nothing is applied on failure");
         assert!(
-            panel.logs.iter().any(|line| line.contains("Run failed")),
+            panel.logs().iter().any(|line| line.contains("Run failed")),
             "{:?}",
             panel.logs
         );
@@ -921,7 +1125,7 @@ mod tests {
         );
         assert!(
             panel
-                .logs
+                .logs()
                 .iter()
                 .any(|line| line.contains("Install failed: Study limit reached")),
             "{:?}",
@@ -993,9 +1197,47 @@ mod tests {
 
         // A plain pass must not run anything.
         assert!(!frame(Vec::new(), &mut panel));
-        assert!(panel.logs.is_empty(), "opening the panel runs nothing");
+        assert!(panel.logs().is_empty(), "opening the panel runs nothing");
 
-        // Ctrl+Enter is the Run shortcut.
+        // Ctrl+Enter is the Run shortcut, and it only fires while the code editor
+        // has focus: a click inside the text is what gives it that focus.
+        let click_at = |pos: egui::Pos2, panel: &mut OpineRustPanel| {
+            let events = vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ];
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(420.0, 700.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    panel.show(ui, &bars, 0);
+                },
+            )
+            .drop_without_applying_deltas();
+        };
+        // Two warm-up passes so the text area has a real rect, then click into it.
+        frame(Vec::new(), &mut panel);
+        frame(Vec::new(), &mut panel);
+        click_at(egui::pos2(120.0, 150.0), &mut panel);
+        frame(Vec::new(), &mut panel);
+
         let enter = vec![egui::Event::Key {
             key: egui::Key::Enter,
             physical_key: None,
@@ -1006,7 +1248,7 @@ mod tests {
         installed |= frame(enter, &mut panel);
         assert!(installed, "Ctrl+Enter must prepare the study");
         assert!(
-            panel.logs.iter().any(|line| line.contains("Prepared")),
+            panel.logs().iter().any(|line| line.contains("Prepared")),
             "{:?}",
             panel.logs
         );
@@ -1084,13 +1326,15 @@ mod tests {
 
         // Warm up so widget positions exist, then click the first header button.
         frame(&mut panel, &mut chart, None);
-        frame(&mut panel, &mut chart, Some(egui::pos2(12.0, 40.0)));
+        // Run is the rightmost action in the header; the close button sits beside it.
+        let run_button = egui::pos2(420.0, 18.0);
+        frame(&mut panel, &mut chart, Some(run_button));
         assert_eq!(
             chart.indicators().count(),
             baseline + 1,
             "the Run button installs one study"
         );
-        frame(&mut panel, &mut chart, Some(egui::pos2(12.0, 40.0)));
+        frame(&mut panel, &mut chart, Some(run_button));
         assert_eq!(
             chart.indicators().count(),
             baseline + 1,
@@ -1104,7 +1348,7 @@ mod tests {
         let source = "//@version=5\nindicator(\"Empty\")\nx = close\n";
         assert!(panel.prepare(source, &bars(5), 0).is_none());
         assert!(
-            panel.logs.iter().any(|line| line.contains("no plot")),
+            panel.logs().iter().any(|line| line.contains("no plot")),
             "{:?}",
             panel.logs
         );
@@ -1117,7 +1361,7 @@ mod tests {
         assert!(panel.prepare(source, &bars(5), 0).is_none());
         assert!(
             panel
-                .logs
+                .logs()
                 .iter()
                 .any(|line| line.contains("`strategy` scripts are not supported")),
             "{:?}",
@@ -1134,7 +1378,7 @@ mod tests {
         assert!(panel.applied.is_none(), "a failed install is not Applied");
         assert!(
             panel
-                .logs
+                .logs()
                 .iter()
                 .any(|line| line.contains("Install failed"))
         );
@@ -1201,7 +1445,7 @@ mod tests {
         panel.drain_recalculation_error();
         assert!(
             panel
-                .logs
+                .logs()
                 .iter()
                 .any(|line| line.contains("Recalculation failed: bar failed")),
             "{:?}",
@@ -1210,7 +1454,7 @@ mod tests {
         panel.drain_recalculation_error();
         assert_eq!(
             panel
-                .logs
+                .logs()
                 .iter()
                 .filter(|line| line.contains("Recalculation failed"))
                 .count(),
@@ -1221,6 +1465,138 @@ mod tests {
             slot.lock().unwrap().as_deref(),
             Some("bar failed"),
             "logging must not empty the slot the chart reads"
+        );
+    }
+
+    /// A live failure must outrank the installed title, and a clean recalculation
+    /// must clear it again: the header is where the user decides whether the chart
+    /// is showing current data.
+    #[test]
+    fn a_failure_shows_then_clears_when_the_study_recovers() {
+        let mut panel = OpineRustPanel::default();
+        panel
+            .editor_mut()
+            .replace_text("//@version=5\nindicator(\"Live\", overlay = true)\nplot(close)\n");
+        let bars = bars(10);
+        let source = panel.editor.text().to_owned();
+        let prepared = panel.prepare(&source, &bars, 0).expect("runs");
+        let mut chart = Chart::new(BarData::from_bars(bars));
+        panel.install(&mut chart, None, prepared).expect("installs");
+        assert_eq!(panel.run_state(), RunState::Applied("Live".to_owned()));
+
+        let slot: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        panel.watch(slot.clone());
+        *slot.lock().unwrap() = Some("history reload failed".to_owned());
+        panel.drain_recalculation_error();
+        assert_eq!(
+            panel.run_state(),
+            RunState::Failed("history reload failed".to_owned()),
+            "a failure is not reported as the applied title"
+        );
+
+        // The study calculates cleanly again.
+        *slot.lock().unwrap() = None;
+        panel.drain_recalculation_error();
+        assert_eq!(
+            panel.run_state(),
+            RunState::Applied("Live".to_owned()),
+            "recovery clears the failure instead of leaving a stale error"
+        );
+    }
+
+    /// Collapsed Logs cost one row. An empty 110 px strip used to push the code out
+    /// of a short panel for no reason.
+    #[test]
+    fn collapsed_logs_cost_only_the_summary_row() {
+        let ctx = egui::Context::default();
+        let bars = bars(20);
+        let mut panel = OpineRustPanel::default();
+        // The rule itself: collapsed is the summary row only, expanded is the body
+        // plus that row and never more than part of the panel.
+        assert_eq!(logs_panel_height(false, 700.0), 32.0);
+        assert_eq!(logs_panel_height(false, 100.0), 32.0);
+        let open = logs_panel_height(true, 700.0);
+        assert!(
+            (100.0..=172.0).contains(&open),
+            "an open log keeps the editor usable: {open}"
+        );
+        assert!(
+            logs_panel_height(true, 120.0) < 120.0,
+            "a short panel does not give the log more room than it has"
+        );
+
+        // And the panel still draws both states without panicking.
+        let draw = |panel: &mut OpineRustPanel| {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(420.0, 700.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    panel.show(ui, &bars, 0);
+                },
+            )
+            .drop_without_applying_deltas();
+        };
+        draw(&mut panel);
+        panel.logs_open = true;
+        draw(&mut panel);
+        panel.logs_open = false;
+        draw(&mut panel);
+    }
+
+    /// The header's close button asks the host to hide the dock.
+    #[test]
+    fn the_header_close_button_asks_the_host_to_close() {
+        let ctx = egui::Context::default();
+        let bars = bars(20);
+        let mut panel = OpineRustPanel::default();
+        let click = |panel: &mut OpineRustPanel, pos: egui::Pos2| {
+            let events = vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ];
+            let mut result = (None, false);
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(460.0, 700.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    result = panel.show_with_close(ui, &bars, 0);
+                },
+            )
+            .drop_without_applying_deltas();
+            result
+        };
+        // Warm up so the header has a rect, then click the close button at the
+        // far right; Run sits to its left and must not fire.
+        click(&mut panel, egui::pos2(-1.0, -1.0));
+        let (install, close) = click(&mut panel, egui::pos2(452.0, 18.0));
+        assert!(install.is_none(), "closing must not run the script");
+        assert!(close, "the close button reports a close request");
+        assert!(
+            panel.logs().is_empty(),
+            "nothing was prepared by a close: {:?}",
+            panel.logs()
         );
     }
 }

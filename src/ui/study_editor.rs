@@ -89,6 +89,12 @@ pub struct StudyEditor {
     apply_label: String,
     /// Hide the apply button for hosts that draw their own Run action.
     hide_apply: bool,
+    /// Hide the title row, modified note and status banner.
+    hide_chrome: bool,
+    /// Draw line numbers beside the text.
+    line_numbers: bool,
+    /// Text the host last published, for hosts without a file store.
+    applied_text: String,
 }
 
 impl StudyEditor {
@@ -164,6 +170,53 @@ impl StudyEditor {
         self.hide_io = !show;
     }
 
+    /// Hide the title field, the modified note and the status banner.
+    ///
+    /// A host that draws its own header — the OpineRust dock shows the script
+    /// name, the run state and the Run action itself — would otherwise repeat
+    /// every one of them. The text, diagnostics and actions keep working.
+    pub fn set_chrome(&mut self, show: bool) {
+        self.hide_chrome = !show;
+    }
+
+    /// The id of the code text widget, for hosts that track focus.
+    ///
+    /// Stable for the same enclosing `Ui`, so a host can tell whether the code has
+    /// focus before accepting a keyboard shortcut meant only for it.
+    pub fn text_id(&self, ui: &Ui) -> egui::Id {
+        ui.scope_id().with("study_editor_text")
+    }
+
+    /// Draw line numbers in a gutter beside the text.
+    ///
+    /// Off by default so hosts that already wrap the editor in their own layout
+    /// are unaffected.
+    pub fn set_line_numbers(&mut self, show: bool) {
+        self.line_numbers = show;
+    }
+
+    /// Whether the text changed since the document was opened or last saved.
+    ///
+    /// Unlike [`Self::is_modified`], this compares against a baseline the host
+    /// chooses: a host with no file store uses [`Self::mark_applied`] to tell
+    /// "this draft is not what the chart runs" from "this file is not saved".
+    pub fn is_dirty_against(&self, baseline: &str) -> bool {
+        self.text != baseline
+    }
+
+    /// Record the text the host published, so a later edit is visible as such.
+    ///
+    /// This never claims the text is saved: [`Self::is_modified`] keeps its own
+    /// file-oriented baseline.
+    pub fn mark_applied(&mut self, text: &str) {
+        self.applied_text = text.to_owned();
+    }
+
+    /// The text as last published by the host.
+    pub fn applied_text(&self) -> &str {
+        &self.applied_text
+    }
+
     /// Renames the apply button, for hosts whose action is "Run".
     pub fn set_apply_label(&mut self, label: impl Into<String>) {
         self.apply_label = label.into();
@@ -188,6 +241,21 @@ impl StudyEditor {
 
     /// Shows the panel in `ui` and returns what the user asked of the host.
     pub fn show(&mut self, ui: &mut Ui) -> StudyEditorAction {
+        let mut action = StudyEditorAction::None;
+        if !self.hide_chrome {
+            action = self.chrome(ui);
+            self.status_banner(ui);
+        }
+        self.text_area(ui);
+        if let Some(reveal) = self.diagnostics_list(ui) {
+            self.reveal = Some(reveal);
+            ui.ctx().request_repaint();
+        }
+        action
+    }
+
+    /// Title field, modified note, and the Open/Save/Apply actions.
+    fn chrome(&mut self, ui: &mut Ui) -> StudyEditorAction {
         let mut action = StudyEditorAction::None;
         let weak = ui.visuals().weak_text_color();
         ui.horizontal(|ui| {
@@ -223,6 +291,11 @@ impl StudyEditor {
                 }
             });
         });
+        action
+    }
+
+    /// The host's answer to the last apply request.
+    fn status_banner(&self, ui: &mut Ui) {
         match &self.status {
             Some(Status::Applied) => status_message(
                 ui,
@@ -234,27 +307,61 @@ impl StudyEditor {
             }
             None => {}
         }
-        let editor = ui.make_persistent_id("study_editor_text");
+    }
+
+    /// The scrollable text, with an optional line-number gutter.
+    fn text_area(&mut self, ui: &mut Ui) {
+        let editor = ui.scope_id().with("study_editor_text");
         let height = (ui.available_height() - self.diagnostics_height(ui)).max(80.0);
         let reveal = self.reveal.take().map(|span| self.char_range(&span));
-        ScrollArea::vertical()
+        let line_count = self.text.lines().count().max(1);
+        let gutter = self.line_numbers.then(|| self.gutter_width(ui, line_count));
+        ScrollArea::both()
             .id_salt("study_editor_scroll")
             .max_height(height)
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                let mut output = TextEdit::multiline(&mut self.text)
-                    .id(editor)
-                    .code_editor()
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(
-                        (height / ui.text_style_height(&egui::TextStyle::Monospace)) as usize,
+                let output = if let Some(width) = gutter {
+                    let mut text_output = None;
+                    // The gutter is allocated first so the text starts to its right,
+                    // and painted afterwards from the galley rows: that keeps every
+                    // number on its own baseline without re-laying out the text.
+                    ui.horizontal_top(|ui| {
+                        let (gutter_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(width, 0.0), egui::Sense::hover());
+                        let builder = TextEdit::multiline(&mut self.text)
+                            .id(editor)
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(
+                                (height / ui.text_style_height(&egui::TextStyle::Monospace))
+                                    as usize,
+                            );
+                        let output = builder.show(ui);
+                        paint_line_numbers(ui, &output, &gutter_rect, width);
+                        text_output = Some(output);
+                    });
+                    text_output
+                } else {
+                    Some(
+                        TextEdit::multiline(&mut self.text)
+                            .id(editor)
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(
+                                (height / ui.text_style_height(&egui::TextStyle::Monospace))
+                                    as usize,
+                            )
+                            .show(ui),
                     )
-                    .show(ui);
+                };
+                let Some(output) = output else { return };
                 if let Some(range) = reveal {
                     let cursors =
                         CCursorRange::two(CCursor::new(range.start), CCursor::new(range.end));
-                    output.state.cursor.set_char_range(Some(cursors));
-                    output.state.store(ui.ctx(), editor);
+                    let mut state = output.state.clone();
+                    state.cursor.set_char_range(Some(cursors));
+                    state.store(ui.ctx(), editor);
                     ui.memory_mut(|memory| memory.request_focus(editor));
                     let at = output.galley.pos_from_cursor(CCursor::new(range.start));
                     ui.scroll_to_rect(
@@ -263,6 +370,20 @@ impl StudyEditor {
                     );
                 }
             });
+    }
+
+    /// Width a gutter needs for `lines` line numbers.
+    fn gutter_width(&self, ui: &Ui, lines: usize) -> f32 {
+        let digits = lines.to_string().len().max(2) as f32;
+        ui.fonts_mut(|fonts| {
+            let font = egui::TextStyle::Monospace.resolve(ui.style());
+            fonts.glyph_width(&font, '0') * digits
+        }) + ui.spacing().item_spacing.x
+    }
+
+    /// Draw the diagnostic rows, returning a span the user clicked.
+    fn diagnostics_list(&self, ui: &mut Ui) -> Option<Range<usize>> {
+        let weak = ui.visuals().weak_text_color();
         let mut reveal = None;
         for diagnostic in &self.diagnostics {
             let color = match diagnostic.severity {
@@ -288,17 +409,38 @@ impl StudyEditor {
                 reveal = Some(diagnostic.span.clone());
             }
         }
-        if reveal.is_some() {
-            self.reveal = reveal;
-            ui.ctx().request_repaint();
-        }
-        action
+        reveal
     }
 
     /// Room kept below the text for the diagnostics list.
     fn diagnostics_height(&self, ui: &Ui) -> f32 {
         let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
         row * self.diagnostics.len().min(6) as f32
+    }
+}
+
+/// Draw one number per visual row, right-aligned in `gutter_rect`.
+///
+/// Positions come from the galley rows rather than from an assumed line height,
+/// so wrapped rows, blank lines, CRLF and a taller font stay aligned. The gutter
+/// shares the text's clip rectangle, which is what makes it scroll with the code
+/// instead of drifting.
+fn paint_line_numbers(
+    ui: &Ui,
+    output: &egui::text_edit::TextEditOutput,
+    gutter_rect: &egui::Rect,
+    width: f32,
+) {
+    let painter = ui.painter().with_clip_rect(output.text_clip_rect);
+    let color = ui.visuals().weak_text_color();
+    let font = egui::TextStyle::Monospace.resolve(ui.style());
+    let right = gutter_rect.left() + width - ui.spacing().item_spacing.x;
+    for (index, row) in output.galley.rows.iter().enumerate() {
+        let y = output.galley_pos.y + row.pos.y;
+        let number = (index + 1).to_string();
+        let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(number, font.clone(), color));
+        let pos = egui::pos2(right - galley.size().x, y);
+        painter.galley(pos, galley, color);
     }
 }
 
@@ -328,5 +470,128 @@ mod tests {
         // Bytes: a=0, é=1..3, '='=3, '1'=4.
         assert_eq!(editor.char_range(&(1..3)), 1..2);
         assert_eq!(editor.char_range(&(2..99)), 1..4);
+    }
+
+    /// A host with its own header hides the editor chrome, and the applied baseline
+    /// is separate from the file baseline: neither may pretend the other happened.
+    #[test]
+    fn chrome_can_be_hidden_without_touching_the_file_baseline() {
+        let mut editor = StudyEditor::new();
+        editor.open_document("Dock", "plot(close)");
+        editor.set_chrome(false);
+        editor.set_line_numbers(true);
+
+        assert!(!editor.is_modified(), "a fresh document is not edited");
+        editor.text.push_str("\nplot(open)");
+        assert!(editor.is_modified(), "typing still marks the file dirty");
+        assert!(
+            editor.is_dirty_against("plot(close)"),
+            "and the draft differs from what the host published"
+        );
+
+        // Publishing is not saving: the file baseline is untouched.
+        editor.mark_applied(&editor.text().to_owned());
+        assert!(
+            !editor.is_dirty_against(editor.applied_text()),
+            "the published text matches the draft"
+        );
+        assert!(
+            editor.is_modified(),
+            "mark_applied must never claim the file was saved"
+        );
+        editor.mark_saved(&editor.text().to_owned());
+        assert!(
+            !editor.is_modified(),
+            "a real save clears the file baseline"
+        );
+    }
+
+    /// The dock draws no title, modified note or status banner of its own; the
+    /// generic editor keeps them for hosts like the terminal.
+    #[test]
+    fn the_dock_chrome_is_absent_and_the_generic_chrome_stays() {
+        let ctx = egui::Context::default();
+        let size = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480.0, 400.0));
+
+        let texts = |chrome: bool| {
+            let mut editor = StudyEditor::new();
+            editor.open_document("Script", "plot(close)\nplot(open)\n");
+            editor.set_chrome(chrome);
+            editor.set_apply_button(false);
+            editor.apply_result(Ok(()));
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(size),
+                    ..Default::default()
+                },
+                |ui| {
+                    editor.show(ui);
+                },
+            );
+            let found: Vec<String> = output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                    _ => None,
+                })
+                .collect();
+            output.drop_without_applying_deltas();
+            found
+        };
+
+        let dock = texts(false);
+        assert!(
+            !dock.iter().any(|text| text == "Title"),
+            "no title field in the dock: {dock:?}"
+        );
+        assert!(
+            !dock.iter().any(|text| text.contains("applied")),
+            "no status banner duplicating the header: {dock:?}"
+        );
+
+        let generic = texts(true);
+        assert!(
+            generic.iter().any(|text| text == "Title"),
+            "the generic editor keeps its title field: {generic:?}"
+        );
+    }
+
+    /// Line numbers are drawn per visual row, so a blank line, a wrapped row or a
+    /// newline at the end still lines up with the text it belongs to.
+    #[test]
+    fn line_numbers_follow_the_rows_they_belong_to() {
+        let ctx = egui::Context::default();
+        let mut editor = StudyEditor::new();
+        editor.open_document("Numbers", "one\n\ntwo\n");
+        editor.set_chrome(false);
+        editor.set_line_numbers(true);
+        editor.set_apply_button(false);
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(320.0, 200.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                editor.show(ui);
+            },
+        );
+        let numbers: Vec<String> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .filter(|text| text.chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        output.drop_without_applying_deltas();
+        assert!(
+            numbers.contains(&"1".to_owned()) && numbers.contains(&"3".to_owned()),
+            "each row gets its own number, including after a blank line: {numbers:?}"
+        );
     }
 }

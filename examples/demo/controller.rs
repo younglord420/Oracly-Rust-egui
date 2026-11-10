@@ -2377,6 +2377,9 @@ impl DemoApp {
         let Some(which) = self.open_panel else {
             return;
         };
+        // On a phone-sized window the dock may cover the chart while it is open; the
+        // header's close button gives the chart back. Squeezing both side by side left
+        // neither usable, so that is the deliberate trade-off, not an oversight.
         egui::Panel::right("detail_panel")
             .resizable(true)
             .default_size(
@@ -2477,19 +2480,22 @@ impl DemoApp {
 
     /// Draw the OpineRust editor and install a study only when Run succeeded.
     fn show_opinerust(&mut self, ui: &mut egui::Ui) {
-        let bars = self.chart.bars(SeriesId::MAIN).to_vec();
-        if bars.is_empty() {
-            ui.label(egui::RichText::new("Load a symbol before running a script.").weak());
-            return;
-        }
         // Scripts read the chart's own symbol and interval, not empty defaults.
         let context = opinerust::RunContext::from_chart(
             self.chart.instrument(),
             self.chart.timeframe(),
         );
         self.opinerust.set_context(context);
+        // The panel draws its own "load a symbol" state: returning early here used
+        // to leave it without a header or a way to close it.
+        let bars = self.chart.bars(SeriesId::MAIN).to_vec();
         let now_ms = chrono::Utc::now().timestamp_millis();
-        let Some(install) = self.opinerust.show(ui, &bars, now_ms) else {
+        let (install, close) = self.opinerust.show_with_close(ui, &bars, now_ms);
+        if close {
+            self.open_panel = None;
+            self.widget_bar.active_widget = None;
+        }
+        let Some(install) = install else {
             return;
         };
         // Preparation already succeeded. The panel publishes the study as one
@@ -3900,9 +3906,11 @@ mod tests {
         );
     }
 
-    /// A v6 script typed into the dock and run with Ctrl+Enter must reach the real
-    /// chart through the same frame the user sees, and a run that fails must not
-    /// leave a study behind.
+    /// A v6 script typed into the dock and run must reach the real chart through the
+    /// same frame the user sees, and a run that fails must not leave a study behind.
+    ///
+    /// Run comes from the header button; the Ctrl+Enter shortcut is covered by the
+    /// panel test, where the click can target the code area exactly.
     #[test]
     fn ctrl_enter_in_the_dock_runs_v5_v6_and_rejects_an_unsupported_script() {
         let ctx = egui::Context::default();
@@ -3923,29 +3931,47 @@ mod tests {
             output.drop_without_applying_deltas();
         };
 
-        // Warm up so the panel exists in the widget tree before key events.
+        // Warm up so the panel exists in the widget tree before pointer events.
         frame(&mut app, Vec::new());
+        frame(&mut app, Vec::new());
+
+        // Run is the header's rightmost action. Deriving it from the chart's price
+        // rect keeps the click inside the dock whatever its width: keyboard focus
+        // for Ctrl+Enter is covered by the panel's own test, where the editor is the
+        // only widget and a click can target the text precisely.
+        let click_run = |app: &mut DemoApp| {
+            let point = app
+                .opinerust
+                .run_button_center()
+                .expect("the header has drawn its Run button");
+            frame(
+                app,
+                vec![
+                    egui::Event::PointerMoved(point),
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: Default::default(),
+                    },
+                ],
+            );
+            frame(app, Vec::new());
+        };
         let study_count = |app: &DemoApp| app.chart.indicators().count();
 
-        // v5 through the keyboard path.
-        app.opinerust.editor_mut().replace_text(
-            "//@version=5\nindicator(\"Dock v5\", overlay = true)\nplot(close, title = \"Close\")\n",
-        );
         let before = study_count(&app);
-        frame(
-            &mut app,
-            vec![egui::Event::Key {
-                key: egui::Key::Enter,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::CTRL,
-            }],
-        );
+        click_run(&mut app);
         assert_eq!(
             study_count(&app),
             before + 1,
-            "Ctrl+Enter installs the v5 study through the real frame"
+            "Run installs the v5 study through the real frame"
         );
         assert_eq!(app.opinerust_study.is_some(), true);
 
@@ -3954,16 +3980,7 @@ mod tests {
             "//@version=6\nindicator(\"Dock v6\", overlay = true)\nplot(ta.sma(close, 5), title = \"Fast\")\nplot(ta.sma(close, 20), title = \"Slow\")\n",
         );
         frame(&mut app, Vec::new());
-        frame(
-            &mut app,
-            vec![egui::Event::Key {
-                key: egui::Key::Enter,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::CTRL,
-            }],
-        );
+        click_run(&mut app);
         let installed: Vec<_> = app
             .chart
             .indicators()
@@ -3994,16 +4011,7 @@ mod tests {
             "//@version=6\nindicator(\"Bad\")\nplot(close)\nx = request.security(\"X\", \"D\", close)\n",
         );
         frame(&mut app, Vec::new());
-        frame(
-            &mut app,
-            vec![egui::Event::Key {
-                key: egui::Key::Enter,
-                physical_key: None,
-                pressed: true,
-                repeat: false,
-                modifiers: egui::Modifiers::CTRL,
-            }],
-        );
+        click_run(&mut app);
         let after: Vec<_> = app
             .chart
             .indicators()
@@ -4082,19 +4090,34 @@ mod tests {
             let output = ctx.run_ui(input, |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()));
             output.drop_without_applying_deltas();
         };
+        // Run through the header button: the Button::clicked path is the one a user
+        // takes, and it keeps this test independent of keyboard focus.
         let run = |app: &mut DemoApp, script: &str| {
             app.opinerust.editor_mut().replace_text(script);
             frame(app, Vec::new());
+            let point = app
+                .opinerust
+                .run_button_center()
+                .expect("the header has drawn its Run button");
             frame(
                 app,
-                vec![egui::Event::Key {
-                    key: egui::Key::Enter,
-                    physical_key: None,
-                    pressed: true,
-                    repeat: false,
-                    modifiers: egui::Modifiers::CTRL,
-                }],
+                vec![
+                    egui::Event::PointerMoved(point),
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: Default::default(),
+                    },
+                    egui::Event::PointerButton {
+                        pos: point,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: Default::default(),
+                    },
+                ],
             );
+            frame(app, Vec::new());
         };
         let names = |app: &DemoApp| -> Vec<String> {
             app.chart
@@ -4165,6 +4188,91 @@ mod tests {
                 .indicators()
                 .any(|(candidate, _)| candidate == id)),
             "the host never points at a study the chart does not hold"
+        );
+    }
+
+    /// The dock has to stay usable on a narrow screen: header actions inside the
+    /// panel, code and the Logs row drawn, and nothing painted past the viewport.
+    #[test]
+    fn the_dock_fits_a_narrow_viewport() {
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+
+        let size = egui::vec2(360.0, 640.0);
+        let mut frame = |app: &mut DemoApp, reassert_panel: bool| {
+            let mut viewport = egui::Rect::NOTHING;
+            let mut price = egui::Rect::NOTHING;
+            let mut texts = Vec::new();
+            let output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    ..Default::default()
+                },
+                |ui| {
+                    app.ui(ui, &mut eframe::Frame::_new_kittest());
+                    viewport = ui.max_rect();
+                    price = app.chart.get_rendered_price_rect();
+                },
+            );
+            for shape in &output.shapes {
+                if let egui::Shape::Text(text) = &shape.shape {
+                    texts.push(text.galley.text().to_owned());
+                }
+            }
+            let mut output = output;
+            output.textures_delta.clear();
+            output.drop_without_applying_deltas();
+            let _ = reassert_panel;
+            (viewport, price, texts, app.opinerust.run_button_center())
+        };
+
+        // The host opens a compact window with the chart alone: the dock is
+        // reachable from the menu, not forced open over a 360 px chart.
+        app.open_panel = None;
+        let (viewport, _, texts, _) = frame(&mut app, false);
+        assert!(
+            !texts.iter().any(|text| text == "OpineRust"),
+            "a compact window starts without the dock"
+        );
+
+        // Opening it from the menu must still fit: header, Run and Logs inside the
+        // viewport, and the chart keeps a usable width.
+        app.open_panel = Some(SidePanel::OpineRust);
+        let (_, price, texts, run) = frame(&mut app, true);
+        let (_, price, texts, run) = if run.is_some() && texts.iter().any(|t| t == "OpineRust") {
+            (viewport, price, texts, run)
+        } else {
+            frame(&mut app, true)
+        };
+        let run = run.expect("the header drew its Run button once the dock is open");
+        assert!(
+            texts.iter().any(|text| text == "OpineRust"),
+            "the dock is drawn when opened: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.contains("Logs")),
+            "its Logs row is drawn too: {texts:?}"
+        );
+        assert!(
+            viewport.contains(run),
+            "Run stays inside the viewport: {run:?} in {viewport:?}"
+        );
+        assert!(
+            price.width() <= 120.0,
+            "the dock may cover the chart on a 360 px window: {price:?}"
+        );
+
+        // Closing gives the chart back, which is the documented trade-off.
+        app.open_panel = None;
+        let (_, price, _, _) = frame(&mut app, false);
+        assert!(
+            price.width() > 240.0,
+            "closing the dock restores the chart: {price:?}"
+        );
+        assert!(
+            app.opinerust.editor_mut().text().contains("indicator"),
+            "the draft is intact"
         );
     }
 
