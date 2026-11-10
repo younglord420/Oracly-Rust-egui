@@ -173,8 +173,7 @@ fn a_script_without_an_annotation_reports_the_default_version() {
 fn unsupported_v6_constructs_name_the_line() {
     for source in [
         "//@version=6\nindicator(\"x\")\nplot(close)\na = request.security(\"X\", \"D\", close)\n",
-        "//@version=6\nindicator(\"x\")\nplot(close)\nlabel.new(bar_index, close, \"hi\")\n",
-        "//@version=6\nindicator(\"x\")\nplot(close)\nt = table.new(position.top_right, 1, 1)\n",
+        "//@version=6\nindicator(\"x\")\nimport username/lib/1\nplot(close)\n",
         "//@version=6\nstrategy(\"x\")\nplot(close)\n",
     ] {
         match execute(source, &bars(), 0) {

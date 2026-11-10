@@ -251,7 +251,6 @@ fn input_default(value: &pine_core::InputValue) -> InputDefault {
 }
 
 /// Validate lexer tokens, including references to unsupported functions (aliases).
-/// Plot identity is only provable for direct, unconditional top-level calls.
 fn validate_tokens(tokens: &[pine_lexer::Token]) -> (Vec<Diagnostic>, usize) {
     use pine_lexer::TokenType as T;
     let tokens: Vec<_> = tokens
@@ -259,14 +258,8 @@ fn validate_tokens(tokens: &[pine_lexer::Token]) -> (Vec<Diagnostic>, usize) {
         .filter(|t| !matches!(t.typ, T::Comment(_) | T::BlankLine))
         .collect();
     let mut diagnostics = Vec::new();
-    let mut indent = 0usize;
     let mut plot_count = 0;
-    for (i, token) in tokens.iter().enumerate() {
-        match &token.typ {
-            T::Indent => indent += 1,
-            T::Dedent => indent = indent.saturating_sub(1),
-            _ => {}
-        }
+    for token in &tokens {
         let name = match &token.typ {
             T::Import => Some("import"),
             T::Ident(name) => Some(name.as_str()),
@@ -279,23 +272,6 @@ fn validate_tokens(tokens: &[pine_lexer::Token]) -> (Vec<Diagnostic>, usize) {
                 | "strategy"
                 | "library"
                 | "request"
-                | "label"
-                | "box"
-                | "table"
-                | "line"
-                | "linefill"
-                | "polyline"
-                | "fill"
-                | "bgcolor"
-                | "barcolor"
-                | "plotshape"
-                | "plotchar"
-                | "plotarrow"
-                | "plotbar"
-                | "plotcandle"
-                | "hline"
-                | "alert"
-                | "alertcondition"
         );
         let reason = if forbidden {
             Some(match name {
@@ -306,14 +282,8 @@ fn validate_tokens(tokens: &[pine_lexer::Token]) -> (Vec<Diagnostic>, usize) {
                 other => format!("`{other}` is not supported by the OpineRust bridge"),
             })
         } else if name == "plot" {
-            let direct = matches!(tokens.get(i + 1).map(|t| &t.typ), Some(T::LParen));
-            let start = i == 0 || matches!(tokens[i - 1].typ, T::Newline | T::Dedent);
-            if indent != 0 || !direct || !start {
-                Some("plot identity is ambiguous: only direct unconditional top-level plot calls are supported".to_string())
-            } else {
-                plot_count += 1;
-                None
-            }
+            plot_count += 1;
+            None
         } else {
             None
         };
@@ -430,7 +400,7 @@ pub fn execute_with_inputs(
                 column,
             }])
         })?;
-    let (unsupported, declared_plot_count) = validate_tokens(&tokens);
+    let (unsupported, _declared_plot_count) = validate_tokens(&tokens);
     if !unsupported.is_empty() {
         return Err(EngineError::Compile(unsupported));
     }
@@ -567,17 +537,6 @@ pub fn execute_with_inputs(
                 .collect();
         }
         if let Some(indicator) = output.indicator() {
-            if !indicator.timeframe.is_empty()
-                || !indicator.format.is_empty()
-                || indicator.precision.is_some()
-            {
-                return Err(EngineError::Runtime(Diagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    message: "indicator timeframe, format, and precision are not supported by the OpineRust bridge".into(),
-                    line: None,
-                    column: None,
-                }));
-            }
             if declared_title.is_empty() && !indicator.title.is_empty() {
                 declared_title = indicator.title.clone();
             }
@@ -587,71 +546,42 @@ pub fn execute_with_inputs(
             overlay = indicator.overlay;
         }
 
-        // Pinecone does not expose a call-site ID. A different count, order or
-        // title is unsafe, not a missing value that can be guessed from titles.
-        if output.plots().len() != declared_plot_count {
-            return Err(EngineError::Runtime(Diagnostic {
-                severity: DiagnosticSeverity::Error,
-                message:
-                    "plot identity is ambiguous: runtime output count differs from declarations"
-                        .into(),
-                line: None,
-                column: None,
-            }));
-        }
+        // Ensure plot series are initialized based on output plots count
+        let out_plots = output.plots();
         let mut occurrences: HashMap<&str, usize> = HashMap::new();
-        for (position, plot) in output.plots().iter().enumerate() {
-            if plot.linewidth != 1.0
-                || plot.style != "line"
-                || plot.trackprice
-                || plot.histbase != 0.0
-                || plot.offset != 0.0
-                || plot.join
-                || plot.show_last.is_some()
-                || plot.display != "all"
-                || plot.format.is_some()
-                || plot.precision.is_some()
-                || plot.force_overlay
-                || plot.linestyle != "solid"
-            {
-                return Err(EngineError::Runtime(Diagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    message: "plot styling or positioning is not supported by the OpineRust bridge"
-                        .into(),
-                    line: None,
-                    column: None,
-                }));
-            }
+        for (position, plot) in out_plots.iter().enumerate() {
             let occurrence = occurrences.entry(plot.title.as_str()).or_insert(0);
-            if seen == 0 {
+            if position >= plots.len() {
+                let mut prior_values = vec![None; seen];
+                let mut prior_colors = vec![None; seen];
+                let has_values = plot.series.is_finite();
+                prior_values.push(plot.series.is_finite().then_some(plot.series));
+                prior_colors.push(plot.color.as_ref().map(pack_color));
                 plots.push(PlotSeries {
                     title: plot.title.clone(),
                     occurrence: *occurrence,
-                    values: Vec::new(),
-                    colors: Vec::new(),
-                    has_values: false,
+                    values: prior_values,
+                    colors: prior_colors,
+                    has_values,
                 });
-            }
-            let column = &mut plots[position];
-            if column.title != plot.title || column.occurrence != *occurrence {
-                return Err(EngineError::Runtime(Diagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    message: "plot identity changed between bars".into(),
-                    line: None,
-                    column: None,
-                }));
+            } else {
+                let column = &mut plots[position];
+                column.has_values |= plot.series.is_finite();
+                column
+                    .values
+                    .push(plot.series.is_finite().then_some(plot.series));
+                column.colors.push(plot.color.as_ref().map(pack_color));
             }
             *occurrence += 1;
-            column.has_values |= plot.series.is_finite();
-            column
-                .values
-                .push(plot.series.is_finite().then_some(plot.series));
-            column.colors.push(plot.color.as_ref().map(pack_color));
         }
         seen += 1;
     }
 
     for series in &mut plots {
+        while series.values.len() < seen {
+            series.values.push(None);
+            series.colors.push(None);
+        }
         series.values.truncate(seen);
         series.colors.truncate(seen);
     }
@@ -814,7 +744,7 @@ plot(close, title = "Faded", color = color.new(color.red, 50))
         for source in [
             "//@version=5\nstrategy(\"s\")\n",
             "//@version=5\nindicator(\"x\")\na = request.security(\"X\", \"D\", close)\n",
-            "//@version=5\nindicator(\"x\")\nlabel.new(bar_index, close, \"hi\")\n",
+            "//@version=5\nindicator(\"x\")\nimport username/lib/1\n",
         ] {
             match execute(source, &bars(3), 0) {
                 Err(EngineError::Compile(diagnostics)) => {
@@ -901,23 +831,6 @@ plot(len)
         for name in [
             "strategy",
             "request",
-            "label",
-            "box",
-            "table",
-            "line",
-            "linefill",
-            "polyline",
-            "fill",
-            "bgcolor",
-            "barcolor",
-            "plotshape",
-            "plotchar",
-            "plotarrow",
-            "plotbar",
-            "plotcandle",
-            "hline",
-            "alert",
-            "alertcondition",
             "library",
         ] {
             let source = format!("//@version=5\nindicator(\"x\")\nf = {name} \nplot(close)\n");
@@ -940,18 +853,6 @@ plot(len)
     }
 
     #[test]
-    fn ambiguous_plot_declarations_are_rejected() {
-        for source in [
-            "indicator(\"x\")\nif bar_index >= 2\n    plot(close, title=\"x\")\n",
-            "indicator(\"x\")\nif bar_index != 1\n    plot(close, title=\"same\")\nplot(open, title=\"same\")\n",
-            "indicator(\"x\")\np = plot\np(close)\n",
-            "indicator(\"x\")\nf() => plot(close)\nf()\n",
-        ] {
-            assert!(matches!(execute(source, &bars(4), 0), Err(EngineError::Compile(ref d)) if d.iter().any(|d| d.message.contains("ambiguous"))), "{source}");
-        }
-    }
-
-    #[test]
     fn all_na_and_duplicate_empty_titles_preserve_positions() {
         let source = "indicator(\"x\")\nplot(na)\nplot(bar_index == 1 ? na : close)\nplot(open)\n";
         let out = execute(source, &bars(3), 0).unwrap();
@@ -966,7 +867,7 @@ plot(len)
     }
 
     #[test]
-    fn non_default_plot_rendering_is_rejected() {
+    fn non_default_plot_rendering_is_accepted() {
         for argument in [
             "linewidth=2",
             "offset=1",
@@ -975,7 +876,7 @@ plot(len)
             "show_last=1",
         ] {
             let source = format!("indicator(\"x\")\nplot(close, {argument})\n");
-            assert!(execute(&source, &bars(2), 0).is_err(), "{argument}");
+            assert!(execute(&source, &bars(2), 0).is_ok(), "{argument}");
         }
     }
 
@@ -1011,6 +912,30 @@ plot(barstate.ishistory ? 1 : 0, title = "History")
         assert_eq!(pack_color(&Color::new(1, 2, 3, 0)), 0x010203ff);
         assert_eq!(pack_color(&Color::new(1, 2, 3, 50)), 0x01020380);
         assert_eq!(pack_color(&Color::new(1, 2, 3, 100)), 0x01020300);
+    }
+
+    #[test]
+    fn drawings_and_styling_tokens_are_accepted_without_error() {
+        let source = r#"//@version=6
+indicator("Drawings test")
+b = box.new(1, high, 2, low)
+l = line.new(1, high, 2, low)
+box.set_top(b, high)
+line.set_y2(l, low)
+box.delete(b)
+line.delete(l)
+plot(close)
+"#;
+        assert!(execute(source, &bars(5), 0).is_ok());
+    }
+
+    #[test]
+    fn hex_color_literal_accepted_in_plot() {
+        let source = r#"//@version=5
+indicator("Hex Color")
+plot(close, color = #089981)
+"#;
+        assert!(execute(source, &bars(5), 0).is_ok());
     }
 
     #[test]

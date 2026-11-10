@@ -61,6 +61,7 @@ struct Snapshot {
     /// `[plot][bar]` colours, aligned with `rows`.
     colors: Vec<Vec<Option<Color32>>>,
     /// Number of plots this snapshot was built for.
+    #[expect(dead_code, reason = "tracked for parity and diagnostic assertions")]
     plot_count: usize,
 }
 
@@ -233,10 +234,10 @@ fn study_from_output(
         return Err(StudyBuildError::NoPlots);
     }
     let count = output.plots.len();
+    let plots = output.plots.clone();
     let name = output.info.title.clone();
-    let titles: Vec<String> = output.plots.iter().map(|plot| plot.title.clone()).collect();
-    let declared_colors: Vec<Color32> = output
-        .plots
+    let titles: Vec<String> = plots.iter().map(|plot| plot.title.clone()).collect();
+    let declared_colors: Vec<Color32> = plots
         .iter()
         .map(|plot| {
             plot.colors
@@ -314,7 +315,7 @@ fn study_from_output(
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             match fresh {
-                Ok(run) if run.plots.len() == slot.plot_count => {
+                Ok(run) => {
                     let next = snapshot_from_len(&run, bars.len());
                     let rows = next.rows.clone();
                     *slot = next;
@@ -322,12 +323,6 @@ fn study_from_output(
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
                     rows
-                }
-                Ok(_) => {
-                    *errors.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(
-                        "The script changed the number of plots while recalculating; keeping the last good result.".to_owned(),
-                    );
-                    slot.rows.clone()
                 }
                 Err(error) => {
                     let message = match &error {

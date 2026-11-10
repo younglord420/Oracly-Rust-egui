@@ -4200,7 +4200,7 @@ mod tests {
         app.live.set_paused(true);
 
         let size = egui::vec2(360.0, 640.0);
-        let mut frame = |app: &mut DemoApp, reassert_panel: bool| {
+        let frame = |app: &mut DemoApp, reassert_panel: bool| {
             let mut viewport = egui::Rect::NOTHING;
             let mut price = egui::Rect::NOTHING;
             let mut texts = Vec::new();

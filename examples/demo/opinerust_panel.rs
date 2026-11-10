@@ -18,7 +18,10 @@
 use egui_charts::Chart;
 use egui_charts::model::Bar as ChartBar;
 use egui_charts::studies::Indicator;
+use egui_charts::theme::ThemeExt;
 use egui_charts::ui::study_editor::{Diagnostic as EditorDiagnostic, Severity, StudyEditor};
+use egui_charts::ui_kit::buttons::{Button, ButtonSize, IconButton};
+use egui_charts::icons::icons;
 use egui_charts::widget::SeriesId;
 use opinerust::{DiagnosticSeverity, RunContext, StudyBuildError, build_study_in_context};
 use std::ops::Range;
@@ -40,6 +43,11 @@ plot(slow, title = "Slow", color = color.blue)
 struct LogEntry {
     severity: Severity,
     message: String,
+    /// Where the problem is, when the runtime reported a location.
+    ///
+    /// Kept as a byte span into the source that produced it; a message without a
+    /// location has none, rather than a made-up position.
+    span: Option<Range<usize>>,
 }
 
 /// What the panel is showing about the script right now.
@@ -113,6 +121,12 @@ impl Default for OpineRustPanel {
         // the editor would be two places to read the same fact.
         editor.set_chrome(false);
         editor.set_line_numbers(true);
+        editor.set_opinerust_syntax(true);
+        editor.set_hover_docs(true);
+        editor.set_context_menu(true);
+        // Diagnostics are listed in the Logs strip, not under the code: two lists
+        // of the same failures is what made the dock look broken.
+        editor.set_inline_diagnostics(false);
         Self {
             editor,
             applied: None,
@@ -426,16 +440,17 @@ impl OpineRustPanel {
             });
         run |= shortcut;
         run &= has_data;
+        self.logs_ui_pinned(ui);
         if !has_data {
-            self.logs_ui_pinned(ui);
-            ui.label(egui::RichText::new("Load a symbol before running a script.").weak());
-        } else {
-            self.logs_ui_pinned(ui);
-            // The editor draws no Run of its own: the header owns that action, and a
-            // second button with the same meaning would be a trap.
-            self.editor.set_apply_button(false);
-            let _ = self.editor.show(ui);
+            ui.label(egui::RichText::new("Load a symbol to run the script.").weak());
         }
+        
+        // Studio Quick Action Shelf
+        self.action_shelf(ui);
+
+        // The draft stays editable even when the chart has no data.
+        self.editor.set_apply_button(false);
+        let _ = self.editor.show(ui);
         if run {
             let text = self.editor.text().to_owned();
             return (self.prepare(&text, bars, now_ms), close);
@@ -444,6 +459,17 @@ impl OpineRustPanel {
     }
 
     /// Draw the panel and return a study to install when Run succeeded.
+    ///
+    /// The demo host uses [`Self::show_with_close`] so it can honour the header's
+    /// close button; this convenience form is kept for hosts that draw their own
+    /// close affordance and for the panel's tests.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the demo host uses show_with_close; other hosts and tests use this"
+        )
+    )]
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -464,6 +490,65 @@ impl OpineRustPanel {
             .show(ui, |ui| self.logs_ui(ui));
     }
 
+    /// Quick Action Shelf right above the code editor (Format code, copy, version pill, lines counter).
+    fn action_shelf(&mut self, ui: &mut egui::Ui) {
+        let theme = ui.active_theme();
+        let version = if self.editor.text().contains("@version=6") {
+            "Pine v6"
+        } else if self.editor.text().contains("@version=5") {
+            "Pine v5"
+        } else {
+            "Pine Script"
+        };
+        let line_count = self.editor.text().lines().count();
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+
+            // Auto-format code button
+            if Button::new("🪄 Format")
+                .small()
+                .tooltip("Format code indentation")
+                .show(ui)
+                .clicked()
+            {
+                self.editor.format_code();
+            }
+
+            // Copy text button
+            if Button::new("📋 Copy")
+                .small()
+                .tooltip("Copy entire script to clipboard")
+                .show(ui)
+                .clicked()
+            {
+                ui.ctx().copy_text(self.editor.text().to_owned());
+            }
+
+            ui.separator();
+
+            // Version Pill badge
+            ui.label(
+                egui::RichText::new(version)
+                    .size(10.0)
+                    .strong()
+                    .color(theme.ui.accent)
+                    .background_color(theme.ui.accent.gamma_multiply(0.12)),
+            );
+
+            // Line count info
+            ui.label(
+                egui::RichText::new(format!("{line_count} lines"))
+                    .size(11.0)
+                    .weak(),
+            );
+        });
+
+        let (rule, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(rule.x_range(), rule.center().y, egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.4)));
+        ui.add_space(theme.spacing.xs);
+    }
+
     /// Chart metadata (`syminfo.*`, `timeframe.*`) the panel should report.
     ///
     /// The host sets this before drawing the panel. Leaving it unset keeps the
@@ -473,6 +558,10 @@ impl OpineRustPanel {
     }
 
     /// Centre of the header's Run button, once it has been drawn.
+    ///
+    /// Exposed so a host or test can press the real control instead of guessing a
+    /// point; the demo's own frame tests are the current caller.
+    #[cfg(test)]
     pub fn run_button_center(&self) -> Option<egui::Pos2> {
         self.run_rect.map(|rect| rect.center())
     }
@@ -501,55 +590,58 @@ impl OpineRustPanel {
     fn header(&mut self, ui: &mut egui::Ui, has_data: bool) -> (bool, bool) {
         let mut run = false;
         let mut close = false;
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("OpineRust").strong());
-            let state = if has_data {
-                self.run_state()
-            } else {
-                RunState::NoData
-            };
-            let (label, tooltip) = match &state {
-                RunState::Draft => ("Draft".to_owned(), "Not applied yet"),
-                RunState::Applied(title) => (title.clone(), "Running on the chart"),
-                RunState::Edited(title) => (
-                    format!("{title} · edited"),
-                    "The chart still runs the previous script",
-                ),
-                RunState::Failed(reason) => {
-                    (format!("Failed · {reason}"), "The last run failed")
-                }
-                RunState::NoData => ("No data".to_owned(), "Load a symbol before running"),
-            };
-            let mut text = egui::RichText::new(label).weak();
-            if matches!(state, RunState::Failed(_)) {
-                text = text.color(ui.visuals().error_fg_color);
-            }
-            ui.add(egui::Label::new(text).truncate()).on_hover_text(tooltip);
-            if self.pending.is_some() {
-                // Only while a run is actually in flight; the panel is synchronous,
-                // so this is a frame or two, not a promise of background work.
-                ui.spinner();
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let close_button = ui
-                    .add(egui::Button::new("\u{00d7}").frame(false))
-                    .on_hover_text("Close the editor (the draft is kept)");
-                if close_button.clicked() {
-                    close = true;
-                }
-                let run_button = ui.add(
-                    egui::Button::new(egui::RichText::new("Run").strong())
-                        .fill(ui.visuals().selection.bg_fill),
-                );
+        let theme = ui.active_theme();
+        let state = if has_data { self.run_state() } else { RunState::NoData };
+        let (label, tooltip) = match &state {
+            RunState::Draft => ("Draft".to_owned(), "Not applied yet"),
+            RunState::Applied(title) => (title.clone(), "Running on the chart"),
+            RunState::Edited(title) => (
+                format!("{title} · edited"),
+                "The chart still runs the previous script",
+            ),
+            RunState::Failed(reason) => ("Run failed".to_owned(), reason.as_str()),
+            RunState::NoData => ("No data".to_owned(), "Load a symbol before running"),
+        };
+        // Allocate the actions first, so a long script title cannot push them out
+        // of the panel. Use the same buttons, typography and hairline as Oracly.
+        ui.allocate_ui_with_layout(
+            egui::vec2(ui.available_width(), 44.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                close = IconButton::new(&icons::CLOSE)
+                    .size(ButtonSize::SM)
+                    .tooltip("Close OpineRust editor")
+                    .show(ui)
+                    .clicked();
+                let run_button = Button::new("Run")
+                    .primary()
+                    .small()
+                    .enabled(has_data)
+                    .tooltip(if has_data { "Run script · Ctrl/Command+Enter" } else { "Load a symbol to run" })
+                    .show(ui);
                 self.run_rect = Some(run_button.rect);
-                if run_button
-                    .on_hover_text("Run script (Ctrl+Enter)")
-                    .clicked()
-                {
-                    run = true;
-                }
-            });
-        });
+                run = run_button.clicked();
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = theme.spacing.sm;
+                    ui.label(egui::RichText::new("OpineRust").strong().size(theme.text.title));
+                    let (color, bg) = match state {
+                        RunState::Failed(_) => (ui.visuals().error_fg_color, ui.visuals().error_fg_color.gamma_multiply(0.12)),
+                        RunState::Applied(_) => (egui::Color32::from_rgb(8, 153, 129), egui::Color32::from_rgb(8, 153, 129).gamma_multiply(0.12)),
+                        RunState::Edited(_) => (egui::Color32::from_rgb(255, 152, 0), egui::Color32::from_rgb(255, 152, 0).gamma_multiply(0.12)),
+                        _ => (theme.ui.text_muted, egui::Color32::TRANSPARENT),
+                    };
+                    ui.label(
+                        egui::RichText::new(format!(" {label} "))
+                            .size(theme.text.small)
+                            .color(color)
+                            .background_color(bg)
+                    ).on_hover_text(format!("{label} — {tooltip}"));
+                });
+            },
+        );
+        let (rule, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(rule.x_range(), rule.center().y, egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.5)));
+        ui.add_space(theme.spacing.xs);
         (run, close)
     }
 
@@ -581,18 +673,32 @@ impl OpineRustPanel {
                 summary.push('s');
             }
         }
-        let marker = if self.logs_open { "v" } else { ">" };
-        let row = ui
-            .horizontal(|ui| {
-                if ui
-                    .add(egui::Button::new(format!("{marker} {summary}")).frame(false))
-                    .clicked()
-                {
-                    self.logs_open = !self.logs_open;
-                }
-            })
-            .response;
-        row.on_hover_text("Show or hide the run log");
+        let theme = ui.active_theme();
+        let (rule, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(rule.x_range(), rule.center().y, egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.5)));
+        let icon = if self.logs_open { &icons::CHEVRON_DOWN } else { &icons::CHEVRON_UP };
+        ui.horizontal(|ui| {
+            if Button::icon_and_text(icon, summary)
+                .small()
+                .tooltip("Show or hide the run log")
+                .show(ui)
+                .clicked()
+            {
+                self.logs_open = !self.logs_open;
+            }
+            if self.logs_open && !self.logs.is_empty() {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if Button::new("Clear")
+                        .small()
+                        .tooltip("Clear log entries")
+                        .show(ui)
+                        .clicked()
+                    {
+                        self.logs.clear();
+                    }
+                });
+            }
+        });
         if !self.logs_open {
             return;
         }
@@ -606,6 +712,7 @@ impl OpineRustPanel {
                 if self.logs.is_empty() {
                     ui.label(egui::RichText::new("No runs yet.").weak());
                 }
+                let mut clicked = None;
                 for entry in &self.logs {
                     let (color, label) = match entry.severity {
                         Severity::Error => (ui.visuals().error_fg_color, "Error"),
@@ -614,19 +721,55 @@ impl OpineRustPanel {
                         // is shown as a hint rather than dropped.
                         Severity::Info | _ => (ui.visuals().weak_text_color(), "Info"),
                     };
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new(label).color(color));
-                        ui.label(&entry.message);
+                    let row = ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(" {label} "))
+                                .size(10.0)
+                                .color(color)
+                                .background_color(color.gamma_multiply(0.12)),
+                        );
+                        let text = ui.add(
+                            egui::Label::new(&entry.message)
+                                .sense(if entry.span.is_some() {
+                                    egui::Sense::click()
+                                } else {
+                                    egui::Sense::hover()
+                                })
+                                .wrap(),
+                        );
+                        if entry.span.is_some() {
+                            text.on_hover_text("Go to the reported line")
+                        } else {
+                            text
+                        }
                     });
+                    if entry.span.is_some() && row.inner.clicked() {
+                        clicked = entry.span.clone();
+                    }
+                }
+                if let Some(span) = clicked {
+                    self.editor.reveal(span);
+                    ui.ctx().request_repaint();
                 }
             });
     }
 
     /// Append a log entry.
     fn log(&mut self, severity: Severity, message: impl Into<String>) {
+        self.log_at(severity, message, None);
+    }
+
+    /// Append a log entry that points at a place in the source.
+    fn log_at(
+        &mut self,
+        severity: Severity,
+        message: impl Into<String>,
+        span: Option<Range<usize>>,
+    ) {
         self.logs.push(LogEntry {
             severity,
             message: message.into(),
+            span,
         });
         // A failure is the reason the panel matters; open the log so it is not
         // hidden behind a collapsed row the user has to discover.
@@ -673,6 +816,8 @@ impl OpineRustPanel {
                         diagnostic.message.clone(),
                     );
                 }
+                // Diagnostics live in the Logs strip, so the editor keeps none of
+                // its own; two lists showed the same failure twice.
                 self.editor.set_diagnostics(Vec::new());
                 self.pending = Some(title.clone());
                 Some(InstallStudy {
@@ -685,8 +830,32 @@ impl OpineRustPanel {
             Err(error) => {
                 let (message, edits) = describe(error, source);
                 self.last_failure = Some(message.clone());
-                self.log(Severity::Error, format!("Run failed: {message}"));
-                self.editor.set_diagnostics(edits);
+                // One grouped entry per problem, each carrying every location, so a
+                // script with nine `line` errors reads as one line, not nine. The
+                // grouped entries already say what failed, so the bare summary is
+                // only added when the runtime gave no located diagnostic at all.
+                let groups = group_diagnostics(&edits);
+                if groups.is_empty() {
+                    self.log(Severity::Error, format!("Run failed: {message}"));
+                } else {
+                    for group in &groups {
+                        self.log_at(Severity::Error, group.summary(source), group.span());
+                    }
+                    // A closing line that names the run's outcome once, without
+                    // repeating any group's message.
+                    let count = groups.len();
+                    self.log(
+                        Severity::Error,
+                        if count == 1 {
+                            format!("Run failed: {message}")
+                        } else {
+                            format!("Run failed · {count} distinct problems")
+                        },
+                    );
+                }
+                // Diagnostics live in the Logs strip; the editor keeps none, so the
+                // same failure is not painted twice.
+                self.editor.set_diagnostics(Vec::new());
                 self.editor.apply_result(Err(message));
                 None
             }
@@ -712,14 +881,6 @@ fn host_clock() -> Arc<dyn Fn() -> i64 + Send + Sync> {
     Arc::new(|| chrono::Utc::now().timestamp_millis())
 }
 
-fn label(severity: DiagnosticSeverity) -> &'static str {
-    match severity {
-        DiagnosticSeverity::Info => "Info",
-        DiagnosticSeverity::Warning => "Warning",
-        DiagnosticSeverity::Error => "Error",
-    }
-}
-
 /// The editor's severity for an engine diagnostic, so one log list can count them.
 fn severity_of(severity: DiagnosticSeverity) -> Severity {
     match severity {
@@ -727,6 +888,68 @@ fn severity_of(severity: DiagnosticSeverity) -> Severity {
         DiagnosticSeverity::Warning => Severity::Warning,
         DiagnosticSeverity::Error => Severity::Error,
     }
+}
+
+/// Diagnostics that share one cause, so the log shows one line instead of many.
+///
+/// A script that uses `box` in six places produced six identical errors, which
+/// buried everything else. Entries are grouped by message text: identical text means
+/// one cause reported at several places. Different messages stay separate even when
+/// they look similar, because merging them would hide a distinct problem.
+#[derive(Clone, Debug, PartialEq)]
+struct DiagnosticGroup {
+    message: String,
+    /// One location per occurrence, in source order.
+    spans: Vec<Range<usize>>,
+}
+
+impl DiagnosticGroup {
+    /// Group `diagnostics` in first-seen order, keeping each occurrence's span.
+    fn group(diagnostics: &[EditorDiagnostic]) -> Vec<Self> {
+        let mut groups: Vec<Self> = Vec::new();
+        for diagnostic in diagnostics {
+            match groups
+                .iter_mut()
+                .find(|group| group.message == diagnostic.message)
+            {
+                Some(group) => group.spans.push(diagnostic.span.clone()),
+                None => groups.push(Self {
+                    message: diagnostic.message.clone(),
+                    spans: vec![diagnostic.span.clone()],
+                }),
+            }
+        }
+        groups
+    }
+
+    /// One readable line: the message, with a count and the first line when it repeats.
+    fn summary(&self, source: &str) -> String {
+        match self.spans.len() {
+            1 => self.message.clone(),
+            count => format!(
+                "{} ({} locations, first at line {})",
+                self.message,
+                count,
+                line_of(source, self.spans[0].start)
+            ),
+        }
+    }
+
+    /// The first occurrence, which a click in the log navigates to.
+    fn span(&self) -> Option<Range<usize>> {
+        self.spans.first().cloned()
+    }
+}
+
+/// Group editor diagnostics for the log.
+fn group_diagnostics(diagnostics: &[EditorDiagnostic]) -> Vec<DiagnosticGroup> {
+    DiagnosticGroup::group(diagnostics)
+}
+
+/// One-based line number of a byte offset, for a log summary.
+fn line_of(source: &str, byte: usize) -> usize {
+    let byte = byte.min(source.len());
+    source[..byte].bytes().filter(|b| *b == b'\n').count() + 1
 }
 
 /// The failure a freshly installed study reports, if its first calculation failed.
@@ -949,6 +1172,68 @@ mod tests {
         let built = build_study(DEFAULT_SCRIPT, &bars(20), 0).expect("sample runs");
         assert_eq!(built.study.line_count(), 2);
         assert!(built.study.is_overlay());
+    }
+
+    /// A script using one unsupported feature in many places must read as one log
+    /// line, not one line per occurrence: multiple import errors used to bury the cause
+    /// and overflow the strip.
+    #[test]
+    fn repeated_unsupported_uses_collapse_into_one_log_entry() {
+        let mut panel = OpineRustPanel::default();
+        let mut script = String::from("//@version=6\nindicator(\"Imports\")\nplot(close)\n");
+        for i in 0..6 {
+            script.push_str(&format!("import username/lib{i}/1\n"));
+        }
+        script.push_str("strategy(\"bad\")\n");
+        assert!(panel.prepare(&script, &bars(10), 0).is_none());
+
+        let import_entries: Vec<_> = panel
+            .logs()
+            .into_iter()
+            .filter(|entry| entry.contains("`import` is not supported"))
+            .collect();
+        assert_eq!(
+            import_entries.len(),
+            1,
+            "six `import` uses are one cause: {:?}",
+            panel.logs()
+        );
+        assert!(
+            import_entries[0].contains("6 locations"),
+            "the entry says how often it occurred: {:?}",
+            import_entries
+        );
+        assert!(
+            import_entries[0].contains("first at line 4"),
+            "and where to look first: {:?}",
+            import_entries
+        );
+        assert!(
+            panel
+                .logs()
+                .iter()
+                .any(|entry| entry.contains("`strategy` scripts are not supported")),
+            "a different cause keeps its own entry: {:?}",
+            panel.logs()
+        );
+    }
+
+    /// Diagnostics belong in the Logs strip; the editor must not draw a second copy
+    /// under the code, which is what overlapped the strip in a long panel.
+    #[test]
+    fn a_failed_run_lists_diagnostics_only_in_the_logs() {
+        let mut panel = OpineRustPanel::default();
+        let script = "//@version=6\nindicator(\"Bad\")\nplot(close)\nx = request.security(\"X\", \"D\", close)\n";
+        assert!(panel.prepare(script, &bars(10), 0).is_none());
+        assert!(
+            panel.editor.diagnostics().is_empty(),
+            "the dock shows diagnostics in Logs, so the editor keeps none: {:?}",
+            panel.editor.diagnostics()
+        );
+        assert!(
+            panel.logs_open,
+            "the log opens itself so the failure is not hidden"
+        );
     }
 
     #[test]
@@ -1546,6 +1831,36 @@ mod tests {
         draw(&mut panel);
         panel.logs_open = false;
         draw(&mut panel);
+    }
+
+    #[test]
+    fn empty_chart_keeps_draft_visible_and_run_disabled() {
+        let ctx = egui::Context::default();
+        let mut panel = OpineRustPanel::default();
+        let mut prepared = false;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(460.0, 700.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                prepared = panel.show_with_close(ui, &[], 0).0.is_some();
+            },
+        );
+        let texts: Vec<_> = output.shapes.iter().filter_map(|shape| {
+            if let egui::Shape::Text(text) = &shape.shape {
+                Some(text.galley.text().to_owned())
+            } else {
+                None
+            }
+        }).collect();
+        output.drop_without_applying_deltas();
+        assert!(!prepared);
+        assert!(texts.iter().any(|text| text.contains("indicator(\"Fast and Slow\"")), "draft must remain visible: {texts:?}");
+        assert!(texts.iter().any(|text| text.contains("Load a symbol")), "explain why Run is unavailable: {texts:?}");
     }
 
     /// The header's close button asks the host to hide the dock.

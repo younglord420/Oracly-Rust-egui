@@ -38,6 +38,7 @@ pub mod export;
 pub mod financials;
 pub mod ideas;
 pub mod multi_chart;
+pub mod pine_reference;
 pub mod profile;
 mod share_controls;
 pub mod strategy_report;
