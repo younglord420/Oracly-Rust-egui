@@ -950,6 +950,21 @@ plot(open, color = color.new(col, 50))
     }
 
     #[test]
+    fn for_in_loop_over_map_is_accepted() {
+        let source = r#"//@version=6
+indicator("Map For In")
+m = map.new<float, float>()
+map.put(m, 1.0, 10.0)
+map.put(m, 2.0, 20.0)
+var total = 0.0
+for [k, v] in m
+    total += v
+plot(total)
+"#;
+        assert!(execute(source, &bars(5), 0).is_ok());
+    }
+
+    #[test]
     fn semantic_pass_does_not_need_a_system_clock() {
         // Building the sema builtins with `per_bar` is what keeps this working on
         // wasm32-unknown-unknown, where `SystemTime::now()` panics.
