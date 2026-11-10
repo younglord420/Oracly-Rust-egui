@@ -939,6 +939,17 @@ plot(close, color = #089981)
     }
 
     #[test]
+    fn conditional_and_na_colors_are_accepted_without_error() {
+        let source = r#"//@version=5
+indicator("Conditional Color")
+col = close > open ? #089981 : na
+plot(close, color = col)
+plot(open, color = color.new(col, 50))
+"#;
+        assert!(execute(source, &bars(5), 0).is_ok());
+    }
+
+    #[test]
     fn semantic_pass_does_not_need_a_system_clock() {
         // Building the sema builtins with `per_bar` is what keeps this working on
         // wasm32-unknown-unknown, where `SystemTime::now()` panics.
