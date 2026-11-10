@@ -5,9 +5,11 @@ Dokumen ini adalah **laporan eksekusi** untuk [brief editor](pinecone-pine-edito
 mencatat apa yang benar-benar lulus, apa yang belum, dan bukti perintahnya.
 
 **Status keseluruhan: prototipe; belum aman untuk keputusan trading.** Bridge sudah dipin ke
-runtime fork pada revisi `3e4e6e40fc355c268743b867407a37e71201c0fd`, tetapi status error pada
-chart, perubahan konteks, keamanan Run/replace, dan verifikasi browser belum terbukti benar.
-Temuan source dan hasil uji di bawah dibedakan: audit dokumen ini **tidak menjalankan ulang tes**.
+runtime fork pada revisi `3e4e6e40fc355c268743b867407a37e71201c0fd`. Rollback install, pemetaan
+`input.*`, fixture v6, dan jalur browser sudah diuji pada sesi ini (lihat §4); status error pada
+chart, konteks kalender/sesi, transaksi saat replay, dan review visual penuh masih terbuka.
+Temuan source dan hasil uji di bawah dibedakan: baris yang ditandai **bukti sesi ini** dijalankan
+ulang setelah perubahan terakhir, sisanya hasil historis.
 
 ## 1. Kondisi dua repo
 
@@ -68,19 +70,59 @@ tidak pecah. `LICENSE` MPL-2.0 dan `NOTICE` baru mencatat sumber Pinecone dan co
   Tes di `opinerust/src/context.rs` memeriksa 1S/30S/1/15/60/240/1D/1W/1M, penolakan sub-detik dan
   non-waktu, custom 45S, serta chart tanpa interval.
 - Nilai/warna menggunakan snapshot bersama, tetapi keselarasan saat error, clone/history, perubahan
-  data dan konteks belum dibuktikan end-to-end. `barstate` diturunkan dari jam host dan perkiraan
-  jarak bar. **Bar span sekarang dihitung ulang per recalculation**, bukan memakai span saat build:
-  sebelumnya chart yang beralih 1m → 5m tetap menilai candle terakhir dengan satu menit, sehingga
-  candle yang masih forming dilaporkan confirmed. Regresi:
-  `the_forming_candle_follows_the_current_interval` (gagal `Some(0.0)` dengan span basi, lulus
-  `Some(1.0)` dengan span per run). Kalender/sesi/DST, monthly bar, replay, dan data sparse masih
-  belum terbukti.
+  data dan konteks belum dibuktikan end-to-end. **Bar span tidak lagi ditebak dari jarak bar.**
+  `Chart::bar_clock()` sekarang dipublikasikan ke study lewat `CustomIndicator::with_bar_clock` +
+  `Indicator::set_bar_clock`, dan bridge memakai `BarClock::next_open_after` untuk menentukan kapan
+  candle berakhir. Heuristik median gap hanya dipakai sebagai fallback bila host tidak pernah
+  mengirim clock, dan itu dinyatakan di doc, bukan diperlakukan sama. Regresi:
+  - `the_forming_candle_follows_the_current_interval` — span basi saat 1m → 5m.
+  - `a_session_close_ends_the_last_candle` — candle 15:56 berakhir 16:00 (4 menit), bukan 16:01.
+  - `a_monthly_candle_ends_at_the_next_month` — Januari 31 hari, Februari kabisat 29 hari.
+  - `a_trade_based_interval_has_no_candle_span` — tick bars tidak menghasilkan span `0`.
+  - `the_chart_session_clock_ends_the_candle_at_the_session_close` — clock sesi dari `Chart`
+    sungguhan sampai ke `barstate`.
+  DST sudah dicakup tes `BarClock` yang ada (beberapa zona transisi). Yang **belum**: replay cursor,
+  data sparse, dan apakah jam host yang dipakai panel (`Utc::now`) sesuai saat replay aktif.
 - **Run/replace belum terbukti atomik:** `try_add_indicator` menangani batas study, sementara
   `add_indicator` juga menghitung kandidat melalui API yang tidak mengembalikan error kalkulasi.
   Panel langsung menghapus study lama dan menyatakan `Applied` setelah `Ok(id)`, tanpa memeriksa
   keberhasilan kalkulasi saat install. Risiko ini diturunkan dari source dan perlu tes host nyata.
 
-## 4. Hasil uji terdahulu (historis)
+## 4. Hasil uji
+
+### 4.1 Bukti sesi ini (dijalankan setelah perubahan terakhir)
+
+Bridge (`/root/egui-charts/opinerust`):
+
+| Perintah | Hasil |
+| --- | --- |
+| `cargo test --manifest-path opinerust/Cargo.toml` | 51 lib + 6 + 7 + 10 fixture v6 lulus, 0 gagal |
+| `CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --manifest-path opinerust/Cargo.toml --target wasm32-unknown-unknown --test wasm_execute` | 6 lulus di Node/WASM nyata (termasuk input dan konteks chart) |
+| `cargo clippy --manifest-path opinerust/Cargo.toml --all-targets` | tanpa warning untuk `opinerust` |
+| `cargo fmt --manifest-path opinerust/Cargo.toml` / `cargo fmt --all -- --check` | bersih |
+
+Chart/demo:
+
+| Perintah | Hasil |
+| --- | --- |
+| `cargo test --lib` | 1181 lulus, 0 gagal, 1 ignored |
+| `cargo test --bins` di `examples/demo` | 100 lulus, 0 gagal, 1 ignored |
+| `trunk build --dist /tmp/opinerust-verify-dist` | sukses (`dev`), bundle baru |
+| `sha256sum` bundle lokal vs `curl` dari server | sama: `e1688bb4…ceab0ec` |
+
+Browser nyata (Chromium headless via CDP, `Page.startScreencast` karena capture WebGL langsung
+kosong):
+
+- Demo dimuat tanpa error console/exception; satu canvas 1440×700, judul `Oracly | Live Chart`.
+- Rail → panel OpineRust terbuka dan chart tetap terlihat.
+- Klik tombol Run: chart berubah **28.684 px** (region chart) dan strip Logs **1.706 px**, sedangkan
+  noise floor dua frame tanpa aksi adalah **0 px**. Jadi Run benar-benar memasang study.
+- Ctrl+Enter sampai ke editor (baris baru muncul, 471 px), dan Ctrl+Enter menambah satu baris
+  penuh `#10a368` di chart (garis plot SMA) plus perubahan panel.
+- Aksesibilitas egui tidak diekspos ke DOM (`getFullAXTree` hanya `RootWebArea`), jadi klik
+  diverifikasi lewat piksel, bukan accessibility tree.
+
+### 4.2 Hasil historis
 
 Ini hasil yang dilaporkan pada sesi sebelumnya, **bukan hasil yang dijalankan ulang saat audit
 ini**. Suite native/WASM hijau tidak membuktikan status chart, konteks yang berubah, transaksi
@@ -121,37 +163,58 @@ Bridge (`/root/egui-charts`):
    jadi warna/gap/panel tidak bisa dinilai dari screenshot. Tes widget/egui nyata lulus, tetapi itu
    bukan review visual.
 4. **Live candle di UI browser belum diuji end-to-end**; hanya diuji numerik dan di WASM headless.
-5. **`input.*` masih ditolak.** Upstream menyediakannya untuk v5/v6, tetapi mapping ke `StudyInput`
-   belum diimplementasikan; sengaja belum dibuka agar tidak memberi status sukses palsu.
+5. **`input.*` sudah dipetakan dan diuji, dengan batas yang jelas.** Token `input` tidak lagi
+   diblokir; deklarasi `input.int/float/bool/string/color` dipetakan ke `StudyInput` lewat
+   `opinerust/src/settings.rs`, dan edit settings masuk ke skrip lewat override by-title. Bukti:
+   `input_declarations_run_and_reach_the_output`, `an_override_by_title_changes_the_run`,
+   `an_unknown_override_title_is_ignored`, `an_edited_input_changes_the_next_recalculation`,
+   `an_input_override_only_touches_its_own_declaration` (native) dan `inputs_run_and_override_on_wasm`.
+   Batas yang masih ada: `input.source`/`session`/`time` **tidak** dipetakan (dilaporkan sebagai
+   skipped, bukan ditebak), dan judul duplikat ditolak karena Pinecone me-resolve override by title.
+   Jalur UI-nya juga sudah diuji: `a_declared_input_is_editable_and_reaches_the_calculation` membuka
+   dialog settings sungguhan (kittest), menemukan widget `Length` dan checkbox `Show`, mengubah
+   toggle, menekan Apply, lalu membuktikan nilai itu sampai ke kalkulasi study.
 6. **Full replay sinkron** tanpa cancellation/generation guard; skrip berat bisa membekukan frame.
 7. **Open/Save dokumen** sengaja disembunyikan karena host demo belum punya penyimpanan skrip.
-8. **Run/replace belum terbukti atomik.** Status error lewat `ConfiguredStudy` dan pembacaan slot
-   tanpa `take()` sudah diperbaiki dan diuji (§3), tetapi kegagalan kalkulasi **saat** install,
-   pane/settings/identity yang harus bertahan, serta undo/redo replace belum direproduksi lewat
-   handler host. `add_indicator` masih menghitung lewat API infallible dan panel masih menyatakan
-   `Applied` setelah `Ok(id)`; jangan klaim atomic sebelum skenario gagal-sesudah-preflight diuji.
+8. **Run/replace dan undo/redo sudah diuji lewat handler host.** Panel tidak menyatakan `Applied`
+   setelah `Ok(id)` saja: `install_failure` membaca status study kandidat sesudah
+   `try_add_indicator`, dan bila kalkulasi pertama gagal panel menghapus kandidat, memanggil
+   `abandon_user_action`, memulihkan limit, dan melaporkan `Install failed`.
+   Regresi: `a_failed_first_calculation_keeps_the_previous_study`.
+   Undo/redo: `undo_and_redo_of_a_replace_keep_the_panel_and_host_in_step` menjalankan A→B lewat
+   Ctrl+Enter pada frame egui nyata, lalu `chart.undo()` + `sync_chart_history()`. Dua cacat nyata
+   ditemukan dan diperbaiki di situ: (a) host tetap menunjuk `SeriesId` study yang sudah diganti,
+   (b) panel lupa study yang ia pasang sendiri sehingga Run setelah undo akan **menduplikasi**.
+   Panel sekarang menyimpan `installed_history` (id + judul + teks draf saat itu), mengadopsi
+   kembali study yang dikembalikan undo, dan menandai draf sebagai edited bila teksnya tidak cocok
+   dengan study yang diadopsi. Yang **belum** diuji: kegagalan saat replay history (bukan install)
+   dan undo/redo lintas beberapa replace berantai.
 9. **Konteks simbol/timeframe:** perubahan symbol/timeframe untuk study terpasang sudah diuji di
-   native lewat `Chart`, dan mapping interval palsu sudah ditolak. Belum diuji: replay, kalender/DST,
-   sesi, metadata instrument hilang, field `syminfo.*` di luar ticker/exchange/mintick, dan target
-   WASM untuk perubahan konteks.
+   native lewat `Chart`, dan mapping interval palsu sudah ditolak. Jalur konteks juga sudah diuji di
+   WASM (`chart_context_reaches_the_script_on_wasm`), tetapi itu hanya membuktikan konteks **statis**
+   sampai ke skrip di wasm, bukan pergantian konteks. Belum diuji: replay, kalender/DST, sesi,
+   metadata instrument hilang, dan field `syminfo.*` di luar ticker/exchange/mintick.
 
 ## 6. Matriks kapabilitas
 
-| Fitur | v5 | v6 | Catatan |
+| Fitur | v5 | v6 | Bukti |
 | --- | --- | --- | --- |
-| `indicator()`, `plot()` line + warna statis | partial | partial | contoh terbatas diuji; identitas plot ambigu ditolak |
-| Warna per bar, opacity `color.new` | partial | partial | snapshot diuji terbatas; sinkronisasi chart saat error belum terbukti |
-| `na`/warm-up gap | partial | partial | contoh warm-up diuji; kasus gap/chart lain perlu diverifikasi |
-| `ta.sma`, aritmetika, ternary | partial | partial | hanya fixture tertentu; bukan seluruh semantik |
-| `barstate.*` (forming/realtime/confirmed) | partial / belum tervalidasi | partial / belum tervalidasi | estimasi jam dan jarak bar; live/replay/sesi belum terbukti |
-| `timenow` | partial | partial | host clock diuji pada fixture terbatas; perilaku live/replay perlu validasi |
-| `syminfo.*` / `timeframe.*` | partial / berisiko salah | partial / berisiko salah | konteks statis dan mapping interval salah; tidak klaim semua field benar |
-| `input.*` | unsupported | unsupported | belum dipetakan ke `StudyInput` |
+| `indicator()`, `plot()` line + warna statis | partial | partial | fixture plot/warna; identitas plot ambigu ditolak |
+| Warna per bar, opacity `color.new` | partial | partial | snapshot bersama diuji; belum diuji visual penuh |
+| `na`/warm-up gap | partial | partial | gap warm-up diuji termasuk `close[3]` di dalam loop |
+| `ta.sma`, aritmetika, ternary | partial | partial | fixture numerik + garis SMA terlihat di browser |
+| `barstate.*` (forming/realtime/confirmed) | partial | partial | span dari `BarClock` chart (sesi, bulanan, trade-based) diuji; replay & data sparse belum |
+| `timenow` | partial | partial | host clock diuji native + WASM |
+| `syminfo.*` / `timeframe.*` | partial | partial | konteks statis diuji native + WASM; field lain & kalender belum |
+| `input.int/float/bool/string/color` | partial | partial | dipetakan ke `StudyInput`; override by-title diuji native + WASM |
+| `switch`, UDT `type`, `method`, `enum` | — | **supported (fixture)** | `opinerust/tests/v6_fixtures.rs`, nilai harapan eksplisit |
+| `var` (state antar bar), loop `for` + history | partial | partial | fixture numerik: running sum dan warm-up `close[3]` |
+| `math.*`, `str.length` | partial | partial | fixture numerik |
 | `plot` style/width/offset/display | unsupported | unsupported | ditolak |
 | `fill`, `bgcolor`, `barcolor`, `plotshape*` | unsupported | unsupported | ditolak |
-| `hline`, `label`, `box`, `table`, `line*` | unsupported | unsupported | ditolak |
-| `request.*`, `import`, `strategy`, `alert` | unsupported | unsupported | ditolak |
-| Seluruh Pine v6 | tidak diklaim | **partial** | hanya subset di atas yang diuji |
+| `hline`, `label`, `box`, `table`, `line*` | unsupported | unsupported | ditolak dengan baris |
+| `request.*`, `import`, `strategy`, `alert` | unsupported | unsupported | ditolak dengan baris |
+| Seluruh Pine v6 | tidak diklaim | **partial** | hanya konstruk di atas yang punya fixture |
 
 ## 7. Lisensi dan atribusi
 

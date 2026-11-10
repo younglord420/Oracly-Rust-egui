@@ -13,7 +13,8 @@
 
 use crate::context::RunContext;
 use pine_core::{
-    Bar as PineBar, Color, Data, DefaultPineOutput, MetadataOutput, PineVersion, PlotOutput,
+    Bar as PineBar, Color, Data, DefaultPineOutput, InputOutput, MetadataOutput, PineVersion,
+    PlotOutput,
 };
 use pine_interpreter::{Interpreter, Series, Value};
 use std::cell::RefCell;
@@ -107,8 +108,51 @@ pub struct EngineOutput {
     pub info: ScriptInfo,
     /// Outputs in declaration order.
     pub plots: Vec<PlotSeries>,
+    /// `input.*` declarations the script made, in declaration order.
+    pub inputs: Vec<ScriptInput>,
     /// Non-fatal messages.
     pub diagnostics: Vec<Diagnostic>,
+}
+
+/// One `input.*` declaration, with the value the run actually used.
+///
+/// A host maps this onto its own settings schema; the bridge keeps it free of
+/// chart types so the engine stays usable outside Oracly. Duplicate titles keep
+/// their own entries because Pinecone resolves overrides by title and the last
+/// declaration wins for every one of them — a host must not silently merge them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScriptInput {
+    /// `input.int`, `input.float`, `input.bool`, `input.string`, ... as declared.
+    pub kind: String,
+    /// Title the script gave it; empty when omitted.
+    pub title: String,
+    /// Group the declaration belongs to, when given.
+    pub group: String,
+    /// Declared default.
+    pub default: InputDefault,
+    /// Value this run used.
+    pub value: InputDefault,
+    /// Declared minimum, for numeric inputs.
+    pub min: Option<f64>,
+    /// Declared maximum, for numeric inputs.
+    pub max: Option<f64>,
+    /// Declared step, for numeric inputs.
+    pub step: Option<f64>,
+}
+
+/// A declared input's value, kept typed so a host can build the right widget.
+#[derive(Clone, Debug, PartialEq)]
+pub enum InputDefault {
+    /// Whole number.
+    Int(i64),
+    /// Fractional number.
+    Float(f64),
+    /// On or off.
+    Bool(bool),
+    /// Text.
+    Text(String),
+    /// An RGBA colour.
+    Color([u8; 4]),
 }
 
 /// Why a script could not be run.
@@ -193,6 +237,19 @@ fn v8(version: PineVersion) -> u8 {
     version.number()
 }
 
+/// Keep a Pinecone input value typed so a host can pick the right widget.
+fn input_default(value: &pine_core::InputValue) -> InputDefault {
+    match value {
+        pine_core::InputValue::Bool(value) => InputDefault::Bool(*value),
+        pine_core::InputValue::Int(value) => InputDefault::Int(*value),
+        pine_core::InputValue::Float(value) => InputDefault::Float(*value),
+        pine_core::InputValue::Str(value) => InputDefault::Text(value.clone()),
+        pine_core::InputValue::Color(color) => {
+            InputDefault::Color([color.r, color.g, color.b, color.t])
+        }
+    }
+}
+
 /// Validate lexer tokens, including references to unsupported functions (aliases).
 /// Plot identity is only provable for direct, unconditional top-level calls.
 fn validate_tokens(tokens: &[pine_lexer::Token]) -> (Vec<Diagnostic>, usize) {
@@ -239,7 +296,6 @@ fn validate_tokens(tokens: &[pine_lexer::Token]) -> (Vec<Diagnostic>, usize) {
                 | "hline"
                 | "alert"
                 | "alertcondition"
-                | "input"
         );
         let reason = if forbidden {
             Some(match name {
@@ -331,6 +387,22 @@ pub fn execute_with_context(
     bars: &[Bar],
     now_ms: i64,
     context: &RunContext,
+) -> Result<EngineOutput, EngineError> {
+    execute_with_inputs(source, bars, now_ms, context, &HashMap::new())
+}
+
+/// Execute with host overrides for the script's `input.*` values.
+///
+/// Pinecone resolves an override by the input's `title`, so the map is keyed by
+/// title rather than by declaration order. A title the script does not declare is
+/// ignored: the script never asked for it. The map's values use Pinecone's own
+/// `InputValue` because that is what the interpreter reads.
+pub fn execute_with_inputs(
+    source: &str,
+    bars: &[Bar],
+    now_ms: i64,
+    context: &RunContext,
+    overrides: &HashMap<String, pine_core::InputValue>,
 ) -> Result<EngineOutput, EngineError> {
     if bars.is_empty() {
         return Err(EngineError::NoBars);
@@ -441,6 +513,9 @@ pub fn execute_with_context(
         context.timeframe(),
     );
     interpreter.set_const_variables(consts);
+    // Overrides are keyed by the declaration title, which is how Pinecone looks
+    // them up when the script calls `input.*`.
+    interpreter.inputs = overrides.clone();
     // The fork splits per-bar advances into a pre-execute and a post-execute
     // phase (`pine_lang` sets both). Using only `pre` would skip stateful
     // builtins that must advance after the script runs.
@@ -453,6 +528,7 @@ pub fn execute_with_context(
     let mut short_title = None;
     let mut overlay = false;
     let mut seen = 0usize;
+    let mut inputs: Vec<ScriptInput> = Vec::new();
 
     for bar in &data.bars {
         interpreter.current_time = Some(bar.time);
@@ -472,6 +548,24 @@ pub fn execute_with_context(
                 column,
             })
         })?;
+        // Collect the declared inputs from the first bar only: the declarations
+        // are the same on every bar, and taking them once keeps declaration order.
+        if seen == 0 {
+            inputs = output
+                .inputs()
+                .iter()
+                .map(|input| ScriptInput {
+                    kind: input.kind.clone(),
+                    title: input.title.clone(),
+                    group: input.group.clone(),
+                    default: input_default(&input.default),
+                    value: input_default(&input.value),
+                    min: input.min_val,
+                    max: input.max_val,
+                    step: input.step,
+                })
+                .collect();
+        }
         if let Some(indicator) = output.indicator() {
             if !indicator.timeframe.is_empty()
                 || !indicator.format.is_empty()
@@ -574,6 +668,7 @@ pub fn execute_with_context(
             version: v8(version),
         },
         plots,
+        inputs,
         diagnostics: Vec::new(),
     })
 }
@@ -744,6 +839,64 @@ plot(close, title="fill( // bgcolor")
     }
 
     #[test]
+    fn input_declarations_run_and_reach_the_output() {
+        let source = r#"//@version=5
+indicator("x")
+len = input.int(14, "Length", minval=1, maxval=200)
+plot(close + len * 0)
+"#;
+        let output = execute(source, &bars(2), 0).expect("input.int must run");
+        assert_eq!(output.inputs.len(), 1, "{:?}", output.inputs);
+        assert_eq!(output.inputs[0].kind, "int");
+        assert_eq!(output.inputs[0].title, "Length");
+        assert_eq!(output.inputs[0].default, InputDefault::Int(14));
+        assert_eq!(output.inputs[0].min, Some(1.0));
+        assert_eq!(output.inputs[0].max, Some(200.0));
+    }
+
+    #[test]
+    fn an_override_by_title_changes_the_run() {
+        let source = r#"//@version=5
+indicator("x")
+len = input.int(14, "Length")
+plot(len)
+"#;
+        let default = execute(source, &bars(2), 0).expect("default run");
+        assert_eq!(default.plots[0].values[0], Some(14.0));
+
+        let mut overrides = HashMap::new();
+        overrides.insert("Length".to_owned(), pine_core::InputValue::Int(7));
+        let overridden =
+            execute_with_inputs(source, &bars(2), 0, &RunContext::default(), &overrides)
+                .expect("override run");
+        assert_eq!(overridden.plots[0].values[0], Some(7.0));
+        assert_eq!(
+            overridden.inputs[0].value,
+            InputDefault::Int(7),
+            "the run reports the value it actually used"
+        );
+        assert_eq!(
+            overridden.inputs[0].default,
+            InputDefault::Int(14),
+            "the declared default stays the default"
+        );
+    }
+
+    #[test]
+    fn an_unknown_override_title_is_ignored() {
+        let source = r#"//@version=5
+indicator("x")
+len = input.int(14, "Length")
+plot(len)
+"#;
+        let mut overrides = HashMap::new();
+        overrides.insert("Missing".to_owned(), pine_core::InputValue::Int(99));
+        let output = execute_with_inputs(source, &bars(2), 0, &RunContext::default(), &overrides)
+            .expect("unknown titles must not fail the run");
+        assert_eq!(output.plots[0].values[0], Some(14.0));
+    }
+
+    #[test]
     fn unsupported_references_and_aliases_are_rejected() {
         for name in [
             "strategy",
@@ -765,7 +918,6 @@ plot(close, title="fill( // bgcolor")
             "hline",
             "alert",
             "alertcondition",
-            "input",
             "library",
         ] {
             let source = format!("//@version=5\nindicator(\"x\")\nf = {name} \nplot(close)\n");

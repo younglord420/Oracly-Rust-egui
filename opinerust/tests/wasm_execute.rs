@@ -9,7 +9,10 @@
 //! These call `execute` and `build_study` exactly as the chart does, so a
 //! `SystemTime::now()` on any phase (lex, parse, sema, run) fails here.
 
-use opinerust::{build_study, execute, EngineBar, EngineError};
+use opinerust::{
+    build_study, build_study_in_context, execute, execute_with_inputs, EngineBar, EngineError,
+    RunContext,
+};
 use wasm_bindgen_test::wasm_bindgen_test;
 use Oracly_charts::model::Bar as ChartBar;
 use Oracly_charts::studies::Indicator;
@@ -132,6 +135,87 @@ plot(barstate.isconfirmed ? 1 : 0, title = "Confirmed")
         output.plots[1].values[1],
         Some(1.0),
         "earlier bars are closed"
+    );
+}
+
+/// `input.*` must run on wasm and the settings schema must survive the trip, so a
+/// browser user can edit a script's inputs without a native-only path.
+#[wasm_bindgen_test]
+fn inputs_run_and_override_on_wasm() {
+    let source = r#"//@version=5
+indicator("Inputs", overlay = true)
+len = input.int(3, "Length", minval=1, maxval=50)
+plot(close * 0 + len, title = "Len")
+"#;
+    let output = execute(source, &bars(), 0).expect("input.int must run on wasm");
+    assert_eq!(output.inputs.len(), 1);
+    assert_eq!(output.inputs[0].title, "Length");
+    assert_eq!(output.plots[0].values[2], Some(3.0));
+
+    let mut overrides = std::collections::HashMap::new();
+    overrides.insert("Length".to_owned(), pine_core::InputValue::Int(9));
+    let overridden = execute_with_inputs(source, &bars(), 0, &RunContext::default(), &overrides)
+        .expect("override runs on wasm");
+    assert_eq!(overridden.plots[0].values[2], Some(9.0));
+
+    // The chart-facing path: an edited setting must reach the script's input.
+    let chart_bars: Vec<ChartBar> = (0..5)
+        .map(|i| {
+            ChartBar::new(
+                chrono::DateTime::UNIX_EPOCH + chrono::TimeDelta::minutes(i as i64),
+                10.0,
+                11.0,
+                9.0,
+                10.0 + i as f64,
+                1.0,
+            )
+        })
+        .collect();
+    let built = build_study(source, &chart_bars, 0).expect("study builds on wasm");
+    let id = built.study.inputs()[0].id.clone();
+    let mut study = built.study;
+    study.calculate(&chart_bars);
+    assert_eq!(study.values().value(0, 4), Some(3.0));
+    study
+        .set_input(&id, Oracly_charts::studies::InputValue::Length(12))
+        .expect("the schema accepts it");
+    study.calculate(&chart_bars);
+    assert_eq!(
+        study.values().value(0, 4),
+        Some(12.0),
+        "an edited input changes the wasm calculation"
+    );
+}
+
+/// Chart metadata must reach the script on wasm, through the same
+/// `syminfo`/`timeframe` path a native host uses.
+#[wasm_bindgen_test]
+fn chart_context_reaches_the_script_on_wasm() {
+    let chart_bars: Vec<ChartBar> = (0..3)
+        .map(|i| {
+            ChartBar::new(
+                chrono::DateTime::UNIX_EPOCH + chrono::TimeDelta::minutes(i as i64),
+                10.0,
+                11.0,
+                9.0,
+                10.0,
+                1.0,
+            )
+        })
+        .collect();
+    let source = r#"//@version=5
+indicator("Context", overlay = true)
+plot(syminfo.mintick * 0 + 1, title = "Tick")
+"#;
+    let context = RunContext::from_chart(None, Some(Oracly_charts::model::Timeframe::Min5));
+    let built = build_study_in_context(source, &chart_bars, 0, context, None)
+        .expect("context study builds on wasm");
+    let mut study = built.study;
+    study.calculate(&chart_bars);
+    assert_eq!(
+        study.values().value(0, 2),
+        Some(1.0),
+        "the script ran with chart context on wasm"
     );
 }
 

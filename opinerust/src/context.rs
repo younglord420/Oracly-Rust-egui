@@ -37,6 +37,9 @@ pub struct RunContext {
     /// nearby clock interval: scripts get no `timeframe.*` value and the host can
     /// explain why instead of showing a plausible but wrong period.
     pub unsupported_interval: Option<String>,
+    /// The chart's own interval value, so the bridge can ask the chart's bar clock
+    /// where a candle ends even when the Pine period is unrepresentable.
+    pub chart_timeframe: Option<ChartTimeframe>,
 }
 
 impl Default for RunContext {
@@ -52,6 +55,7 @@ impl Default for RunContext {
             multiplier: 0,
             unit: TimeframeUnit::Minutes,
             unsupported_interval: None,
+            chart_timeframe: None,
         }
     }
 }
@@ -80,6 +84,7 @@ impl RunContext {
             context.mintick = instrument.tick_size.unwrap_or(0.0);
             context.currency = instrument.currency.clone().unwrap_or_default();
         }
+        context.chart_timeframe = timeframe;
         if let Some(timeframe) = timeframe {
             match pine_timeframe(timeframe) {
                 Ok((multiplier, unit)) => {

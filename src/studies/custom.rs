@@ -60,6 +60,13 @@ pub type ContextUpdateFn = Arc<
         + Sync,
 >;
 
+/// Hand a validated input edit to the calculation's own storage.
+///
+/// The returned error is a `'static` message because the caller only needs to
+/// tell the user why nothing changed.
+pub type InputOverrideFn =
+    Arc<dyn Fn(&str, &super::InputValue) -> Result<(), &'static str> + Send + Sync>;
+
 /// An indicator defined at runtime via a calculation closure.
 ///
 /// Build one with [`new`](Self::new) and customise it with the builder
@@ -96,7 +103,15 @@ pub struct CustomIndicator {
     chart_instrument: Option<crate::model::Instrument>,
     /// Latest interval the chart supplied.
     chart_timeframe: Option<crate::model::Timeframe>,
+    /// Called after a validated input edit, so the calculation can use it.
+    input_override: Option<InputOverrideFn>,
+    /// Where the chart's bar clock is published, when the calculation needs it.
+    bar_clock: Option<BarClockStore>,
 }
+
+/// Shared slot for the chart's bar clock, read by a calculation that must know
+/// where a candle ends (for `barstate`, for instance).
+pub type BarClockStore = Arc<std::sync::Mutex<Option<crate::model::BarClock>>>;
 
 /// Reports the study's own current status, such as a failed recalculation.
 pub type StatusSource = Arc<dyn Fn() -> Option<super::StudyStatus> + Send + Sync>;
@@ -137,6 +152,8 @@ impl CustomIndicator {
             context_update: None,
             chart_instrument: None,
             chart_timeframe: None,
+            input_override: None,
+            bar_clock: None,
         }
     }
 
@@ -255,6 +272,29 @@ impl CustomIndicator {
         self
     }
 
+    /// Publish the chart's bar clock into `store` on add and on every change.
+    ///
+    /// A calculation that decides whether a candle is still forming cannot guess it
+    /// from bar spacing: session gaps, DST and month boundaries all break that. It
+    /// has to ask the same clock the chart uses.
+    pub fn with_bar_clock(mut self, store: BarClockStore) -> Self {
+        self.bar_clock = Some(store);
+        self
+    }
+
+    /// Tells the calculation about an edited input, after the schema accepted it.
+    ///
+    /// `CustomIndicator` stores the value for the settings UI; a study whose
+    /// calculation reads inputs from its own state needs the same edit, which is
+    /// what this hook passes along.
+    pub fn with_input_override<F>(mut self, override_input: F) -> Self
+    where
+        F: Fn(&str, &super::InputValue) -> Result<(), &'static str> + Send + Sync + 'static,
+    {
+        self.input_override = Some(Arc::new(override_input));
+        self
+    }
+
     /// Follow the chart's symbol, interval and calendar metadata.
     ///
     /// The callback runs once when the study is added and again whenever the
@@ -287,7 +327,10 @@ impl Indicator for CustomIndicator {
         if !input.accepts(&value) {
             return Err("study input is outside its accepted values");
         }
-        input.value = value;
+        input.value = value.clone();
+        if let Some(apply) = self.input_override.clone() {
+            apply(id, &value)?;
+        }
         self.values.clear();
         Ok(())
     }
@@ -388,17 +431,32 @@ impl Indicator for CustomIndicator {
         // The clock carries the chart's interval (and its session). A study that
         // reads `timeframe.*` must follow it when the chart switches interval
         // without re-adding the study.
+        //
+        // The clock also decides where a candle ends, which is what `barstate`
+        // reads, and it can change with the session or timezone while the interval
+        // stays the same. A change there makes the last candle's state stale, so it
+        // needs a replay just like an interval change does.
+        let mut clock_changed = false;
+        if let Some(store) = self.bar_clock.clone() {
+            let mut slot = store
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if slot.as_ref() != Some(clock) {
+                *slot = Some(clock.clone());
+                clock_changed = true;
+            }
+        }
         let Some(timeframe) = clock.timeframe() else {
-            return false;
+            return clock_changed;
         };
         let Some(update) = self.context_update.clone() else {
-            return false;
+            return clock_changed;
         };
-        if self.chart_timeframe == Some(timeframe) {
-            return false;
+        if self.chart_timeframe != Some(timeframe) {
+            self.chart_timeframe = Some(timeframe);
+            clock_changed |= update(self.chart_instrument.as_ref(), self.chart_timeframe);
         }
-        self.chart_timeframe = Some(timeframe);
-        update(self.chart_instrument.as_ref(), self.chart_timeframe)
+        clock_changed
     }
 
     fn study_status(&self) -> Option<super::StudyStatus> {

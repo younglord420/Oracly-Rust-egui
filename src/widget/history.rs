@@ -251,6 +251,32 @@ impl Chart {
         });
     }
 
+    /// Discard the user action opened by [`Self::begin_user_action`] instead of
+    /// recording it.
+    ///
+    /// Use when the action turned out to be a failed attempt that the caller has
+    /// already rolled back: the chart is back to its previous state, so pushing
+    /// the action would let the user "undo" a no-op. Nested actions are not
+    /// supported here; the whole pending action is dropped.
+    pub fn abandon_user_action(&mut self) {
+        #[cfg(feature = "drawings")]
+        {
+            let Some(mut pending) = self.history.pending.take() else {
+                return;
+            };
+            // `begin_user_action` swapped the chart's drawing history into the
+            // pending action so drawing edits ride along. Swapping back restores
+            // it, exactly as `end_user_action` does before recording.
+            self.drawings.swap_history(&mut pending.standalone_drawings);
+        }
+        // Without drawings there is no history to swap back: dropping the pending
+        // action is the whole rollback.
+        #[cfg(not(feature = "drawings"))]
+        {
+            self.history.pending = None;
+        }
+    }
+
     /// Finish the matching [`Self::begin_user_action`], recording only changed components.
     pub fn end_user_action(&mut self) {
         #[cfg(feature = "studies")]

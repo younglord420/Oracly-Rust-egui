@@ -20,13 +20,16 @@
 
 mod context;
 mod engine;
+mod settings;
 mod study;
 
 pub use context::RunContext;
 pub use engine::{
-    execute, execute_with_context, Bar as EngineBar, Diagnostic, DiagnosticSeverity, EngineError,
-    EngineOutput, PlotSeries, ScriptInfo,
+    execute, execute_with_context, execute_with_inputs, Bar as EngineBar, Diagnostic,
+    DiagnosticSeverity, EngineError, EngineOutput, InputDefault, PlotSeries, ScriptInfo,
+    ScriptInput,
 };
+pub use settings::{apply_override, map_inputs, MappedInputs};
 pub use study::{
     build_study, build_study_in_context, build_study_with_clock, OpineRustStudy, StudyBuildError,
 };

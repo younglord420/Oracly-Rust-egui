@@ -887,6 +887,146 @@ mod tests {
     use super::*;
     use crate::studies::{ConfiguredStudy, SMA};
 
+    /// A Pine script's declared inputs must reach the settings dialog as real
+    /// widgets, and editing one there must change what the study calculates. This is
+    /// the path a user takes: Run a script, open its settings, change a value.
+    ///
+    /// The bridge lives in the demo workspace, so this test builds the same schema
+    /// `map_inputs` produces. What is under test is the dialog, the wrapper and the
+    /// calculation reading the edit — not the Pine parser.
+    #[test]
+    fn a_declared_input_is_editable_and_reaches_the_calculation() {
+        use egui::Role;
+        use egui_kittest::{Harness, kittest::Queryable};
+        use std::sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        };
+
+        // `input.int(5, "Length", minval=1, maxval=100)` and `input.bool(true, "Show")`
+        // as `map_inputs` builds them.
+        let schema = vec![
+            StudyInput::new(
+                "pine_input_0",
+                "Length",
+                InputValue::Length(5),
+                InputKind::Length(1, 100),
+            )
+            .with_default(InputValue::Length(5)),
+            StudyInput::new(
+                "pine_input_1",
+                "Show",
+                InputValue::Toggle(true),
+                InputKind::Toggle,
+            )
+            .with_default(InputValue::Toggle(true)),
+        ];
+        let seen_length = Arc::new(AtomicUsize::new(0));
+        let seen_show = Arc::new(Mutex::new(true));
+        let (length_slot, show_slot) = (Arc::clone(&seen_length), Arc::clone(&seen_show));
+        let indicator =
+            crate::studies::CustomIndicator::new("Pine", |bars: &[crate::model::Bar]| {
+                bars.iter()
+                    .map(|bar| crate::studies::IndicatorValue::Single(bar.close))
+                    .collect()
+            })
+            .with_inputs(schema, move |bars, inputs| {
+                let length = inputs
+                    .iter()
+                    .find(|input| input.id == "pine_input_0")
+                    .and_then(|input| match input.value {
+                        InputValue::Length(value) => Some(value),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let show = inputs
+                    .iter()
+                    .find(|input| input.id == "pine_input_1")
+                    .is_some_and(|input| input.value == InputValue::Toggle(true));
+                length_slot.store(length, Ordering::SeqCst);
+                *show_slot.lock().unwrap() = show;
+                bars.iter()
+                    .map(|bar| crate::studies::IndicatorValue::Single(bar.close))
+                    .collect()
+            })
+            .expect("schema is valid");
+        let study = ConfiguredStudy::new(Box::new(indicator));
+
+        let mut dialog = IndicatorSettingsDialog::default();
+        dialog.open(SeriesId(2), &study, Some(Timeframe::Min1));
+        let visible: Vec<String> = dialog
+            .visible_inputs()
+            .into_iter()
+            .map(|index| dialog.inputs[index].id.clone())
+            .collect();
+        assert!(
+            visible.iter().any(|id| id == "pine_input_0")
+                && visible.iter().any(|id| id == "pine_input_1"),
+            "both declared inputs are offered: {visible:?}"
+        );
+        let length_row = dialog
+            .visible_inputs()
+            .into_iter()
+            .find(|index| dialog.inputs[*index].id == "pine_input_0")
+            .expect("length row");
+        assert_eq!(dialog.inputs[length_row].label, "Length");
+        assert!(
+            matches!(dialog.inputs[length_row].kind, InputKind::Length(1, 100)),
+            "declared bounds reach the widget"
+        );
+
+        // Edit through the real widgets: the fields exist, and flipping the toggle
+        // then Apply hands the new value back.
+        let theme = Theme::dark();
+        let mut applied: Option<StudyEdit> = None;
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(900.0, 760.0))
+            .build_ui(|ui| {
+                crate::theme::apply_to_egui(ui.ctx(), &theme);
+                crate::icons::install_loader(ui.ctx());
+                if let Some(edit) = dialog.show(ui.ctx(), &theme) {
+                    applied = Some(edit);
+                }
+            });
+        harness.run();
+        harness.get_by_role_and_label(Role::SpinButton, "Length");
+        let show = harness.get_by_role_and_label(Role::CheckBox, "Show");
+        show.click();
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Apply").click();
+        harness.run();
+        drop(harness);
+
+        let edit = applied.expect("Apply returns the staged edit");
+        let toggled = edit
+            .inputs
+            .iter()
+            .find(|(id, _)| id == "pine_input_1")
+            .map(|(_, value)| value.clone())
+            .expect("the edited input travels in the StudyEdit");
+        assert_eq!(
+            toggled,
+            InputValue::Toggle(false),
+            "the dialog hands back the value the user set"
+        );
+
+        // The wrapper applies it, and the calculation sees it.
+        let mut edited_study = study.clone();
+        edited_study
+            .apply_settings(&edit.inputs, edit.settings.clone())
+            .expect("the wrapper accepts the edit");
+        edited_study.calculate(&[]);
+        assert!(
+            !*seen_show.lock().unwrap(),
+            "the edited toggle reaches the calculation"
+        );
+        assert_eq!(
+            seen_length.load(Ordering::SeqCst),
+            5,
+            "the untouched input keeps its value"
+        );
+    }
+
     #[test]
     fn dialog_follows_the_window_when_it_shrinks() {
         for theme in [Theme::light(), Theme::dark()] {

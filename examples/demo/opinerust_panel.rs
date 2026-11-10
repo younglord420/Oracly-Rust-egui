@@ -53,6 +53,15 @@ pub struct OpineRustPanel {
     logged_error: Option<String>,
     /// Title waiting for the host's install result.
     pending: Option<String>,
+    /// Id of the study this panel installed, once the chart accepted it.
+    installed: Option<SeriesId>,
+    /// Every study this panel installed, newest last, while the chart still holds it.
+    ///
+    /// Undo can bring back a study the panel installed before a replace. Forgetting
+    /// it would make the next Run add a duplicate instead of replacing it, so the
+    /// panel remembers the ids it created — with the title and draft text of that
+    /// install, so adopting one does not silently claim the current draft is live.
+    installed_history: Vec<Installed>,
     /// Symbol and interval the scripts should see. Empty until the host sets it.
     context: RunContext,
 }
@@ -72,6 +81,8 @@ impl Default for OpineRustPanel {
             watching: None,
             logged_error: None,
             pending: None,
+            installed: None,
+            installed_history: Vec::new(),
             context: RunContext::default(),
         }
     }
@@ -89,11 +100,32 @@ pub struct InstallStudy {
     pub title: String,
 }
 
+/// A study this panel installed, kept so undo can hand it back.
+#[derive(Clone, Debug)]
+struct Installed {
+    id: SeriesId,
+    title: String,
+    /// Draft text at that install, so adopting it later restores an honest state.
+    text: String,
+}
+
 impl OpineRustPanel {
     /// The editor, for tests that drive it directly.
     #[cfg(test)]
     pub fn editor_mut(&mut self) -> &mut StudyEditor {
         &mut self.editor
+    }
+
+    /// The run log, for tests that check what the user is told.
+    #[cfg(test)]
+    pub fn logs(&self) -> &[String] {
+        &self.logs
+    }
+
+    /// Title the panel currently claims to have applied, for tests.
+    #[cfg(test)]
+    pub fn applied_title(&self) -> Option<&str> {
+        self.applied.as_deref()
     }
 
     /// Publish a prepared study on the chart as one undoable action.
@@ -134,12 +166,35 @@ impl OpineRustPanel {
         chart.begin_user_action();
         match chart.try_add_indicator(study) {
             Ok(id) => {
+                // `add_indicator` computes the candidate through an infallible
+                // closure, so `Ok(id)` only means "registered". A script that
+                // preflighted fine can still fail on the chart's first
+                // calculation (fewer bars than the preflight data, a different
+                // context, an output shape that changed). Publishing "Applied"
+                // there would tell the user a broken study is live. Roll the
+                // candidate back and keep the previous study.
+                if let Some(failure) = install_failure(chart, id) {
+                    chart.remove_series(id);
+                    // The candidate never became the applied study, so the whole
+                    // action is discarded rather than pushed onto undo history.
+                    // Otherwise the user would undo a failure into an empty slot.
+                    chart.abandon_user_action();
+                    chart.set_study_limit(limit);
+                    self.commit_failed(failure.clone());
+                    return Err(failure);
+                }
                 if let Some(old) = previous.filter(|_| replaces) {
                     chart.remove_series(old);
                 }
                 chart.end_user_action();
                 chart.set_study_limit(limit);
                 self.watch(last_error);
+                self.installed = Some(id);
+                self.installed_history.push(Installed {
+                    id,
+                    title: title.clone(),
+                    text: self.editor.text().to_owned(),
+                });
                 self.confirm_installed(title, replaces);
                 Ok(id)
             }
@@ -175,6 +230,80 @@ impl OpineRustPanel {
         self.logs.push(format!("Install failed: {reason}"));
         self.pending = None;
         self.editor.apply_result(Err(reason));
+    }
+
+    /// Reconcile the panel with a study the host believes is installed.
+    ///
+    /// Undo and redo change the chart without going through the panel: they can
+    /// bring back a study this panel installed earlier (a different script, a
+    /// different title) or remove the one it is watching. Keeping the old title
+    /// would make the header claim "Applied" for a study that is not on the chart,
+    /// and the next Run would then replace the *wrong* study. Declaring the study
+    /// gone on a mismatch is the honest option: the draft and its text survive, and
+    /// the next Run adds a study that matches what the editor shows.
+    pub fn forget_missing_study(&mut self, chart: &Chart) {
+        // Drop ids the chart no longer holds, so the list stays a set of studies the
+        // chart can actually give back.
+        self.installed_history
+            .retain(|entry| chart.indicators().any(|(candidate, _)| candidate == entry.id));
+        let on_chart = self.installed.and_then(|id| {
+            self.installed_history
+                .iter()
+                .find(|entry| entry.id == id)
+                .map(|entry| entry.title.clone())
+        });
+        let matches = match (&on_chart, &self.applied) {
+            (Some(title), Some(applied)) => title == applied,
+            // The host never recorded a title, so an existing study is all we can check.
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if matches {
+            return;
+        }
+        self.installed = None;
+        if self.applied.take().is_some() {
+            self.logs.push(
+                "The chart no longer holds this script (undo or redo changed it). Run installs it again."
+                    .to_owned(),
+            );
+        }
+        self.applied_before = false;
+        self.applied_text.clear();
+        self.watching = None;
+        self.logged_error = None;
+        // Adopt the study this panel created that the chart holds now, if any. This
+        // is what makes a Run after an undo replace the restored study instead of
+        // adding a second copy of it.
+        if let Some(entry) = self
+            .installed_history
+            .iter()
+            .rev()
+            .find(|entry| chart.indicators().any(|(candidate, _)| candidate == entry.id))
+            .cloned()
+        {
+            self.installed = Some(entry.id);
+            self.applied = Some(entry.title.clone());
+            self.applied_before = true;
+            self.applied_text = entry.text;
+            self.logs.push(format!(
+                "The chart holds “{}” again; Run replaces it.",
+                entry.title
+            ));
+        }
+    }
+
+    /// The study id this panel installed, if the chart still holds it.
+    ///
+    /// The host uses this after undo/redo, which change the chart without going
+    /// through the panel: the id it remembers can then belong to a study the chart
+    /// no longer has.
+    pub fn installed_study(&self, chart: &Chart) -> Option<SeriesId> {
+        let id = self.installed?;
+        chart
+            .indicators()
+            .any(|(candidate, _)| candidate == id)
+            .then_some(id)
     }
 
     /// Follow the installed study so recalculation failures reach the logs.
@@ -396,6 +525,21 @@ fn label(severity: DiagnosticSeverity) -> &'static str {
     }
 }
 
+/// The failure a freshly installed study reports, if its first calculation failed.
+///
+/// `Chart::study_status` answers "what does the chart have to say about this
+/// study" and reports `WaitingForData` while values are still missing, so the
+/// study's own status is the one that distinguishes a failed calculation from a
+/// study that simply has nothing to draw yet. Reads without mutating, so no undo
+/// step is recorded.
+fn install_failure(chart: &Chart, id: SeriesId) -> Option<String> {
+    use egui_charts::studies::StudyStatus;
+    match chart.indicators().find(|(candidate, _)| *candidate == id)?.1.study_status() {
+        Some(StudyStatus::DataError { message }) => Some(message),
+        _ => None,
+    }
+}
+
 fn describe(error: StudyBuildError, source: &str) -> (String, Vec<EditorDiagnostic>) {
     let engine = match error {
         StudyBuildError::NoPlots => {
@@ -405,6 +549,15 @@ fn describe(error: StudyBuildError, source: &str) -> (String, Vec<EditorDiagnost
             );
         }
         StudyBuildError::Engine(engine) => engine,
+        StudyBuildError::InvalidInputs => {
+            // The chart refused the settings schema built from the script's
+            // `input.*` declarations. The script itself compiled, so this is a
+            // host-side mapping problem, not a user script error.
+            return (
+                "The script's input declarations could not become chart settings.".to_owned(),
+                Vec::new(),
+            );
+        }
     };
     let diagnostics = match engine {
         opinerust::EngineError::Compile(list) => list,
@@ -519,6 +672,71 @@ mod tests {
         panel
             .install(chart, None, prepared)
             .expect("the sample study installs")
+    }
+
+    /// A study whose first on-chart calculation fails after a successful
+    /// preflight. Preflight runs over ten bars; the chart then holds none, which
+    /// the engine rejects with `NoBars` instead of producing a plot.
+    fn study_failing_on_install(panel: &mut OpineRustPanel) -> InstallStudy {
+        let script =
+            "//@version=5\nindicator(\"Fragile\", overlay = true)\nplot(close, title = \"C\")\n";
+        panel
+            .prepare(script, &bars(10), 0)
+            .expect("the script preflights over 10 bars")
+    }
+
+    /// A candidate that fails its first calculation must not be reported as
+    /// applied, and the study it was replacing must stay on the chart.
+    #[test]
+    fn a_failed_first_calculation_keeps_the_previous_study() {
+        let bars = bars(10);
+        let mut chart = Chart::new(BarData::from_bars(bars.clone()));
+        let mut panel = OpineRustPanel::default();
+        let good = panel
+            .prepare(
+                "//@version=5\nindicator(\"Good\", overlay = true)\nplot(close, title = \"C\")\n",
+                &bars,
+                0,
+            )
+            .expect("runs");
+        let first = install(&mut chart, &mut panel, good);
+        let edits = chart.edit_count();
+
+        // Preflight succeeds over ten bars, but the chart now has none to calculate over.
+        chart.set_data(SeriesId::MAIN, Vec::new());
+        let fragile = study_failing_on_install(&mut panel);
+
+        let result = panel.install(&mut chart, Some(first), fragile);
+        assert!(result.is_err(), "a failed calculation must not install");
+        assert!(
+            chart.indicators().any(|(id, _)| id == first),
+            "the previous study must stay on the chart"
+        );
+        assert_eq!(
+            chart.indicators().count(),
+            1,
+            "the failed candidate must not be left behind"
+        );
+        assert_eq!(
+            chart.edit_count(),
+            edits,
+            "a discarded install must not leave an undo step"
+        );
+        assert_eq!(
+            panel.applied.as_deref(),
+            Some("Good"),
+            "the failed candidate must not replace the applied title"
+        );
+        assert!(
+            !panel.logs.iter().any(|line| line.contains("Applied “Fragile”")),
+            "the failed candidate must never be announced as applied: {:?}",
+            panel.logs
+        );
+        assert!(
+            panel.logs.iter().any(|line| line.contains("Install failed")),
+            "{:?}",
+            panel.logs
+        );
     }
 
     #[test]

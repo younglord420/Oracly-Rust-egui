@@ -938,6 +938,26 @@ impl DemoApp {
         {
             self.switch_timeframe(tf);
         }
+        self.sync_opinerust_study();
+    }
+
+    /// Keep the panel and the host's record of its study in step with the chart.
+    ///
+    /// Undo and redo can restore or drop the study without the panel running, so
+    /// afterwards the host must ask what is actually on the chart. The panel then
+    /// stops claiming a study it no longer watches, and the next Run replaces the
+    /// right one instead of a stale id.
+    fn sync_opinerust_study(&mut self) {
+        let present = self
+            .opinerust_study
+            .is_some_and(|id| self.chart.indicators().any(|(candidate, _)| candidate == id));
+        if !present {
+            self.opinerust_study = None;
+        }
+        // The panel knows which study it installed; ask it after every undo/redo so
+        // a restored or dropped study is picked up instead of a stale id.
+        self.opinerust.forget_missing_study(&self.chart);
+        self.opinerust_study = self.opinerust.installed_study(&self.chart);
     }
 
     // --- data helpers ------------------------------------------------------
@@ -2483,6 +2503,7 @@ impl DemoApp {
                 let _ = reason;
             }
         }
+        self.opinerust_study = self.opinerust.installed_study(&self.chart);
     }
 
     fn handle_news(&mut self, ctx: &egui::Context, action: NewsAction) {
@@ -3879,11 +3900,134 @@ mod tests {
         );
     }
 
+    /// A v6 script typed into the dock and run with Ctrl+Enter must reach the real
+    /// chart through the same frame the user sees, and a run that fails must not
+    /// leave a study behind.
+    #[test]
+    fn ctrl_enter_in_the_dock_runs_v5_v6_and_rejects_an_unsupported_script() {
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+        app.open_panel = Some(SidePanel::OpineRust);
+
+        let frame = |app: &mut DemoApp, events: Vec<egui::Event>| {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1440.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            input.events = events;
+            let output = ctx.run_ui(input, |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()));
+            output.drop_without_applying_deltas();
+        };
+
+        // Warm up so the panel exists in the widget tree before key events.
+        frame(&mut app, Vec::new());
+        let study_count = |app: &DemoApp| app.chart.indicators().count();
+
+        // v5 through the keyboard path.
+        app.opinerust.editor_mut().replace_text(
+            "//@version=5\nindicator(\"Dock v5\", overlay = true)\nplot(close, title = \"Close\")\n",
+        );
+        let before = study_count(&app);
+        frame(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::CTRL,
+            }],
+        );
+        assert_eq!(
+            study_count(&app),
+            before + 1,
+            "Ctrl+Enter installs the v5 study through the real frame"
+        );
+        assert_eq!(app.opinerust_study.is_some(), true);
+
+        // v6 replaces it, not appends.
+        app.opinerust.editor_mut().replace_text(
+            "//@version=6\nindicator(\"Dock v6\", overlay = true)\nplot(ta.sma(close, 5), title = \"Fast\")\nplot(ta.sma(close, 20), title = \"Slow\")\n",
+        );
+        frame(&mut app, Vec::new());
+        frame(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::CTRL,
+            }],
+        );
+        let installed: Vec<_> = app
+            .chart
+            .indicators()
+            .map(|(id, study)| (id, study.name().to_owned()))
+            .filter(|(_, name)| name.starts_with("Dock "))
+            .collect();
+        assert_eq!(
+            installed.len(),
+            1,
+            "v6 replaces the v5 study; chart has {:?}; logs {:?}",
+            installed,
+            app.opinerust.logs()
+        );
+        assert_eq!(installed[0].1, "Dock v6");
+        assert_eq!(
+            app.chart
+                .indicators()
+                .find(|(id, _)| *id == app.opinerust_study.expect("installed id"))
+                .expect("the panel's study is on the chart")
+                .1
+                .line_count(),
+            2,
+            "both v6 plots are present"
+        );
+
+        // An unsupported construct must leave exactly the installed study alone.
+        app.opinerust.editor_mut().replace_text(
+            "//@version=6\nindicator(\"Bad\")\nplot(close)\nx = request.security(\"X\", \"D\", close)\n",
+        );
+        frame(&mut app, Vec::new());
+        frame(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::CTRL,
+            }],
+        );
+        let after: Vec<_> = app
+            .chart
+            .indicators()
+            .map(|(id, study)| (id, study.name().to_owned()))
+            .filter(|(_, name)| name.starts_with("Dock "))
+            .collect();
+        assert_eq!(after.len(), 1, "a rejected script leaves no study behind");
+        assert_eq!(
+            after[0].1, "Dock v6",
+            "the previous study survives a failed run"
+        );
+        assert!(
+            app.opinerust.logs().iter().any(|line| line
+                .to_lowercase()
+                .contains("not supported")),
+            "the failure is reported in the logs: {:?}",
+            app.opinerust.logs()
+        );
+    }
+
     /// The panel is a dock: resizing its left edge is a real interaction, and the
     /// text stays after the panel is closed.
     #[test]
-    fn the_panel_is_resizable_and_keeps_its_draft() {
-        let ctx = egui::Context::default();
+    fn the_panel_is_resizable_and_keeps_its_draft() {        let ctx = egui::Context::default();
         let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
         app.live.set_paused(true);
         app.open_panel = Some(SidePanel::OpineRust);
@@ -3913,6 +4057,114 @@ mod tests {
         assert!(
             app.opinerust.editor_mut().text().contains("Keep me"),
             "closing the panel keeps the draft"
+        );
+    }
+
+    /// Undo and redo of a replace go through the real chat path: the host must stop
+    /// pointing at a stale id, and the panel must not claim a study it no longer
+    /// watches. Without this, a Run after an undo would replace the wrong study.
+    #[test]
+    fn undo_and_redo_of_a_replace_keep_the_panel_and_host_in_step() {
+        let ctx = egui::Context::default();
+        let mut app = DemoApp::new(&eframe::CreationContext::_new_kittest(ctx.clone()));
+        app.live.set_paused(true);
+        app.open_panel = Some(SidePanel::OpineRust);
+
+        let frame = |app: &mut DemoApp, events: Vec<egui::Event>| {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1440.0, 900.0),
+                )),
+                ..Default::default()
+            };
+            input.events = events;
+            let output = ctx.run_ui(input, |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()));
+            output.drop_without_applying_deltas();
+        };
+        let run = |app: &mut DemoApp, script: &str| {
+            app.opinerust.editor_mut().replace_text(script);
+            frame(app, Vec::new());
+            frame(
+                app,
+                vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::CTRL,
+                }],
+            );
+        };
+        let names = |app: &DemoApp| -> Vec<String> {
+            app.chart
+                .indicators()
+                .map(|(_, study)| study.name().to_owned())
+                .filter(|name| name.starts_with("Undo "))
+                .collect()
+        };
+
+        frame(&mut app, Vec::new());
+        run(
+            &mut app,
+            "//@version=5\nindicator(\"Undo A\", overlay = true)\nplot(close, title = \"C\")\n",
+        );
+        assert_eq!(names(&app), ["Undo A"]);
+        run(
+            &mut app,
+            "//@version=5\nindicator(\"Undo B\", overlay = true)\nplot(open, title = \"C\")\n",
+        );
+        assert_eq!(names(&app), ["Undo B"], "B replaced A");
+
+        // Undo the replace: A is back and the host follows the chart.
+        assert!(app.chart.undo(), "the replace is one undo step");
+        app.sync_chart_history();
+        assert_eq!(names(&app), ["Undo A"], "undo restores A");
+        assert_eq!(
+            app.opinerust_study,
+            app.chart
+                .indicators()
+                .find(|(_, study)| study.name() == "Undo A")
+                .map(|(id, _)| id),
+            "the host tracks the restored study, not a dangling id"
+        );
+        assert_eq!(
+            app.opinerust.applied_title(),
+            Some("Undo A"),
+            "the panel adopts the study the chart holds again, so Run replaces it"
+        );
+
+        // The panel adopted A, a study it did not write into the editor, so the
+        // header must not present it as this draft being live.
+        assert!(
+            app.opinerust.editor_mut().is_modified(),
+            "a draft that does not match the adopted study stays marked as edited"
+        );
+
+        // A Run after the undo must replace A, not add a second study.
+        run(
+            &mut app,
+            "//@version=5\nindicator(\"Undo C\", overlay = true)\nplot(high, title = \"C\")\n",
+        );
+        assert_eq!(names(&app), ["Undo C"], "C replaced A without duplicating");
+
+        // Redo is still available for the earlier chain and must not resurrect
+        // a study the panel no longer watches into a duplicate.
+        let before_redo = names(&app);
+        if app.chart.redo() {
+            app.sync_chart_history();
+        }
+        let after_redo = names(&app);
+        assert!(
+            after_redo.len() <= 1,
+            "redo never duplicates the panel's study: {before_redo:?} -> {after_redo:?}"
+        );
+        assert!(
+            app.opinerust_study.is_none_or(|id| app
+                .chart
+                .indicators()
+                .any(|(candidate, _)| candidate == id)),
+            "the host never points at a study the chart does not hold"
         );
     }
 

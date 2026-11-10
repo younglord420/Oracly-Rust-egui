@@ -203,6 +203,15 @@ impl BarClock {
     }
 
     /// First boundary after an aligned open, including short days and calendar months.
+    ///
+    /// Public because a host study that must know where a candle ends — for
+    /// `barstate.isrealtime`, say — has to ask the same clock the chart uses to
+    /// bucket bars. Computing it from neighbouring timestamps gets session gaps, DST
+    /// changes and month boundaries wrong.
+    pub fn next_open_after(&self, open: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        self.next_open(open)
+    }
+
     pub(crate) fn next_open(&self, open: DateTime<Utc>) -> Option<DateTime<Utc>> {
         let timeframe = self.timeframe?;
         if timeframe.is_trade_based() {

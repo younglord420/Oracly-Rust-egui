@@ -219,3 +219,93 @@ plot(barstate.isrealtime ? 1 : 0, title = "Realtime")
         "2 minutes into a 5-minute candle is still forming, not confirmed"
     );
 }
+
+/// The chart's own session clock must reach `barstate` in an installed study.
+///
+/// The chart publishes `Chart::bar_clock`, which carries the exchange session, and
+/// a study decides "still forming" from *that* clock. The candle here opens four
+/// minutes before the close, so it lasts four minutes rather than the five of its
+/// interval: a span guessed from bar spacing would keep it open one extra minute.
+#[test]
+fn the_chart_session_clock_ends_the_candle_at_the_session_close() {
+    use chrono::{NaiveTime, Utc, Weekday};
+    use Oracly_charts::model::{Session, SessionWindow, TimezoneId};
+
+    let zone = TimezoneId::fixed_offset(-4 * 3600).expect("valid offset");
+    let session = Session::new([SessionWindow::new(
+        [
+            Weekday::Mon,
+            Weekday::Tue,
+            Weekday::Wed,
+            Weekday::Thu,
+            Weekday::Fri,
+        ],
+        NaiveTime::from_hms_opt(9, 30, 0).expect("time"),
+        NaiveTime::from_hms_opt(16, 0, 0).expect("time"),
+    )]);
+    let instrument = aapl().with_time_zone(zone).with_session(session);
+
+    // 19:56 UTC is 15:56 at UTC-4: the last five-minute candle before a 16:00 close.
+    let open = DateTime::parse_from_rfc3339("2024-06-03T19:56:00Z")
+        .expect("timestamp")
+        .with_timezone(&Utc);
+    let minute = TimeDelta::minutes(1);
+    let chart_bars: Vec<Bar> = (0..5)
+        .map(|i| {
+            let at = open - minute * (4 - i);
+            Bar::new(at, 100.0, 101.0, 99.0, 100.5, 1.0)
+        })
+        .collect();
+
+    let mut chart = Chart::new(BarData::from_bars(chart_bars.clone()));
+    chart.set_timeframe(Timeframe::Min5);
+    chart.set_instrument(Some(instrument));
+
+    // The clock the chart publishes is the authority, and it ends the candle at the
+    // close instead of one interval later.
+    let clock = chart.bar_clock();
+    assert_eq!(
+        clock
+            .next_open_after(open)
+            .map(|next| (next - open).num_minutes()),
+        Some(4),
+        "the chart clock closes the 15:56 candle at 16:00"
+    );
+
+    let source = r#"//@version=6
+indicator("state")
+plot(barstate.isrealtime ? 1 : 0, title = "Realtime")
+"#;
+    let build_at = |now: DateTime<Utc>, bars: &[Bar]| {
+        let now_ms = now.timestamp_millis();
+        opinerust::build_study_in_context(
+            source,
+            bars,
+            now_ms,
+            opinerust::RunContext::from_chart(chart.instrument(), chart.timeframe()),
+            Some(std::sync::Arc::new(move || now_ms)),
+        )
+        .expect("builds")
+        .study
+    };
+
+    // Two minutes in: open either way.
+    let mut inside = build_at(open + minute * 2, &chart_bars);
+    inside.set_bar_clock(&clock);
+    inside.calculate(&chart_bars);
+    assert_eq!(
+        inside.values().value(0, 4),
+        Some(1.0),
+        "two minutes in, the candle is open"
+    );
+
+    // One second after the close: confirmed. A five-minute span would still say open.
+    let mut closed = build_at(open + minute * 5 + TimeDelta::seconds(1), &chart_bars);
+    closed.set_bar_clock(&clock);
+    closed.calculate(&chart_bars);
+    assert_eq!(
+        closed.values().value(0, 4),
+        Some(0.0),
+        "after the session close the candle is confirmed, not still forming"
+    );
+}

@@ -10,11 +10,19 @@
 //! for the host instead of silently drawing gaps as if the script worked.
 
 use crate::context::RunContext;
-use crate::engine::{execute_with_context, Bar, Diagnostic, EngineError, EngineOutput};
+use crate::engine::{
+    execute_with_context, execute_with_inputs, Bar, Diagnostic, EngineError, EngineOutput,
+};
 use egui::Color32;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use Oracly_charts::model::Bar as ChartBar;
-use Oracly_charts::studies::{CustomIndicator, IndicatorValue, PlotType, StudyStatus};
+use Oracly_charts::model::BarClock as ChartClock;
+use Oracly_charts::model::Timeframe as ChartTimeframe;
+use Oracly_charts::studies::{CustomIndicator, IndicatorValue, InputValue, PlotType, StudyStatus};
+
+/// The recalculation the study runs on every refresh.
+type RecalculateFn = Arc<dyn Fn(&[ChartBar]) -> Vec<IndicatorValue> + Send + Sync>;
 
 /// Why a study could not be built.
 #[derive(Clone, Debug, PartialEq)]
@@ -23,6 +31,8 @@ pub enum StudyBuildError {
     Engine(EngineError),
     /// The script produced no drawable plot.
     NoPlots,
+    /// The mapped `input.*` schema was rejected by the chart.
+    InvalidInputs,
 }
 
 impl From<EngineError> for StudyBuildError {
@@ -78,21 +88,35 @@ fn bar_span_ms(bars: &[ChartBar]) -> i64 {
 /// candle index, so whitespace bars are passed through: the interpreter treats
 /// them as `na` instead of silently renumbering the series.
 ///
-/// `now_ms` decides whether the last candle is still forming: when the clock is
-/// inside the last candle's own window it is realtime and unconfirmed, which is
-/// what `barstate.isrealtime` and `barstate.isconfirmed` must report on a live
-/// chart. A clock before the window (a test fixture, or a replay cursor) leaves
-/// the bar historical instead of inventing a forming candle.
-fn engine_bars(bars: &[ChartBar], now_ms: i64, bar_ms: i64) -> Vec<Bar> {
+/// `now_ms` decides whether the last candle is still forming, and the **chart's own
+/// bar clock** supplies that candle's span. Deriving the span from neighbouring
+/// timestamps was a guess: a session gap, a DST change or a monthly boundary all
+/// break the median, and the guess then decides `barstate.isrealtime` wrongly. The
+/// clock the chart uses to bucket bars is the only authority on where a candle ends.
+///
+/// Without a clock (a plain unit test, or a host that never supplied one) the
+/// timestamp-derived span is still used, because there is nothing better to ask.
+/// That fallback is a heuristic and the doc says so rather than presenting it as
+/// the same thing.
+fn engine_bars(
+    bars: &[ChartBar],
+    now_ms: i64,
+    bar_ms: i64,
+    clock: Option<&ChartClock>,
+) -> Vec<Bar> {
     let last = bars.len().saturating_sub(1);
     bars.iter()
         .enumerate()
         .map(|(index, bar)| {
             let open_ms = bar.time.timestamp_millis();
+            let span = clock
+                .and_then(|clock| candle_span_ms(clock, bar.time))
+                .filter(|span| *span > 0)
+                .unwrap_or(bar_ms);
             let forming = index == last
-                && bar_ms > 0
+                && span > 0
                 && now_ms >= open_ms
-                && now_ms < open_ms + bar_ms
+                && now_ms < open_ms + span
                 && !bar.is_whitespace();
             Bar {
                 time_ms: open_ms,
@@ -106,6 +130,29 @@ fn engine_bars(bars: &[ChartBar], now_ms: i64, bar_ms: i64) -> Vec<Bar> {
             }
         })
         .collect()
+}
+
+/// How long the candle that opens at `open` lasts, according to the chart's clock.
+///
+/// Asked of the clock instead of computed here: only the clock knows about session
+/// windows, the exchange timezone and monthly boundaries. `None` when the clock
+/// cannot answer — a trade-based interval has no duration, and a bar outside every
+/// session window has no close — which callers must not turn into `0`, because
+/// `0` would silently make every candle look closed.
+fn candle_span_ms(clock: &ChartClock, open: chrono::DateTime<chrono::Utc>) -> Option<i64> {
+    let next = clock.next_open_after(open)?;
+    let span = (next - open).num_milliseconds();
+    (span > 0).then_some(span)
+}
+
+/// A clock for the chart's interval alone, used until the host supplies its own.
+///
+/// Built from the chart's own `Timeframe`, not from the Pine multiplier: only the
+/// chart type knows whether an interval is trade-based or how its buckets align.
+/// The chart replaces this through `Indicator::set_bar_clock` as soon as it has the
+/// exchange timezone and session, so this is a starting point, not an assumption.
+fn default_clock(timeframe: Option<ChartTimeframe>) -> Option<ChartClock> {
+    timeframe.map(ChartClock::new)
 }
 
 fn color_from_packed(packed: u32) -> Color32 {
@@ -141,10 +188,24 @@ pub fn build_study_in_context(
     context: RunContext,
     clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
 ) -> Result<OpineRustStudy, StudyBuildError> {
-    let bar_ms = bar_span_ms(bars);
-    let engine_bars = engine_bars(bars, now_ms, bar_ms);
-    let output: EngineOutput = execute_with_context(source, &engine_bars, now_ms, &context)?;
-    study_from_output(source.to_owned(), now_ms, context, clock, output)
+    // The chart's interval alone gives a usable clock for the common case; the
+    // session/timezone-aware clock arrives later through `Indicator::set_bar_clock`.
+    let live_clock = Arc::new(Mutex::new(default_clock(context.chart_timeframe)));
+    let charts = {
+        let clock = live_clock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        engine_bars(bars, now_ms, bar_span_ms(bars), clock.as_ref())
+    };
+    let output: EngineOutput = execute_with_context(source, &charts, now_ms, &context)?;
+    study_from_output(
+        source.to_owned(),
+        now_ms,
+        context,
+        clock,
+        live_clock,
+        output,
+    )
 }
 
 /// Like [`build_study`], but later recalculations read the host clock through
@@ -165,6 +226,7 @@ fn study_from_output(
     now_ms: i64,
     context: RunContext,
     clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
+    live_clock: Arc<Mutex<Option<ChartClock>>>,
     output: EngineOutput,
 ) -> Result<OpineRustStudy, StudyBuildError> {
     if output.plots.is_empty() {
@@ -198,23 +260,56 @@ fn study_from_output(
     // change does not leave the script running with the previous chart's values.
     let live_context = Arc::new(Mutex::new(context));
 
-    let recalculate = {
+    // Inputs are chart settings, not script state: the editor can change them
+    // while the study stays installed. The schema is mapped once from the run's
+    // declarations, and edits land in a shared map the closure reads on every
+    // recalculation.
+    let mapped = crate::settings::map_inputs(&output.inputs);
+    let declared_inputs: Arc<Vec<Oracly_charts::studies::StudyInput>> = Arc::new(mapped.inputs);
+    // `title` is how an edited setting reaches `input.*`: the schema is keyed by a
+    // positional id so it stays stable, but Pinecone looks overrides up by title.
+    let input_titles: Arc<Vec<String>> = Arc::new(mapped.titles);
+    let overrides: Arc<Mutex<HashMap<String, pine_core::InputValue>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
+    // One closure shared by both calculation paths: the plain one and the
+    // input-aware one. `with_inputs` replaces the calculate callback, so the
+    // study would lose the input-aware path unless both point at this same
+    // shared closure.
+    let recalculate: RecalculateFn = {
         let snapshot = Arc::clone(&published);
         let errors = Arc::clone(&last_error);
         let clock = clock.clone();
         let context = Arc::clone(&live_context);
-        move |bars: &[ChartBar]| -> Vec<IndicatorValue> {
+        let overrides = Arc::clone(&overrides);
+        let live_clock = Arc::clone(&live_clock);
+        Arc::new(move |bars: &[ChartBar]| -> Vec<IndicatorValue> {
             let now = clock.as_ref().map_or(now_ms, |clock| clock());
             let context = context
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
-            // The candle span is measured from the bars of *this* run. Caching the
-            // build-time span would keep deciding "forming" against the previous
-            // interval after the chart switched 1m -> 5m.
+            let overrides = overrides
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            // The candle span is answered by the chart's clock, read fresh on every
+            // run: the interval, timezone and session can all change while the study
+            // stays installed, and a cached span would then decide "forming" for the
+            // previous interval. The timestamp fallback only applies when no clock
+            // was ever supplied.
             let bar_ms = bar_span_ms(bars);
-            let fresh =
-                execute_with_context(&source, &engine_bars(bars, now, bar_ms), now, &context);
+            let live_clock = live_clock
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            let fresh = execute_with_inputs(
+                &source,
+                &engine_bars(bars, now, bar_ms, live_clock.as_ref()),
+                now,
+                &context,
+                &overrides,
+            );
             let mut slot = snapshot
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -252,7 +347,7 @@ fn study_from_output(
                     slot.rows.clone()
                 }
             }
-        }
+        })
     };
 
     let colors_source = Arc::clone(&published);
@@ -289,7 +384,8 @@ fn study_from_output(
         }
     };
 
-    let mut study = CustomIndicator::new(name.clone(), recalculate)
+    let calculate = Arc::clone(&recalculate);
+    let mut study = CustomIndicator::new(name.clone(), move |bars: &[ChartBar]| calculate(bars))
         .with_line_count(count)
         .with_line_names(titles)
         .with_colors(declared_colors)
@@ -316,7 +412,42 @@ fn study_from_output(
                 *slot = next;
                 true
             }
+        })
+        // The chart's own clock, once it supplies one, is the only authority on
+        // where a candle ends; the interval-only default above is just a start.
+        .with_bar_clock(Arc::clone(&live_clock))
+        .with_input_override({
+            let overrides = Arc::clone(&overrides);
+            let titles = Arc::clone(&input_titles);
+            let declared_inputs = Arc::clone(&declared_inputs);
+            move |id: &str, value: &InputValue| {
+                let index = declared_inputs
+                    .iter()
+                    .position(|input| input.id == id)
+                    .ok_or("unknown study input")?;
+                let Some(title) = titles.get(index) else {
+                    return Err("study input has no declaration");
+                };
+                let Some(engine) = crate::settings::to_engine_value(value) else {
+                    return Err("this input type cannot change the running script");
+                };
+                overrides
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(title.clone(), engine);
+                Ok(())
+            }
         });
+
+    if !declared_inputs.is_empty() {
+        // The closure ignores the passed settings: overrides travel through the
+        // shared map so a recalculation reads the same values the editor shows.
+        let schema = declared_inputs.as_ref().clone();
+        let inputs_calculate = Arc::clone(&recalculate);
+        study = study
+            .with_inputs(schema, move |bars, _inputs| inputs_calculate(bars))
+            .map_err(|_| StudyBuildError::InvalidInputs)?;
+    }
 
     if let Some(short) = &info.short_title {
         study = study.with_description(short.clone());
@@ -617,6 +748,230 @@ plot(barstate.isconfirmed ? 1 : 0, title = "Confirmed")
         let closed = live(last_open + minute + 1);
         assert_eq!(closed.values().value(0, 9), Some(0.0), "no longer realtime");
         assert_eq!(closed.values().value(1, 9), Some(1.0), "now confirmed");
+    }
+
+    /// An interval-only clock would also pass the previous test, so this one uses
+    /// the session clock the chart actually has: a candle opened before the session
+    /// closes must end at the close, not one interval later.
+    ///
+    /// The guess this replaces (median gap between bars) cannot see the gap at all.
+    #[test]
+    fn a_session_close_ends_the_last_candle() {
+        use chrono::{NaiveTime, Weekday};
+        use Oracly_charts::model::{Session, SessionWindow, TimezoneId};
+
+        let source = r#"//@version=5
+indicator("state")
+plot(barstate.isrealtime ? 1 : 0, title = "Realtime")
+plot(barstate.isconfirmed ? 1 : 0, title = "Confirmed")
+"#;
+        // A fixed exchange offset keeps this test free of the `timezones` feature;
+        // the session window rule being tested does not depend on IANA lookups.
+        // 09:30–16:00 at UTC-4 is 13:30–20:00 UTC.
+        let zone = TimezoneId::fixed_offset(-4 * 3600).expect("valid offset");
+        let session = Session::new([SessionWindow::new(
+            [
+                Weekday::Mon,
+                Weekday::Tue,
+                Weekday::Wed,
+                Weekday::Thu,
+                Weekday::Fri,
+            ],
+            NaiveTime::from_hms_opt(9, 30, 0).expect("time"),
+            NaiveTime::from_hms_opt(16, 0, 0).expect("time"),
+        )]);
+        let clock = ChartClock::new(Oracly_charts::model::Timeframe::Min5)
+            .with_session(zone, session, false);
+
+        let open = chrono::DateTime::parse_from_rfc3339("2024-06-03T19:56:00Z")
+            .expect("timestamp")
+            .with_timezone(&chrono::Utc);
+        let close = chrono::DateTime::parse_from_rfc3339("2024-06-03T20:00:00Z")
+            .expect("timestamp")
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            candle_span_ms(&clock, open),
+            Some((close - open).num_milliseconds()),
+            "the candle ends at the session close"
+        );
+
+        // The chart supplies its own session-aware clock through `set_bar_clock`,
+        // and the host clock moves between runs — exactly the production path.
+        let bars = vec![
+            Bar::new(
+                open - chrono::TimeDelta::minutes(5),
+                100.0,
+                101.0,
+                99.0,
+                100.0,
+                1.0,
+            ),
+            Bar::new(open, 100.0, 101.0, 99.0, 100.5, 1.0),
+        ];
+        let now = Arc::new(Mutex::new(open.timestamp_millis()));
+        let clock_now = Arc::clone(&now);
+        let mut study = build_study_with_clock(
+            source,
+            &bars,
+            open.timestamp_millis(),
+            Some(Arc::new(move || {
+                *clock_now
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+            })),
+        )
+        .expect("builds")
+        .study;
+        study.set_bar_clock(&clock);
+        study.set_timeframe(Oracly_charts::model::Timeframe::Min5);
+
+        // 15:58 local (two minutes before the close): the 15:56 candle is open.
+        let inside = open + chrono::TimeDelta::minutes(2);
+        *now.lock().unwrap() = inside.timestamp_millis();
+        study.calculate(&bars);
+        assert_eq!(
+            study.values().value(0, 1),
+            Some(1.0),
+            "the shortened candle is realtime before the session close"
+        );
+
+        // 16:00:01 local: the same candle is confirmed. A fixed 5-minute span would
+        // still call it realtime until 16:01.
+        let after = close + chrono::TimeDelta::seconds(1);
+        *now.lock().unwrap() = after.timestamp_millis();
+        study.calculate(&bars);
+        assert_eq!(
+            study.values().value(0, 1),
+            Some(0.0),
+            "the candle is confirmed at the close, not one interval later"
+        );
+        assert_eq!(study.values().value(1, 1), Some(1.0), "now confirmed");
+    }
+
+    /// A monthly chart must close its candle at the start of the next month, not
+    /// after a fixed 30 days. This is the `next_open_after` path the bridge uses to
+    /// decide `barstate` on calendar intervals.
+    #[test]
+    fn a_monthly_candle_ends_at_the_next_month() {
+        use chrono::TimeZone;
+        let clock = ChartClock::new(Oracly_charts::model::Timeframe::Month1);
+        let january = chrono::Utc
+            .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+            .single()
+            .expect("timestamp");
+        let february = chrono::Utc
+            .with_ymd_and_hms(2024, 2, 1, 0, 0, 0)
+            .single()
+            .expect("timestamp");
+        assert_eq!(
+            clock.next_open_after(january),
+            Some(february),
+            "January is 31 days, not 30"
+        );
+        assert_eq!(
+            candle_span_ms(&clock, january),
+            Some(31 * 24 * 60 * 60 * 1000),
+            "the span is the real month length"
+        );
+
+        // February 2024 is a leap month: 29 days.
+        let march = chrono::Utc
+            .with_ymd_and_hms(2024, 3, 1, 0, 0, 0)
+            .single()
+            .expect("timestamp");
+        assert_eq!(clock.next_open_after(february), Some(march));
+        assert_eq!(
+            candle_span_ms(&clock, february),
+            Some(29 * 24 * 60 * 60 * 1000),
+            "a leap February is 29 days"
+        );
+    }
+
+    /// A trade-based interval has no clock span. The bridge must not turn that into
+    /// `0`, which would make every candle look closed.
+    #[test]
+    fn a_trade_based_interval_has_no_candle_span() {
+        use std::num::NonZeroU64;
+        let clock = ChartClock::new(Oracly_charts::model::Timeframe::Ticks(
+            NonZeroU64::new(500).expect("nonzero"),
+        ));
+        let open = chrono::DateTime::UNIX_EPOCH + chrono::TimeDelta::minutes(1);
+        assert_eq!(candle_span_ms(&clock, open), None);
+    }
+
+    /// An edited input must change what the next recalculation computes. The
+    /// override travels by title, so a script whose plot depends on `input.int`
+    /// proves the whole path: schema -> set_input -> override map -> interpreter.
+    #[test]
+    fn an_edited_input_changes_the_next_recalculation() {
+        let source = r#"//@version=5
+indicator("Length", overlay = true)
+len = input.int(3, "Length", minval=1, maxval=200)
+plot(close * 0 + len, title = "Len")
+"#;
+        let study = build_study(source, &chart_bars(5), 0).expect("builds");
+        assert_eq!(study.study.inputs().len(), 1);
+        let id = study.study.inputs()[0].id.clone();
+        assert_eq!(study.study.inputs()[0].label, "Length");
+
+        let mut indicator = study.study;
+        indicator.calculate(&chart_bars(5));
+        assert_eq!(
+            indicator.values().value(0, 4),
+            Some(3.0),
+            "declared default"
+        );
+
+        // An edit the schema refuses changes nothing.
+        assert!(indicator
+            .set_input(&id, Oracly_charts::studies::InputValue::Length(500))
+            .is_err());
+        indicator.calculate(&chart_bars(5));
+        assert_eq!(indicator.values().value(0, 4), Some(3.0), "refused edit");
+
+        // An accepted edit reaches the script's `input.int`.
+        indicator
+            .set_input(&id, Oracly_charts::studies::InputValue::Length(7))
+            .expect("accepted");
+        indicator.calculate(&chart_bars(5));
+        assert_eq!(
+            indicator.values().value(0, 4),
+            Some(7.0),
+            "the recalculation must use the edited input"
+        );
+    }
+
+    /// An override for a title the script never declared cannot silently change a
+    /// different input; Pinecone resolves by title, so an unknown key is inert.
+    #[test]
+    fn an_input_override_only_touches_its_own_declaration() {
+        let source = r#"//@version=5
+indicator("Two", overlay = true)
+a = input.int(2, "A")
+b = input.int(9, "B")
+plot(close * 0 + a, title = "A plot")
+plot(close * 0 + b, title = "B plot")
+"#;
+        let mut study = build_study(source, &chart_bars(4), 0)
+            .expect("builds")
+            .study;
+        let inputs = study.inputs();
+        assert_eq!(inputs.len(), 2);
+        let first = inputs[0].id.clone();
+        study.calculate(&chart_bars(4));
+        assert_eq!(study.values().value(0, 3), Some(2.0));
+        assert_eq!(study.values().value(1, 3), Some(9.0));
+
+        study
+            .set_input(&first, Oracly_charts::studies::InputValue::Length(5))
+            .expect("accepted");
+        study.calculate(&chart_bars(4));
+        assert_eq!(study.values().value(0, 3), Some(5.0), "edited input");
+        assert_eq!(
+            study.values().value(1, 3),
+            Some(9.0),
+            "the other declaration is untouched"
+        );
     }
 
     #[test]
