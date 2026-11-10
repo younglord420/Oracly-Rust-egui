@@ -10,6 +10,8 @@ publish = false
 
 [dependencies]
 egui-charts = { package = "Oracly-charts", path = "..", features = ["ui"] }
+# The study editor dock lives in the OpineRust add-on, not in the chart crate.
+opinerust = { path = "../opinerust" }
 egui = "0.37.0"
 chrono = "0.4.43"
 egui_extras = { version = "0.37.0", default-features = false }

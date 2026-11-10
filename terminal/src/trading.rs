@@ -10,7 +10,7 @@ use egui_charts::ui::Control;
 use egui_charts::ui::replay::{ReplayToolbar, ReplayToolbarState};
 use egui_charts::widget::SeriesId;
 use egui_charts::ui::strategy_report::{StrategyReportAction, StrategyReportPanel};
-use egui_charts::ui::study_editor::{StudyEditor, StudyEditorAction};
+use opinerust::{StudyEditor, StudyEditorAction};
 use egui_charts::ui::top_toolbar::TopToolbarAction;
 use egui_charts::ui::trading::{
     AccountPanelAction, BrokerPicker, BrokerPickerAction, BrokerTile, Trading,

@@ -9,7 +9,6 @@
 //! Run (native):   `cargo run` from this directory
 
 mod controller;
-mod opinerust_panel;
 mod panel_alerts;
 mod sampledata;
 

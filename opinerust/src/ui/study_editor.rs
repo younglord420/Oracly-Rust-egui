@@ -7,10 +7,11 @@
 //! [`apply_result`](StudyEditor::apply_result), and the edits stay in the panel whatever it
 //! answers. The panel needs no other part of the library and can sit in any layout.
 
-use crate::localization as l10n;
-use crate::theme::ThemeExt;
-use crate::ui_kit::buttons::Button;
-use crate::ui_kit::status_message::{MessageKind, status_message};
+use Oracly_charts::localization as l10n;
+use crate::ui::pine_reference;
+use Oracly_charts::theme::ThemeExt;
+use Oracly_charts::ui_kit::buttons::Button;
+use Oracly_charts::ui_kit::status_message::{MessageKind, status_message};
 use egui::text::{CCursor, CCursorRange};
 use egui::{Align, RichText, ScrollArea, TextEdit, Ui};
 use std::ops::Range;
@@ -118,7 +119,7 @@ pub struct StudyEditor {
 #[derive(Clone, Debug)]
 struct InlineColorPickerState {
     byte_range: Range<usize>,
-    picker_state: crate::ui_kit::ColorPickerState,
+    picker_state: Oracly_charts::ui_kit::ColorPickerState,
 }
 
 impl StudyEditor {
@@ -297,11 +298,11 @@ impl StudyEditor {
             self.status_banner(ui);
         }
         self.text_area(ui);
-        if !self.hide_inline_diagnostics
-            && let Some(reveal) = self.diagnostics_list(ui)
-        {
-            self.reveal = Some(reveal);
-            ui.ctx().request_repaint();
+        if !self.hide_inline_diagnostics {
+            if let Some(reveal) = self.diagnostics_list(ui) {
+                self.reveal = Some(reveal);
+                ui.ctx().request_repaint();
+            }
         }
         action
     }
@@ -542,7 +543,7 @@ impl StudyEditor {
                 let id = ui.scope_id().with(("color_swatch", range.start));
                 let response = ui.interact(swatch_rect, id, egui::Sense::click());
                 if response.clicked() {
-                    let mut picker_state = crate::ui_kit::ColorPickerState::new(color);
+                    let mut picker_state = Oracly_charts::ui_kit::ColorPickerState::new(color);
                     picker_state.is_open = true;
                     picker_state.popup_pos = Some(swatch_rect.left_bottom() + egui::vec2(0.0, 4.0));
                     self.inline_color_picker = Some(InlineColorPickerState {
@@ -565,10 +566,10 @@ impl StudyEditor {
             .order(egui::Order::Foreground)
             .constrain(true)
             .show(ui.ctx(), |ui| {
-                let res = crate::ui_kit::glass_menu(ui).show(ui, |ui| {
+                let res = Oracly_charts::ui_kit::glass_menu(ui).show(ui, |ui| {
                     ui.set_min_width(200.0);
                     let mut current = picker.picker_state.sel_color;
-                    if crate::ui_kit::color_picker::show_palette(ui, &mut current) {
+                    if Oracly_charts::ui_kit::color_picker::show_palette(ui, &mut current) {
                         let hex_str =
                             format!("#{:02X}{:02X}{:02X}", current.r(), current.g(), current.b());
                         replace_color = Some((picker.byte_range.clone(), hex_str));
@@ -627,7 +628,7 @@ impl StudyEditor {
 
         // Find identifier at char_idx
         if let Some((word, _byte_range)) = get_word_at_char(&self.text, char_idx.into()) {
-            if let Some(doc) = crate::ui::pine_reference::find_builtin(&word) {
+            if let Some(doc) = pine_reference::find_builtin(&word) {
                 egui::containers::Tooltip::always_open(
                     ui.ctx().clone(),
                     ui.layer_id(),
@@ -637,17 +638,17 @@ impl StudyEditor {
                 .gap(8.0)
                 .show(|ui| {
                     ui.set_max_width(340.0);
-                    crate::ui_kit::glass_popup(ui).show(ui, |ui| {
+                    Oracly_charts::ui_kit::glass_popup(ui).show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 4.0;
                         ui.horizontal(|ui| {
                             let badge_color = match doc.kind {
-                                crate::ui::pine_reference::SymbolKind::Function => {
+                                pine_reference::SymbolKind::Function => {
                                     ui.visuals().selection.bg_fill
                                 }
-                                crate::ui::pine_reference::SymbolKind::Variable => {
+                                pine_reference::SymbolKind::Variable => {
                                     ui.visuals().warn_fg_color
                                 }
-                                crate::ui::pine_reference::SymbolKind::Constant => {
+                                pine_reference::SymbolKind::Constant => {
                                     ui.visuals().error_fg_color
                                 }
                                 _ => ui.visuals().weak_text_color(),
@@ -705,7 +706,7 @@ impl StudyEditor {
     /// Render context menu on right click inside the code editor.
     fn render_context_menu(&mut self, _ui: &mut Ui, output: &egui::text_edit::TextEditOutput) {
         output.response.context_menu(|ui| {
-            crate::ui_kit::glass_menu(ui).show(ui, |ui| {
+            Oracly_charts::ui_kit::glass_menu(ui).show(ui, |ui| {
                 ui.set_min_width(170.0);
 
                 // Cut / Copy / Paste
@@ -1375,7 +1376,7 @@ mod tests {
     /// A gutter number must be visible against the panel, not blended into it.
     #[test]
     fn gutter_numbers_stay_readable_on_both_themes() {
-        use crate::theme::{Theme, apply_to_egui};
+        use Oracly_charts::theme::{Theme, apply_to_egui};
         for theme in [Theme::light(), Theme::dark()] {
             let ctx = egui::Context::default();
             apply_to_egui(&ctx, &theme);

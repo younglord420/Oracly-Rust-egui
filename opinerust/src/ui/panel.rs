@@ -15,15 +15,15 @@
 //!   has no document store for scripts, and a button that cannot keep its
 //!   promise is worse than none.
 
-use egui_charts::Chart;
-use egui_charts::model::Bar as ChartBar;
-use egui_charts::studies::Indicator;
-use egui_charts::theme::ThemeExt;
-use egui_charts::ui::study_editor::{Diagnostic as EditorDiagnostic, Severity, StudyEditor};
-use egui_charts::ui_kit::buttons::{Button, ButtonSize, IconButton};
-use egui_charts::icons::icons;
-use egui_charts::widget::SeriesId;
-use opinerust::{DiagnosticSeverity, RunContext, StudyBuildError, build_study_in_context};
+use crate::ui::study_editor::{Diagnostic as EditorDiagnostic, Severity, StudyEditor};
+use crate::{DiagnosticSeverity, RunContext, StudyBuildError, build_study_in_context};
+use Oracly_charts::Chart;
+use Oracly_charts::model::Bar as ChartBar;
+use Oracly_charts::studies::Indicator;
+use Oracly_charts::theme::ThemeExt;
+use Oracly_charts::ui_kit::buttons::{Button, ButtonSize, IconButton};
+use Oracly_charts::icons::icons;
+use Oracly_charts::widget::SeriesId;
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
@@ -168,14 +168,16 @@ struct Installed {
 }
 
 impl OpineRustPanel {
-    /// The editor, for tests that drive it directly.
-    #[cfg(test)]
+    /// The editor, so a host or a test can drive it directly.
+    ///
+    /// Public because the panel and its editor are separate documents: a host
+    /// that wants to seed the draft from its own storage does not need to
+    /// reimplement the editor to do it.
     pub fn editor_mut(&mut self) -> &mut StudyEditor {
         &mut self.editor
     }
 
-    /// The run log, for tests that check what the user is told.
-    #[cfg(test)]
+    /// The run log's messages, oldest first.
     pub fn logs(&self) -> Vec<String> {
         self.logs
             .iter()
@@ -183,8 +185,7 @@ impl OpineRustPanel {
             .collect()
     }
 
-    /// Title the panel currently claims to have applied, for tests.
-    #[cfg(test)]
+    /// Title the panel currently claims to have applied, if any.
     pub fn applied_title(&self) -> Option<&str> {
         self.applied.as_deref()
     }
@@ -399,7 +400,6 @@ impl OpineRustPanel {
             return;
         }
         self.last_failure = Some(message.clone());
-        self.last_failure = Some(message.clone());
         self.log(Severity::Error, format!("Recalculation failed: {message}"));
         self.editor.apply_result(Err(message.clone()));
         self.logged_error = Some(message);
@@ -460,16 +460,8 @@ impl OpineRustPanel {
 
     /// Draw the panel and return a study to install when Run succeeded.
     ///
-    /// The demo host uses [`Self::show_with_close`] so it can honour the header's
-    /// close button; this convenience form is kept for hosts that draw their own
-    /// close affordance and for the panel's tests.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the demo host uses show_with_close; other hosts and tests use this"
-        )
-    )]
+    /// [`Self::show_with_close`] also reports the header's close button; this
+    /// convenience form is for hosts that draw their own close affordance.
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -562,9 +554,9 @@ impl OpineRustPanel {
 
     /// Centre of the header's Run button, once it has been drawn.
     ///
-    /// Exposed so a host or test can press the real control instead of guessing a
-    /// point; the demo's own frame tests are the current caller.
-    #[cfg(test)]
+    /// Exposed so a host or a test can press the real control instead of guessing
+    /// a point. Public rather than test-only because the panel is a separate crate
+    /// from the hosts that drive it: `#[cfg(test)]` here would not reach them.
     pub fn run_button_center(&self) -> Option<egui::Pos2> {
         self.run_rect.map(|rect| rect.center())
     }
@@ -722,7 +714,7 @@ impl OpineRustPanel {
                         Severity::Warning => (ui.visuals().warn_fg_color, "Warning"),
                         // `Severity` is non-exhaustive upstream: an unknown level
                         // is shown as a hint rather than dropped.
-                        Severity::Info | _ => (ui.visuals().weak_text_color(), "Info"),
+                        Severity::Info => (ui.visuals().weak_text_color(), "Info"),
                     };
                     let row = ui.horizontal_wrapped(|ui| {
                         ui.label(
@@ -963,7 +955,7 @@ fn line_of(source: &str, byte: usize) -> usize {
 /// study that simply has nothing to draw yet. Reads without mutating, so no undo
 /// step is recorded.
 fn install_failure(chart: &Chart, id: SeriesId) -> Option<String> {
-    use egui_charts::studies::StudyStatus;
+    use Oracly_charts::studies::StudyStatus;
     match chart.indicators().find(|(candidate, _)| *candidate == id)?.1.study_status() {
         Some(StudyStatus::DataError { message }) => Some(message),
         _ => None,
@@ -990,12 +982,12 @@ fn describe(error: StudyBuildError, source: &str) -> (String, Vec<EditorDiagnost
         }
     };
     let diagnostics = match engine {
-        opinerust::EngineError::Compile(list) => list,
-        opinerust::EngineError::Runtime(diagnostic) => vec![diagnostic],
-        opinerust::EngineError::NoBars => {
+        crate::EngineError::Compile(list) => list,
+        crate::EngineError::Runtime(diagnostic) => vec![diagnostic],
+        crate::EngineError::NoBars => {
             return ("The chart has no bars to run over.".to_owned(), Vec::new());
         }
-        opinerust::EngineError::Internal(message) => return (message, Vec::new()),
+        crate::EngineError::Internal(message) => return (message, Vec::new()),
     };
     let message = diagnostics
         .first()
@@ -1077,10 +1069,10 @@ mod tests {
     //! Tests for the OpineRust panel: run/replace lifecycle and diagnostic spans.
 
     use super::*;
-    use egui_charts::Chart;
-    use egui_charts::model::{Bar, BarData};
-    use egui_charts::widget::SeriesId;
-    use opinerust::build_study;
+    use Oracly_charts::Chart;
+    use Oracly_charts::model::{Bar, BarData};
+    use Oracly_charts::widget::SeriesId;
+    use crate::build_study;
 
     fn bars(count: usize) -> Vec<Bar> {
         (0..count)
@@ -1714,7 +1706,7 @@ mod tests {
     #[test]
     fn an_absent_location_has_no_span() {
         let (_, edits) = describe(
-            StudyBuildError::Engine(opinerust::EngineError::Runtime(opinerust::Diagnostic {
+            StudyBuildError::Engine(crate::EngineError::Runtime(crate::Diagnostic {
                 severity: DiagnosticSeverity::Error,
                 message: "boom".to_owned(),
                 line: None,

@@ -3,15 +3,27 @@ name = "opinerust"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
-description = "OpineRust: run Pine Script (R) studies on Oracly charts, powered by the Pinecone Rust runtime"
+description = "OpineRust: Pine Script (R) v5/v6 runtime bridge and studio editor dock for Oracly charts"
 repository = "https://github.com/younglord420/Oracly-Rust-egui.git"
+homepage = "https://oracl.io"
+keywords = ["trading", "pinescript", "charts", "egui", "finance"]
+categories = ["visualization", "gui", "finance"]
+readme = "README.md"
+
+[features]
+default = ["studio"]
+# The code editor canvas and the OpineRust dock. Off by default only for a host
+# that wants the engine alone (a server, a CLI, a headless test).
+studio = []
 
 [dependencies]
-# Oracly's study contract and models. `studies` keeps built-ins out of the bridge.
+# Oracly's study contract and models. `studies` keeps built-ins out of the bridge;
+# `ui` and `ui_kit` are what the studio dock is drawn with.
 Oracly-charts = { package = "Oracly-charts", path = "..", default-features = false, features = [
     "widget",
     "studies",
     "icons",
+    "ui",
 ] }
 # The OpineRust runtime, our fork of Pinecone. Reported to users as the OpineRust
 # engine; named as Pinecone in attribution and licensing because that is the
@@ -37,6 +49,11 @@ chrono = { version = "0.4.43", features = ["serde"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "=0.3.80"
+
+# The tests draw real frames and read the painted gutter, which needs glyph
+# metrics: without fonts every width is zero and the line numbers land off-screen.
+[dev-dependencies]
+egui = { version = "0.37.0", features = ["default_fonts"] }
 
 [workspace]
 

@@ -9,7 +9,7 @@ use egui_charts::ui::floating_replay_control::ReplayControlAction;
 use egui_charts::ui::replay::ReplayStartAction;
 use egui_charts::ui::replay::ReplayToolbarAction;
 use egui_charts::ui::strategy_report::StrategyReportAction;
-use egui_charts::ui::study_editor::StudyEditorAction;
+use opinerust::StudyEditorAction;
 use egui_charts::ui::timeframe_toolbar::{DatePickerAction, TimeframeToolbarAction};
 use egui_charts::ui::top_toolbar::components::indicator_dialog::IndicatorDialogAction;
 use egui_charts::ui::top_toolbar::components::settings_menu::SettingsAction;

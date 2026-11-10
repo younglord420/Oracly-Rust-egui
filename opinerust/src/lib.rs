@@ -23,6 +23,9 @@ mod engine;
 mod settings;
 mod study;
 
+#[cfg(feature = "studio")]
+pub mod ui;
+
 pub use context::RunContext;
 pub use engine::{
     execute, execute_with_context, execute_with_inputs, Bar as EngineBar, Diagnostic,
@@ -33,3 +36,6 @@ pub use settings::{apply_override, map_inputs, MappedInputs};
 pub use study::{
     build_study, build_study_in_context, build_study_with_clock, OpineRustStudy, StudyBuildError,
 };
+
+#[cfg(feature = "studio")]
+pub use ui::{InstallStudy, OpineRustPanel, StudyEditor, StudyEditorAction};

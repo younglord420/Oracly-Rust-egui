@@ -380,7 +380,7 @@ pub struct DemoApp {
     open_panel: Option<SidePanel>,
     data_window_expanded: bool,
     // OpineRust editor and the study it last applied.
-    opinerust: crate::opinerust_panel::OpineRustPanel,
+    opinerust: opinerust::OpineRustPanel,
     opinerust_study: Option<SeriesId>,
 
     // Host-owned session-only alerts, shown through the library service connection.
