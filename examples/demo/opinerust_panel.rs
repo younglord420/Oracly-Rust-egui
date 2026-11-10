@@ -487,7 +487,10 @@ impl OpineRustPanel {
             .exact_size(height)
             .resizable(false)
             .frame(egui::Frame::NONE)
-            .show(ui, |ui| self.logs_ui(ui));
+            .show(ui, |ui| {
+                ui.set_clip_rect(ui.max_rect());
+                self.logs_ui(ui);
+            });
     }
 
     /// Quick Action Shelf right above the code editor (Format code, copy, version pill, lines counter).
@@ -702,7 +705,7 @@ impl OpineRustPanel {
         if !self.logs_open {
             return;
         }
-        let height = 140.0_f32.min(ui.available_height() * 0.45);
+        let height = ui.available_height().max(60.0);
         egui::ScrollArea::vertical()
             .id_salt("opinerust_log_scroll")
             .max_height(height)
