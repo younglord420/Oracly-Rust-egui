@@ -10,16 +10,15 @@
 //! for the host instead of silently drawing gaps as if the script worked.
 
 use crate::context::RunContext;
-use crate::engine::{
-    execute_with_context, execute_with_inputs, Bar, Diagnostic, EngineError, EngineOutput,
-};
-use egui::Color32;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use crate::engine::{Bar, Diagnostic, EngineError, EngineOutput, execute_with_environment};
+use crate::host::HostEnvironment;
 use Oracly_charts::model::Bar as ChartBar;
 use Oracly_charts::model::BarClock as ChartClock;
 use Oracly_charts::model::Timeframe as ChartTimeframe;
 use Oracly_charts::studies::{CustomIndicator, IndicatorValue, InputValue, PlotType, StudyStatus};
+use egui::Color32;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// The recalculation the study runs on every refresh.
 type RecalculateFn = Arc<dyn Fn(&[ChartBar]) -> Vec<IndicatorValue> + Send + Sync>;
@@ -53,13 +52,19 @@ pub struct OpineRustStudy {
     pub last_error: Arc<Mutex<Option<String>>>,
 }
 
-/// One run's values and colours, published together.
+/// One run's values, colours and geometry, published together.
 #[derive(Clone)]
 struct Snapshot {
     /// One row per bar; `IndicatorValue::Multiple` for the declared plot count.
     rows: Vec<IndicatorValue>,
     /// `[plot][bar]` colours, aligned with `rows`.
     colors: Vec<Vec<Option<Color32>>>,
+    /// The boxes, lines, labels and shapes this run left on the chart.
+    drawings: Vec<Oracly_charts::drawings::Drawing>,
+    /// Shapes that draw with the plots rather than instead of them.
+    markers: Vec<Oracly_charts::studies::IndicatorMarker>,
+    /// The script's `table`, when it made one.
+    table: Option<Oracly_charts::studies::StudyTable>,
     /// Number of plots this snapshot was built for.
     #[expect(dead_code, reason = "tracked for parity and diagnostic assertions")]
     plot_count: usize,
@@ -189,6 +194,29 @@ pub fn build_study_in_context(
     context: RunContext,
     clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
 ) -> Result<OpineRustStudy, StudyBuildError> {
+    build_study_with_environment(
+        source,
+        bars,
+        now_ms,
+        context,
+        clock,
+        HostEnvironment::empty(),
+    )
+}
+
+/// Like [`build_study_in_context`], with the host hooks a script can call into.
+///
+/// `environment` is what lets `request.security` read another feed and `import`
+/// resolve a library. An empty one keeps the honest defaults: `na` and a named
+/// import failure.
+pub fn build_study_with_environment(
+    source: &str,
+    bars: &[ChartBar],
+    now_ms: i64,
+    context: RunContext,
+    clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
+    environment: HostEnvironment,
+) -> Result<OpineRustStudy, StudyBuildError> {
     // The chart's interval alone gives a usable clock for the common case; the
     // session/timezone-aware clock arrives later through `Indicator::set_bar_clock`.
     let live_clock = Arc::new(Mutex::new(default_clock(context.chart_timeframe)));
@@ -198,7 +226,14 @@ pub fn build_study_in_context(
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         engine_bars(bars, now_ms, bar_span_ms(bars), clock.as_ref())
     };
-    let output: EngineOutput = execute_with_context(source, &charts, now_ms, &context)?;
+    let output: EngineOutput = execute_with_environment(
+        source,
+        &charts,
+        now_ms,
+        &context,
+        &HashMap::new(),
+        &environment,
+    )?;
     study_from_output(
         source.to_owned(),
         now_ms,
@@ -206,6 +241,7 @@ pub fn build_study_in_context(
         clock,
         live_clock,
         output,
+        environment,
     )
 }
 
@@ -229,8 +265,16 @@ fn study_from_output(
     clock: Option<Arc<dyn Fn() -> i64 + Send + Sync>>,
     live_clock: Arc<Mutex<Option<ChartClock>>>,
     output: EngineOutput,
+    environment: HostEnvironment,
 ) -> Result<OpineRustStudy, StudyBuildError> {
-    if output.plots.is_empty() {
+    // A study with neither values nor geometry has nothing to draw. Drawings do
+    // count as output: an order-block or key-level script plots no line at all.
+    let has_drawings = !output.boxes.is_empty()
+        || !output.lines.is_empty()
+        || !output.labels.is_empty()
+        || !output.tables.is_empty()
+        || !output.marks.is_empty();
+    if output.plots.is_empty() && !has_drawings {
         return Err(StudyBuildError::NoPlots);
     }
     let count = output.plots.len();
@@ -284,6 +328,7 @@ fn study_from_output(
         let context = Arc::clone(&live_context);
         let overrides = Arc::clone(&overrides);
         let live_clock = Arc::clone(&live_clock);
+        let environment = environment.clone();
         Arc::new(move |bars: &[ChartBar]| -> Vec<IndicatorValue> {
             let now = clock.as_ref().map_or(now_ms, |clock| clock());
             let context = context
@@ -304,12 +349,13 @@ fn study_from_output(
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
-            let fresh = execute_with_inputs(
+            let fresh = execute_with_environment(
                 &source,
                 &engine_bars(bars, now, bar_ms, live_clock.as_ref()),
                 now,
                 &context,
                 &overrides,
+                &environment,
             );
             let mut slot = snapshot
                 .lock()
@@ -423,7 +469,10 @@ fn study_from_output(
                 let Some(title) = titles.get(index) else {
                     return Err("study input has no declaration");
                 };
-                let Some(engine) = crate::settings::to_engine_value(value) else {
+                let Some(input) = declared_inputs.get(index) else {
+                    return Err("study input has no declaration");
+                };
+                let Some(engine) = crate::settings::to_engine_value(input, value) else {
                     return Err("this input type cannot change the running script");
                 };
                 overrides
@@ -448,6 +497,55 @@ fn study_from_output(
         study = study.with_description(short.clone());
     }
 
+    // The geometry a script left behind travels with its values: one snapshot is
+    // published per run, so a box can never come from a different run than the
+    // line beside it.
+    {
+        let drawings = Arc::clone(&published);
+        let initial = drawings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drawings
+            .clone();
+        study = study.with_drawings(initial, move || {
+            drawings
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .drawings
+                .clone()
+        });
+    }
+    {
+        let published = Arc::clone(&published);
+        let initial = published
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .markers
+            .clone();
+        study = study.with_markers(initial, move || {
+            published
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .markers
+                .clone()
+        });
+    }
+    {
+        let published = Arc::clone(&published);
+        let initial = published
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .table
+            .clone();
+        study = study.with_table(initial, move || {
+            published
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .table
+                .clone()
+        });
+    }
+
     Ok(OpineRustStudy {
         study,
         info,
@@ -456,6 +554,11 @@ fn study_from_output(
     })
 }
 
+/// Shared slot for the geometry the latest run left on the chart.
+///
+/// A successful recalculation replaces the published snapshot, so the geometry
+/// and the values always describe the same run; a failed one keeps both.
+///
 /// Rows aligned to `len` bars from a completed run.
 fn snapshot_from(output: &EngineOutput) -> Snapshot {
     let len = output.plots.first().map_or(0, |plot| plot.values.len());
@@ -491,8 +594,239 @@ fn snapshot_from_len(output: &EngineOutput, len: usize) -> Snapshot {
     Snapshot {
         rows,
         colors,
+        drawings: drawings_from(output),
+        markers: markers_from(output),
+        table: table_from(output),
         plot_count,
     }
+}
+
+/// Convert a run's Pine drawings into the chart's own drawing geometry.
+///
+/// Bars the script addressed by index become [`ChartPoint`]s on that index; a
+/// `xloc.bar_time` coordinate is resolved to the nearest bar so a label can still
+/// be drawn when the host has no timestamp-to-index map here. A box whose price
+/// edges are not finite is dropped: a rectangle from `na` to `na` has no shape.
+///
+/// This module always builds with the chart's `drawings` feature (the bridge
+/// depends on `Oracly-charts` with `ui`, which enables it), so the geometry goes
+/// straight to [`Oracly_charts::drawings::Drawing`].
+fn drawings_from(output: &EngineOutput) -> Vec<Oracly_charts::drawings::Drawing> {
+    use Oracly_charts::drawings::{ChartPoint, Drawing, DrawingToolType};
+
+    let mut drawings: Vec<Drawing> = Vec::new();
+    let mut next_id = 0usize;
+    let mut push = |tool: DrawingToolType| {
+        let mut drawing = Drawing::new(next_id, tool);
+        next_id += 1;
+        drawing.completed = true;
+        drawing
+    };
+
+    for line in &output.lines {
+        let tool = if line.extend == "both" && line.y1 == line.y2 {
+            DrawingToolType::HorizontalLine
+        } else {
+            DrawingToolType::TrendLine
+        };
+        let mut drawing = push(tool);
+        drawing.chart_points = vec![
+            ChartPoint::new(line.x1 as f32, line.y1),
+            ChartPoint::new(line.x2 as f32, line.y2),
+        ];
+        if let Some(color) = line.color {
+            drawing.color = unpack_color(color);
+        }
+        drawing.stroke_width = line.width.max(1.0);
+        drawing.line_style = match line.style.as_str() {
+            "dotted" => Oracly_charts::model::LineStyle::Dotted,
+            "dashed" => Oracly_charts::model::LineStyle::Dashed,
+            _ => Oracly_charts::model::LineStyle::Solid,
+        };
+        drawings.push(drawing);
+    }
+
+    for boxed in &output.boxes {
+        if !boxed.top.is_finite()
+            || !boxed.bottom.is_finite()
+            || !boxed.left.is_finite()
+            || !boxed.right.is_finite()
+        {
+            continue;
+        }
+        let mut drawing = push(DrawingToolType::Rect);
+        drawing.chart_points = vec![
+            ChartPoint::new(boxed.left as f32, boxed.bottom),
+            ChartPoint::new(boxed.right as f32, boxed.top),
+        ];
+        if let Some(color) = boxed.border_color.or(boxed.fill_color) {
+            drawing.color = unpack_color(color);
+        }
+        drawing.stroke_width = boxed.border_width.max(1.0);
+        drawing.fill_color = boxed.fill_color.map(unpack_color);
+        drawing.line_style = match boxed.border_style.as_str() {
+            "dotted" => Oracly_charts::model::LineStyle::Dotted,
+            "dashed" => Oracly_charts::model::LineStyle::Dashed,
+            _ => Oracly_charts::model::LineStyle::Solid,
+        };
+        if !boxed.text.is_empty() {
+            drawing.text = Some(boxed.text.clone());
+        }
+        drawings.push(drawing);
+    }
+
+    for label in &output.labels {
+        // A label with a shape but no text still marks a point; a label with
+        // neither has nothing to draw.
+        let icon = match label.text.is_empty() {
+            true => DrawingToolType::ArrowMarkUp,
+            false => DrawingToolType::AnchoredText,
+        };
+        let mut drawing = push(icon);
+        drawing.chart_points = vec![ChartPoint::new(label.x as f32, label.y)];
+        if let Some(color) = label.text_color.or(label.color) {
+            drawing.color = unpack_color(color);
+        }
+        if let Some(background) = label.color {
+            drawing.fill_color = Some(unpack_color(background));
+        }
+        if !label.text.is_empty() {
+            drawing.text = Some(label.text.clone());
+        }
+        drawing.font_size = match label.size.as_str() {
+            "tiny" => 9.0,
+            "small" => 11.0,
+            "large" => 16.0,
+            "huge" => 20.0,
+            _ => 13.0,
+        };
+        drawings.push(drawing);
+    }
+
+    // A shape joins the drawings only when the chart would not paint the plots
+    // anyway: either there is no plot, or boxes and lines already take the
+    // drawing path, which the chart draws instead of the lines. A `plot` plus a
+    // `plotshape` stays on the marker path so the line is not discarded.
+    if marks_follow_drawings(output) {
+        for mark in &output.marks {
+            let tool = if mark.style.contains("down") {
+                DrawingToolType::ArrowMarkDown
+            } else if mark.style.contains("up") || mark.style.contains("triangle") {
+                DrawingToolType::ArrowMarkUp
+            } else {
+                DrawingToolType::AnchoredText
+            };
+            let mut drawing = push(tool);
+            drawing.chart_points = vec![ChartPoint::new(mark.bar as f32, mark.price)];
+            if let Some(color) = mark.color {
+                drawing.color = unpack_color(color);
+            }
+            let caption = if mark.text.is_empty() {
+                shape_glyph(&mark.style)
+            } else {
+                mark.text.clone()
+            };
+            if !caption.is_empty() {
+                drawing.text = Some(caption);
+            }
+            drawings.push(drawing);
+        }
+    }
+
+    drawings
+}
+
+/// Shapes ride with the drawings when there is no plot line to keep, or when
+/// other geometry already replaces the plots.
+fn marks_follow_drawings(output: &EngineOutput) -> bool {
+    output.plots.is_empty()
+        || !output.boxes.is_empty()
+        || !output.lines.is_empty()
+        || !output.labels.is_empty()
+}
+
+/// Shapes that must stay beside a plotted line. The chart paints these as
+/// markers and still draws the line; putting them in `drawings` would hide it.
+fn markers_from(output: &EngineOutput) -> Vec<Oracly_charts::studies::IndicatorMarker> {
+    use Oracly_charts::studies::{CrossDirection, IndicatorMarker};
+    if marks_follow_drawings(output) {
+        return Vec::new();
+    }
+    output
+        .marks
+        .iter()
+        .map(|mark| IndicatorMarker {
+            bar: mark.bar,
+            value: mark.price,
+            direction: if mark.up {
+                CrossDirection::Up
+            } else {
+                CrossDirection::Down
+            },
+        })
+        .collect()
+}
+
+/// The first Pine table, anchored where the script asked and coloured per cell.
+fn table_from(output: &EngineOutput) -> Option<Oracly_charts::studies::StudyTable> {
+    use Oracly_charts::studies::{StudyCell, StudyCellStyle, StudyTable, TableAnchor};
+    let table = output.tables.first()?;
+    let columns = table.columns.max(1);
+    let row_count = table.rows.max(1);
+    let mut rows = vec![vec![StudyCell::Text(String::new()); columns]; row_count];
+    let mut cell_styles = Vec::new();
+    for cell in &table.cells {
+        if cell.row < row_count && cell.column < columns {
+            rows[cell.row][cell.column] = StudyCell::Text(cell.text.clone());
+            if cell.text_color.is_some()
+                || cell.background.is_some()
+                || !cell.text_size.is_empty()
+                || !cell.halign.is_empty()
+                || !cell.valign.is_empty()
+            {
+                cell_styles.push(StudyCellStyle {
+                    row: cell.row,
+                    column: cell.column,
+                    text_color: cell.text_color.map(unpack_color),
+                    background: cell.background.map(unpack_color),
+                    text_size: cell.text_size.clone(),
+                    halign: cell.halign.clone(),
+                    valign: cell.valign.clone(),
+                });
+            }
+        }
+    }
+    Some(StudyTable {
+        title: "Pine".to_string(),
+        columns: (1..=columns).map(|index| index.to_string()).collect(),
+        rows,
+        anchor: TableAnchor::from_pine(&table.position),
+        background: table.background.map(unpack_color),
+        cell_styles,
+    })
+}
+
+/// A readable stand-in for a shape style the chart has no tool for.
+fn shape_glyph(style: &str) -> String {
+    match style {
+        "circle" => "●".to_string(),
+        "cross" => "+".to_string(),
+        "xcross" => "×".to_string(),
+        "square" => "■".to_string(),
+        "diamond" => "◆".to_string(),
+        "flag" => "⚑".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// `0xRRGGBBAA` back to the chart's `[r, g, b, a]`.
+fn unpack_color(packed: u32) -> [u8; 4] {
+    [
+        (packed >> 24) as u8,
+        (packed >> 16) as u8,
+        (packed >> 8) as u8,
+        packed as u8,
+    ]
 }
 
 #[cfg(test)]
@@ -752,8 +1086,8 @@ plot(barstate.isconfirmed ? 1 : 0, title = "Confirmed")
     /// The guess this replaces (median gap between bars) cannot see the gap at all.
     #[test]
     fn a_session_close_ends_the_last_candle() {
-        use chrono::{NaiveTime, Weekday};
         use Oracly_charts::model::{Session, SessionWindow, TimezoneId};
+        use chrono::{NaiveTime, Weekday};
 
         let source = r#"//@version=5
 indicator("state")
@@ -918,9 +1252,11 @@ plot(close * 0 + len, title = "Len")
         );
 
         // An edit the schema refuses changes nothing.
-        assert!(indicator
-            .set_input(&id, Oracly_charts::studies::InputValue::Length(500))
-            .is_err());
+        assert!(
+            indicator
+                .set_input(&id, Oracly_charts::studies::InputValue::Length(500))
+                .is_err()
+        );
         indicator.calculate(&chart_bars(5));
         assert_eq!(indicator.values().value(0, 4), Some(3.0), "refused edit");
 
@@ -1009,14 +1345,134 @@ plot(close - open, title = "Delta")
     }
 
     #[test]
-    fn unsupported_features_are_reported() {
+    fn a_script_without_any_output_is_reported() {
         let error = build_study("//@version=5\nstrategy(\"x\")\n", &chart_bars(5), 0).err();
-        match error {
-            Some(StudyBuildError::Engine(EngineError::Compile(diagnostics))) => {
-                assert_eq!(diagnostics[0].line, Some(2));
-                assert!(diagnostics[0].message.contains("not supported"));
-            }
-            other => panic!("expected an unsupported-feature error, got {other:?}"),
-        }
+        assert_eq!(error, Some(StudyBuildError::NoPlots));
+    }
+
+    /// A drawing-only script is a real study: `box`-and-`line` indicators such as
+    /// order-block markups plot nothing and would otherwise be refused.
+    /// A shape next to a plotted line stays a marker. Putting it in `drawings`
+    /// would make the chart drop the line.
+    #[test]
+    fn a_plotshape_beside_a_line_stays_a_marker() {
+        let source = r#"//@version=5
+indicator("shape", overlay = true)
+plot(close, title = "Close")
+plotshape(bar_index == 2, style = shape.triangledown, location = location.belowbar)
+"#;
+        let built = build_study(source, &chart_bars(5), 0).expect("builds");
+        assert!(
+            built.study.drawings().is_empty(),
+            "the shape must not take the drawing path"
+        );
+        let markers = built.study.markers();
+        assert_eq!(markers.len(), 1, "{markers:?}");
+        assert_eq!(markers[0].bar, 2);
+        assert_eq!(
+            markers[0].direction,
+            Oracly_charts::studies::CrossDirection::Down
+        );
+        assert_eq!(markers[0].value, chart_bars(5)[2].low);
+    }
+
+    /// A table's cells reach the corner table the chart already paints.
+    #[test]
+    fn a_table_reaches_the_study() {
+        let source = r#"//@version=5
+indicator("table")
+var t = table.new(position.top_right, 1, 1)
+if barstate.islast
+    table.cell(t, 0, 0, "Hi")
+plot(close, title = "p")
+"#;
+        let built = build_study(source, &chart_bars(4), 0).expect("builds");
+        let table = built.study.table().expect("a table");
+        assert_eq!(
+            table.rows[0][0],
+            Oracly_charts::studies::StudyCell::Text("Hi".to_string())
+        );
+        assert_eq!(table.anchor, Oracly_charts::studies::TableAnchor::TopRight);
+    }
+
+    /// A coloured cell keeps its anchor and its text and fill colours.
+    #[test]
+    fn a_coloured_table_keeps_its_anchor_and_cell_colours() {
+        let source = r#"//@version=5
+indicator("table")
+var t = table.new(position.top_left, 1, 1, bgcolor = color.red)
+if barstate.islast
+    table.cell(t, 0, 0, "Hi", text_color = color.white, bgcolor = color.green)
+plot(close, title = "p")
+"#;
+        let built = build_study(source, &chart_bars(4), 0).expect("builds");
+        let table = built.study.table().expect("a table");
+        assert_eq!(table.anchor, Oracly_charts::studies::TableAnchor::TopLeft);
+        assert_eq!(table.background, Some([255, 0, 0, 255]));
+        assert_eq!(table.cell_styles.len(), 1);
+        assert_eq!(table.cell_styles[0].text_color, Some([255, 255, 255, 255]));
+        assert_eq!(table.cell_styles[0].background, Some([0, 128, 0, 255]));
+    }
+
+    /// A cell's size and alignment reach the chart table.
+    #[test]
+    fn a_cell_size_and_alignment_reach_the_study() {
+        let source = r#"//@version=5
+indicator("table")
+var t = table.new(position.bottom_left, 1, 1)
+if barstate.islast
+    table.cell(t, 0, 0, "Hi", text_size = size.large, text_halign = text.align_center, text_valign = text.align_bottom)
+plot(close, title = "p")
+"#;
+        let built = build_study(source, &chart_bars(3), 0).expect("builds");
+        let style = &built.study.table().expect("a table").cell_styles[0];
+        assert_eq!(style.text_size, "large");
+        assert_eq!(style.halign, "align_center");
+        assert_eq!(style.valign, "align_bottom");
+    }
+
+    #[test]
+    fn a_drawing_only_script_builds_a_study() {
+        let source = r#"//@version=5
+indicator("keys", overlay = true)
+var b = box.new(bar_index, high, bar_index + 2, low)
+"#;
+        let built = build_study(source, &chart_bars(6), 0).expect("a drawing-only study builds");
+        assert_eq!(built.study.line_count(), 0, "it declares no plot line");
+        assert_eq!(
+            built.study.drawings().len(),
+            1,
+            "the box reached the chart: {:?}",
+            built.study.drawings()
+        );
+    }
+
+    /// A failed recalculation keeps the previous geometry with the previous
+    /// values, so the chart never shows a box from a run that did not happen.
+    #[test]
+    fn a_failed_run_keeps_the_previous_drawings() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        static CALLS: AtomicU32 = AtomicU32::new(0);
+        let source = r#"//@version=5
+indicator("keys", overlay = true)
+var b = box.new(bar_index, high, bar_index + 2, low)
+plot(close)
+"#;
+        let mut built = build_study(source, &chart_bars(6), 0).expect("builds");
+        built.study.calculate(&chart_bars(6));
+        assert_eq!(built.study.drawings().len(), 1);
+        CALLS.store(1, Ordering::SeqCst);
+        // The next calculation fails: no bars is the engine's own `NoBars`.
+        built.study.calculate(&[]);
+        assert_eq!(
+            built.study.drawings().len(),
+            1,
+            "the last good geometry survives"
+        );
+        assert!(
+            built.last_error.lock().unwrap().is_some(),
+            "and so is the error"
+        );
     }
 }

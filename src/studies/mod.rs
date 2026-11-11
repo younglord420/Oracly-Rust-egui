@@ -57,7 +57,7 @@ pub use settings::{
     ConfiguredStudy, PlotStyle, PlotType, StudyIntervalRange, StudySettings, StudySettingsSnapshot,
 };
 pub use shading::{GradientStop, IntensityRange, ShadingKind, StudyShading};
-pub use table::{StudyCell, StudyTable};
+pub use table::{StudyCell, StudyCellStyle, StudyTable, TableAnchor};
 mod values;
 pub use values::IndicatorValues;
 #[cfg(all(test, feature = "studies"))]

@@ -55,6 +55,7 @@ impl Performance {
                 title: "Performance".into(),
                 columns: vec!["Period".into(), "Change".into()],
                 rows: Vec::new(),
+                ..Default::default()
             },
             colors: [palette::BLUE; 6],
             visible: true,

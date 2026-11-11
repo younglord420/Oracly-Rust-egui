@@ -169,27 +169,45 @@ fn a_script_without_an_annotation_reports_the_default_version() {
     assert_eq!(output.info.version, 5);
 }
 
+/// The constructs that used to be refused outright now run, and each degrades
+/// honestly when the host supplies nothing: this is the contract a script author
+/// sees, so it is pinned here rather than only in the unit tests.
 #[test]
-fn unsupported_v6_constructs_name_the_line() {
-    for source in [
-        "//@version=6\nindicator(\"x\")\nplot(close)\na = request.security(\"X\", \"D\", close)\n",
-        "//@version=6\nindicator(\"x\")\nimport username/lib/1\nplot(close)\n",
-        "//@version=6\nstrategy(\"x\")\nplot(close)\n",
-    ] {
-        match execute(source, &bars(), 0) {
-            Err(opinerust::EngineError::Compile(diagnostics)) => {
-                assert!(
-                    diagnostics.iter().any(|d| d.line.is_some()),
-                    "the rejection must point at a line: {source}"
-                );
-                assert!(
-                    diagnostics
-                        .iter()
-                        .any(|d| d.message.contains("not supported")),
-                    "the rejection must say why: {source}"
-                );
-            }
-            other => panic!("{source} must be rejected before running, got {other:?}"),
+fn host_dependent_constructs_run_and_degrade_honestly() {
+    // A strategy needs no host hook: the runtime's own broker runs it.
+    let strategy = run("//@version=6\nstrategy(\"x\")\nplot(close)\n");
+    assert_eq!(strategy.info.kind, "strategy");
+    assert_eq!(strategy.info.title, "x", "the declaration names the study");
+
+    // `request.security` with no feed reads `na`, and `"D"` is a daily period.
+    let requested = run(
+        "//@version=6\nindicator(\"x\")\nplot(close)\na = request.security(\"X\", \"D\", close)\nplot(a, title = \"Daily\")\n",
+    );
+    assert_eq!(requested.plots.len(), 2);
+    assert_eq!(
+        requested.plots[1]
+            .values
+            .iter()
+            .filter(|value| value.is_some())
+            .count(),
+        0,
+        "no feed means every requested bar is na"
+    );
+
+    // An `import` the host cannot resolve names the path and points at a line.
+    match execute(
+        "//@version=6\nindicator(\"x\")\nimport username/lib/1 as lib\nplot(close)\n",
+        &bars(),
+        0,
+    ) {
+        Err(opinerust::EngineError::Compile(diagnostics)) => {
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|d| d.message.contains("username/lib/1") && d.line.is_some()),
+                "{diagnostics:?}"
+            );
         }
+        other => panic!("an unresolvable import must be reported, got {other:?}"),
     }
 }

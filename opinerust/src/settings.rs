@@ -43,10 +43,11 @@ pub fn apply_override(input: &mut StudyInput, value: InputValue) -> Result<(), S
 
 /// Translate an edited setting into the value Pinecone's `input.*` reads.
 ///
-/// Returns `None` for kinds the runtime cannot receive (a colour or a symbol has
-/// no byte-level override here), which keeps the caller from writing an override
-/// the script would misread.
-pub fn to_engine_value(value: &InputValue) -> Option<pine_core::InputValue> {
+/// A colour has no byte-level override the runtime will apply, so it returns
+/// `None` and the caller keeps the script's declared colour. A choice is the
+/// option's text, not its index: `input.string` compares the override against
+/// the option strings.
+pub fn to_engine_value(input: &StudyInput, value: &InputValue) -> Option<pine_core::InputValue> {
     match value {
         InputValue::Length(value) => Some(pine_core::InputValue::Int(*value as i64)),
         InputValue::Integer(value) => Some(pine_core::InputValue::Int(i64::from(*value))),
@@ -54,10 +55,77 @@ pub fn to_engine_value(value: &InputValue) -> Option<pine_core::InputValue> {
             Some(pine_core::InputValue::Float(*value))
         }
         InputValue::Toggle(value) => Some(pine_core::InputValue::Bool(*value)),
-        InputValue::Text(value) => Some(pine_core::InputValue::Str(value.clone())),
-        InputValue::Choice(index) => Some(pine_core::InputValue::Int(*index as i64)),
+        InputValue::Text(value) | InputValue::Symbol(value) => {
+            Some(pine_core::InputValue::Str(value.clone()))
+        }
+        InputValue::Choice(index) => {
+            let InputKind::Choice(choices) = &input.kind else {
+                return None;
+            };
+            choices
+                .get(*index)
+                .map(|choice| pine_core::InputValue::Str(choice.clone()))
+        }
+        InputValue::Timeframe(Some(timeframe)) => {
+            pine_period(*timeframe).map(pine_core::InputValue::Str)
+        }
+        InputValue::Timeframe(None) => Some(pine_core::InputValue::Str(String::new())),
+        InputValue::Color(_) => None,
         _ => None,
     }
+}
+
+/// The Pine period string for a chart interval the bridge offered as a setting.
+///
+/// Intervals Pine writes as a bare number of minutes stay bare (`"15"`, `"60"`).
+/// An interval with no such spelling returns `None`, so the edit is refused
+/// instead of being sent as a period the script would misread.
+fn pine_period(timeframe: Oracly_charts::model::Timeframe) -> Option<String> {
+    use Oracly_charts::model::Timeframe as T;
+    Some(
+        match timeframe {
+            T::Sec1 => "1S",
+            T::Sec2 => "2S",
+            T::Sec5 => "5S",
+            T::Sec10 => "10S",
+            T::Sec30 => "30S",
+            T::Min1 => "1",
+            T::Min5 => "5",
+            T::Min15 => "15",
+            T::Min30 => "30",
+            T::Hour1 => "60",
+            T::Hour4 => "240",
+            T::Day1 => "1D",
+            T::Week1 => "1W",
+            T::Month1 => "1M",
+            _ => return None,
+        }
+        .to_string(),
+    )
+}
+
+/// A chart interval for a Pine period, when one of the chart's presets is that
+/// period exactly. `"3"` is three minutes and the chart has no three-minute
+/// preset, so it stays text rather than being rounded to five.
+fn chart_timeframe(period: &str) -> Option<Oracly_charts::model::Timeframe> {
+    use Oracly_charts::model::Timeframe as T;
+    Some(match period {
+        "1S" => T::Sec1,
+        "2S" => T::Sec2,
+        "5S" => T::Sec5,
+        "10S" => T::Sec10,
+        "30S" => T::Sec30,
+        "1" => T::Min1,
+        "5" => T::Min5,
+        "15" => T::Min15,
+        "30" => T::Min30,
+        "60" => T::Hour1,
+        "240" => T::Hour4,
+        "D" | "1D" => T::Day1,
+        "W" | "1W" => T::Week1,
+        "M" | "1M" => T::Month1,
+        _ => return None,
+    })
 }
 
 /// Build the settings schema for a run's declarations.
@@ -100,7 +168,10 @@ pub fn map_inputs(declared: &[ScriptInput]) -> MappedInputs {
         }
         seen.push((input.title.as_str(), position));
 
-        let default = input_from_default(&input.default).unwrap_or_else(|| value.clone());
+        let default = setting(input, &input.default)
+            .filter(|(_, default_kind)| same_kind(default_kind, &kind))
+            .map(|(default, _)| default)
+            .unwrap_or_else(|| value.clone());
         mapped.inputs.push(
             StudyInput::new(id, label, value, kind)
                 .with_default(default)
@@ -111,10 +182,30 @@ pub fn map_inputs(declared: &[ScriptInput]) -> MappedInputs {
     mapped
 }
 
+fn same_kind(left: &InputKind, right: &InputKind) -> bool {
+    match (left, right) {
+        (InputKind::Length(a, b), InputKind::Length(c, d)) => a == c && b == d,
+        (InputKind::Integer(a, b), InputKind::Integer(c, d)) => a == c && b == d,
+        (InputKind::Number(a, b), InputKind::Number(c, d)) => a == c && b == d,
+        (InputKind::Choice(a), InputKind::Choice(b)) => a == b,
+        (InputKind::Toggle, InputKind::Toggle)
+        | (InputKind::Source, InputKind::Source)
+        | (InputKind::Color, InputKind::Color)
+        | (InputKind::Timeframe, InputKind::Timeframe)
+        | (InputKind::Symbol, InputKind::Symbol)
+        | (InputKind::Text, InputKind::Text) => true,
+        _ => false,
+    }
+}
+
 fn value_and_kind(input: &ScriptInput) -> Option<(InputValue, InputKind)> {
+    setting(input, &input.value)
+}
+
+fn setting(input: &ScriptInput, value: &InputDefault) -> Option<(InputValue, InputKind)> {
     match input.kind.as_str() {
         "int" | "integer" => {
-            let value = match &input.value {
+            let value = match value {
                 InputDefault::Int(value) => *value,
                 InputDefault::Float(value) => *value as i64,
                 _ => return None,
@@ -127,7 +218,7 @@ fn value_and_kind(input: &ScriptInput) -> Option<(InputValue, InputKind)> {
             ))
         }
         "float" => {
-            let value = match &input.value {
+            let value = match value {
                 InputDefault::Float(value) => *value,
                 InputDefault::Int(value) => *value as f64,
                 _ => return None,
@@ -137,19 +228,48 @@ fn value_and_kind(input: &ScriptInput) -> Option<(InputValue, InputKind)> {
             Some((InputValue::Number(value), InputKind::Number(lower, upper)))
         }
         "bool" => {
-            let InputDefault::Bool(value) = &input.value else {
+            let InputDefault::Bool(value) = value else {
                 return None;
             };
             Some((InputValue::Toggle(*value), InputKind::Toggle))
         }
-        "string" => {
-            let InputDefault::Text(value) = &input.value else {
+        "string" | "text_area" => {
+            let InputDefault::Text(text) = value else {
                 return None;
             };
-            Some((InputValue::Text(value.clone()), InputKind::Text))
+            if input.options.is_empty() {
+                return Some((InputValue::Text(text.clone()), InputKind::Text));
+            }
+            let index = input.options.iter().position(|option| option == text)?;
+            Some((
+                InputValue::Choice(index),
+                InputKind::Choice(input.options.clone()),
+            ))
+        }
+        "timeframe" => {
+            let InputDefault::Text(period) = value else {
+                return None;
+            };
+            if period.is_empty() {
+                return Some((InputValue::Timeframe(None), InputKind::Timeframe));
+            }
+            match chart_timeframe(period) {
+                Some(timeframe) => {
+                    Some((InputValue::Timeframe(Some(timeframe)), InputKind::Timeframe))
+                }
+                // A period the chart has no preset for stays editable text, and
+                // the override is that same string. Rounding it would lie.
+                None => Some((InputValue::Text(period.clone()), InputKind::Text)),
+            }
+        }
+        "symbol" => {
+            let InputDefault::Text(symbol) = value else {
+                return None;
+            };
+            Some((InputValue::Symbol(symbol.clone()), InputKind::Symbol))
         }
         "color" => {
-            let InputDefault::Color([r, g, b, t]) = &input.value else {
+            let InputDefault::Color([r, g, b, t]) = value else {
                 return None;
             };
             Some((
@@ -157,20 +277,10 @@ fn value_and_kind(input: &ScriptInput) -> Option<(InputValue, InputKind)> {
                 InputKind::Color,
             ))
         }
-        // `source`, `session` and `time` need a resolver or a widget the chart does
-        // not have yet. Omitting the field is safer than letting a user edit a
-        // value the script then ignores.
+        // `source` returns the series itself and ignores a later override, so a
+        // widget would edit a value the script never reads. `session` and `time`
+        // have no chart widget that round-trips their text.
         _ => None,
-    }
-}
-
-fn input_from_default(default: &InputDefault) -> Option<InputValue> {
-    match default {
-        InputDefault::Int(value) => Some(InputValue::Length((*value).max(0) as usize)),
-        InputDefault::Float(value) => Some(InputValue::Number(*value)),
-        InputDefault::Bool(value) => Some(InputValue::Toggle(*value)),
-        InputDefault::Text(value) => Some(InputValue::Text(value.clone())),
-        InputDefault::Color([r, g, b, t]) => Some(InputValue::Color(color_to_egui(*r, *g, *b, *t))),
     }
 }
 
@@ -215,6 +325,7 @@ mod tests {
             min: None,
             max: None,
             step: None,
+            options: Vec::new(),
         }
     }
 
@@ -296,5 +407,67 @@ mod tests {
     fn transparency_becomes_alpha() {
         assert_eq!(color_to_egui(255, 0, 0, 0).a(), 255);
         assert_eq!(color_to_egui(255, 0, 0, 100).a(), 0);
+    }
+
+    #[test]
+    fn a_preset_timeframe_becomes_the_chart_interval() {
+        let mapped = map_inputs(&[declared(
+            "timeframe",
+            "HTF",
+            InputDefault::Text("15".into()),
+        )]);
+        assert_eq!(mapped.inputs.len(), 1, "{:?}", mapped.skipped);
+        assert_eq!(
+            mapped.inputs[0].value,
+            InputValue::Timeframe(Some(Oracly_charts::model::Timeframe::Min15))
+        );
+        assert!(matches!(mapped.inputs[0].kind, InputKind::Timeframe));
+    }
+
+    /// Three minutes is a real Pine period and not a chart preset. It stays text
+    /// so the script receives `"3"`, not a rounded `"5"`.
+    #[test]
+    fn an_unpreset_timeframe_stays_text() {
+        let mapped = map_inputs(&[declared("timeframe", "HTF", InputDefault::Text("3".into()))]);
+        assert_eq!(mapped.inputs[0].value, InputValue::Text("3".into()));
+        assert!(matches!(mapped.inputs[0].kind, InputKind::Text));
+    }
+
+    #[test]
+    fn a_string_with_literal_options_becomes_a_choice() {
+        let mut input = declared("string", "Mode", InputDefault::Text("ema".into()));
+        input.options = vec!["ema".into(), "sma".into()];
+        let mapped = map_inputs(&[input]);
+        assert_eq!(mapped.inputs[0].value, InputValue::Choice(0));
+        let InputKind::Choice(choices) = &mapped.inputs[0].kind else {
+            panic!("expected a choice");
+        };
+        assert_eq!(choices, &["ema".to_string(), "sma".to_string()]);
+        let engine = to_engine_value(&mapped.inputs[0], &InputValue::Choice(1)).expect("sent");
+        assert_eq!(engine, pine_core::InputValue::Str("sma".into()));
+    }
+
+    #[test]
+    fn a_symbol_input_round_trips_as_text() {
+        let mapped = map_inputs(&[declared(
+            "symbol",
+            "Ticker",
+            InputDefault::Text("AAPL".into()),
+        )]);
+        assert_eq!(mapped.inputs[0].value, InputValue::Symbol("AAPL".into()));
+        let engine =
+            to_engine_value(&mapped.inputs[0], &InputValue::Symbol("MSFT".into())).expect("sent");
+        assert_eq!(engine, pine_core::InputValue::Str("MSFT".into()));
+    }
+
+    #[test]
+    fn a_source_input_is_still_skipped() {
+        let mapped = map_inputs(&[declared(
+            "source",
+            "Src",
+            InputDefault::Text("close".into()),
+        )]);
+        assert!(mapped.inputs.is_empty());
+        assert!(mapped.skipped[0].contains("unsupported type"));
     }
 }

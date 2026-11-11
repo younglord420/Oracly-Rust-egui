@@ -16,16 +16,18 @@
 //!   promise is worse than none.
 
 use crate::ui::study_editor::{Diagnostic as EditorDiagnostic, Severity, StudyEditor};
-use crate::{DiagnosticSeverity, RunContext, StudyBuildError, build_study_in_context};
-use Oracly_charts::Chart;
+use crate::{
+    build_study_with_environment, DiagnosticSeverity, HostEnvironment, RunContext, StudyBuildError,
+};
+use std::ops::Range;
+use std::sync::{Arc, Mutex};
+use Oracly_charts::icons::icons;
 use Oracly_charts::model::Bar as ChartBar;
 use Oracly_charts::studies::Indicator;
 use Oracly_charts::theme::ThemeExt;
 use Oracly_charts::ui_kit::buttons::{Button, ButtonSize, IconButton};
-use Oracly_charts::icons::icons;
 use Oracly_charts::widget::SeriesId;
-use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use Oracly_charts::Chart;
 
 /// Script shown on first open. Kept simple so it runs before anything else works.
 const DEFAULT_SCRIPT: &str = r#"//@version=5
@@ -308,8 +310,11 @@ impl OpineRustPanel {
     pub fn forget_missing_study(&mut self, chart: &Chart) {
         // Drop ids the chart no longer holds, so the list stays a set of studies the
         // chart can actually give back.
-        self.installed_history
-            .retain(|entry| chart.indicators().any(|(candidate, _)| candidate == entry.id));
+        self.installed_history.retain(|entry| {
+            chart
+                .indicators()
+                .any(|(candidate, _)| candidate == entry.id)
+        });
         let on_chart = self.installed.and_then(|id| {
             self.installed_history
                 .iter()
@@ -343,7 +348,11 @@ impl OpineRustPanel {
             .installed_history
             .iter()
             .rev()
-            .find(|entry| chart.indicators().any(|(candidate, _)| candidate == entry.id))
+            .find(|entry| {
+                chart
+                    .indicators()
+                    .any(|(candidate, _)| candidate == entry.id)
+            })
             .cloned()
         {
             self.installed = Some(entry.id);
@@ -444,7 +453,7 @@ impl OpineRustPanel {
         if !has_data {
             ui.label(egui::RichText::new("Load a symbol to run the script.").weak());
         }
-        
+
         // Studio Quick Action Shelf
         self.action_shelf(ui);
 
@@ -539,8 +548,13 @@ impl OpineRustPanel {
             );
         });
 
-        let (rule, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-        ui.painter().hline(rule.x_range(), rule.center().y, egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.4)));
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            rule.x_range(),
+            rule.center().y,
+            egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.4)),
+        );
         ui.add_space(theme.spacing.xs);
     }
 
@@ -586,7 +600,11 @@ impl OpineRustPanel {
         let mut run = false;
         let mut close = false;
         let theme = ui.active_theme();
-        let state = if has_data { self.run_state() } else { RunState::NoData };
+        let state = if has_data {
+            self.run_state()
+        } else {
+            RunState::NoData
+        };
         let (label, tooltip) = match &state {
             RunState::Draft => ("Draft".to_owned(), "Not applied yet"),
             RunState::Applied(title) => (title.clone(), "Running on the chart"),
@@ -612,30 +630,53 @@ impl OpineRustPanel {
                     .primary()
                     .small()
                     .enabled(has_data)
-                    .tooltip(if has_data { "Run script · Ctrl/Command+Enter" } else { "Load a symbol to run" })
+                    .tooltip(if has_data {
+                        "Run script · Ctrl/Command+Enter"
+                    } else {
+                        "Load a symbol to run"
+                    })
                     .show(ui);
                 self.run_rect = Some(run_button.rect);
                 run = run_button.clicked();
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = theme.spacing.sm;
-                    ui.label(egui::RichText::new("OpineRust").strong().size(theme.text.title));
+                    ui.label(
+                        egui::RichText::new("OpineRust")
+                            .strong()
+                            .size(theme.text.title),
+                    );
                     let (color, bg) = match state {
-                        RunState::Failed(_) => (ui.visuals().error_fg_color, ui.visuals().error_fg_color.gamma_multiply(0.12)),
-                        RunState::Applied(_) => (egui::Color32::from_rgb(8, 153, 129), egui::Color32::from_rgb(8, 153, 129).gamma_multiply(0.12)),
-                        RunState::Edited(_) => (egui::Color32::from_rgb(255, 152, 0), egui::Color32::from_rgb(255, 152, 0).gamma_multiply(0.12)),
+                        RunState::Failed(_) => (
+                            ui.visuals().error_fg_color,
+                            ui.visuals().error_fg_color.gamma_multiply(0.12),
+                        ),
+                        RunState::Applied(_) => (
+                            egui::Color32::from_rgb(8, 153, 129),
+                            egui::Color32::from_rgb(8, 153, 129).gamma_multiply(0.12),
+                        ),
+                        RunState::Edited(_) => (
+                            egui::Color32::from_rgb(255, 152, 0),
+                            egui::Color32::from_rgb(255, 152, 0).gamma_multiply(0.12),
+                        ),
                         _ => (theme.ui.text_muted, egui::Color32::TRANSPARENT),
                     };
                     ui.label(
                         egui::RichText::new(format!(" {label} "))
                             .size(theme.text.small)
                             .color(color)
-                            .background_color(bg)
-                    ).on_hover_text(format!("{label} — {tooltip}"));
+                            .background_color(bg),
+                    )
+                    .on_hover_text(format!("{label} — {tooltip}"));
                 });
             },
         );
-        let (rule, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-        ui.painter().hline(rule.x_range(), rule.center().y, egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.5)));
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            rule.x_range(),
+            rule.center().y,
+            egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.5)),
+        );
         ui.add_space(theme.spacing.xs);
         (run, close)
     }
@@ -669,9 +710,18 @@ impl OpineRustPanel {
             }
         }
         let theme = ui.active_theme();
-        let (rule, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-        ui.painter().hline(rule.x_range(), rule.center().y, egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.5)));
-        let icon = if self.logs_open { &icons::CHEVRON_DOWN } else { &icons::CHEVRON_UP };
+        let (rule, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+        ui.painter().hline(
+            rule.x_range(),
+            rule.center().y,
+            egui::Stroke::new(1.0, theme.ui.border.gamma_multiply(0.5)),
+        );
+        let icon = if self.logs_open {
+            &icons::CHEVRON_DOWN
+        } else {
+            &icons::CHEVRON_UP
+        };
         ui.horizontal(|ui| {
             if Button::icon_and_text(icon, summary)
                 .small()
@@ -784,16 +834,32 @@ impl OpineRustPanel {
         bars: &[ChartBar],
         now_ms: i64,
     ) -> Option<InstallStudy> {
+        self.prepare_with_environment(source, bars, now_ms, HostEnvironment::empty())
+    }
+
+    /// Like [`prepare`], with the host hooks a script can call into.
+    ///
+    /// `environment` is where `request.security` and `import` are answered. The
+    /// panel passes it through unchanged: which feeds and libraries exist is the
+    /// host's decision, not the dock's.
+    pub fn prepare_with_environment(
+        &mut self,
+        source: &str,
+        bars: &[ChartBar],
+        now_ms: i64,
+        environment: HostEnvironment,
+    ) -> Option<InstallStudy> {
         // Recalculations use the host clock, so a still-forming candle reports
         // `barstate.isrealtime` and a closed one reports confirmed history. The
         // chart's symbol and interval travel with the study so `syminfo.*` and
         // `timeframe.*` read real values.
-        match build_study_in_context(
+        match build_study_with_environment(
             source,
             bars,
             now_ms,
             self.context.clone(),
             Some(host_clock()),
+            environment,
         ) {
             Ok(built) => {
                 let title = built.info.title.clone();
@@ -806,10 +872,7 @@ impl OpineRustPanel {
                     ),
                 );
                 for diagnostic in built.diagnostics {
-                    self.log(
-                        severity_of(diagnostic.severity),
-                        diagnostic.message.clone(),
-                    );
+                    self.log(severity_of(diagnostic.severity), diagnostic.message.clone());
                 }
                 // Diagnostics live in the Logs strip, so the editor keeps none of
                 // its own; two lists showed the same failure twice.
@@ -868,7 +931,9 @@ fn logs_panel_height(open: bool, available: f32) -> f32 {
     if !open {
         return summary.min(available);
     }
-    (summary + 140.0).min(available * 0.6).max(summary.min(available))
+    (summary + 140.0)
+        .min(available * 0.6)
+        .max(summary.min(available))
 }
 
 /// The host clock the engine reads on recalculation, in UNIX milliseconds.
@@ -956,7 +1021,12 @@ fn line_of(source: &str, byte: usize) -> usize {
 /// step is recorded.
 fn install_failure(chart: &Chart, id: SeriesId) -> Option<String> {
     use Oracly_charts::studies::StudyStatus;
-    match chart.indicators().find(|(candidate, _)| *candidate == id)?.1.study_status() {
+    match chart
+        .indicators()
+        .find(|(candidate, _)| *candidate == id)?
+        .1
+        .study_status()
+    {
         Some(StudyStatus::DataError { message }) => Some(message),
         _ => None,
     }
@@ -1069,10 +1139,10 @@ mod tests {
     //! Tests for the OpineRust panel: run/replace lifecycle and diagnostic spans.
 
     use super::*;
-    use Oracly_charts::Chart;
+    use crate::build_study;
     use Oracly_charts::model::{Bar, BarData};
     use Oracly_charts::widget::SeriesId;
-    use crate::build_study;
+    use Oracly_charts::Chart;
 
     fn bars(count: usize) -> Vec<Bar> {
         (0..count)
@@ -1150,12 +1220,18 @@ mod tests {
             "the failed candidate must not replace the applied title"
         );
         assert!(
-            !panel.logs().iter().any(|line| line.contains("Applied “Fragile”")),
+            !panel
+                .logs()
+                .iter()
+                .any(|line| line.contains("Applied “Fragile”")),
             "the failed candidate must never be announced as applied: {:?}",
             panel.logs
         );
         assert!(
-            panel.logs().iter().any(|line| line.contains("Install failed")),
+            panel
+                .logs()
+                .iter()
+                .any(|line| line.contains("Install failed")),
             "{:?}",
             panel.logs
         );
@@ -1169,46 +1245,56 @@ mod tests {
         assert!(built.study.is_overlay());
     }
 
-    /// A script using one unsupported feature in many places must read as one log
-    /// line, not one line per occurrence: multiple import errors used to bury the cause
-    /// and overflow the strip.
+    /// A script using one genuinely unsupported construct in many places must read
+    /// as one log line, not one line per occurrence: six identical failures used to
+    /// bury the cause and overflow the strip. `request.not_a_member` is used here
+    /// because it is a real compile error the runtime reports once per call site.
     #[test]
     fn repeated_unsupported_uses_collapse_into_one_log_entry() {
         let mut panel = OpineRustPanel::default();
-        let mut script = String::from("//@version=6\nindicator(\"Imports\")\nplot(close)\n");
-        for i in 0..6 {
-            script.push_str(&format!("import username/lib{i}/1\n"));
+        let mut script = String::from("//@version=6\nindicator(\"Bad\")\nplot(close)\n");
+        for _ in 0..6 {
+            script.push_str("x = request.not_a_member(\"X\")\n");
         }
-        script.push_str("strategy(\"bad\")\n");
         assert!(panel.prepare(&script, &bars(10), 0).is_none());
 
-        let import_entries: Vec<_> = panel
+        let member_entries: Vec<_> = panel
             .logs()
             .into_iter()
-            .filter(|entry| entry.contains("`import` is not supported"))
+            .filter(|entry| entry.contains("not_a_member"))
             .collect();
         assert_eq!(
-            import_entries.len(),
+            member_entries.len(),
             1,
-            "six `import` uses are one cause: {:?}",
+            "six uses are one cause: {:?}",
             panel.logs()
         );
         assert!(
-            import_entries[0].contains("6 locations"),
+            member_entries[0].contains("6 locations"),
             "the entry says how often it occurred: {:?}",
-            import_entries
+            member_entries
         );
         assert!(
-            import_entries[0].contains("first at line 4"),
+            member_entries[0].contains("first at line 4"),
             "and where to look first: {:?}",
-            import_entries
+            member_entries
         );
+    }
+
+    /// An `import` the host cannot resolve is a run failure that names the path,
+    /// so the author sees which library is missing rather than a bare "failed".
+    #[test]
+    fn an_unresolvable_import_names_the_path() {
+        let mut panel = OpineRustPanel::default();
+        let script =
+            "//@version=6\nindicator(\"Imports\")\nimport acme/Missing/1 as m\nplot(close)\n";
+        assert!(panel.prepare(script, &bars(10), 0).is_none());
         assert!(
             panel
                 .logs()
                 .iter()
-                .any(|entry| entry.contains("`strategy` scripts are not supported")),
-            "a different cause keeps its own entry: {:?}",
+                .any(|entry| entry.contains("acme/Missing/1")),
+            "the missing path is named: {:?}",
             panel.logs()
         );
     }
@@ -1218,7 +1304,8 @@ mod tests {
     #[test]
     fn a_failed_run_lists_diagnostics_only_in_the_logs() {
         let mut panel = OpineRustPanel::default();
-        let script = "//@version=6\nindicator(\"Bad\")\nplot(close)\nx = request.security(\"X\", \"D\", close)\n";
+        let script =
+            "//@version=6\nindicator(\"Bad\")\nplot(close)\nx = request.not_a_member(\"X\")\n";
         assert!(panel.prepare(script, &bars(10), 0).is_none());
         assert!(
             panel.editor.diagnostics().is_empty(),
@@ -1273,11 +1360,9 @@ mod tests {
         let baseline = chart.indicators().count();
 
         let edits = chart.edit_count();
-        assert!(
-            panel
-                .prepare("//@version=5\nindicator(\"Broken\"\nplot(close\n", &bars, 0)
-                .is_none()
-        );
+        assert!(panel
+            .prepare("//@version=5\nindicator(\"Broken\"\nplot(close\n", &bars, 0)
+            .is_none());
         assert_eq!(chart.indicators().count(), baseline);
         assert_eq!(chart.edit_count(), edits, "a failure records no undo step");
 
@@ -1310,11 +1395,9 @@ mod tests {
         assert_ne!(second_id, first_id);
 
         let after_edits = chart.edit_count();
-        assert!(
-            panel
-                .prepare("//@version=5\nindicator(\"Broken\"\nplot(close\n", &bars, 0)
-                .is_none()
-        );
+        assert!(panel
+            .prepare("//@version=5\nindicator(\"Broken\"\nplot(close\n", &bars, 0)
+            .is_none());
         assert_eq!(chart.indicators().count(), baseline + 1);
         assert_eq!(chart.edit_count(), after_edits);
         let (_, last) = chart.indicators().last().expect("study present");
@@ -1634,18 +1717,42 @@ mod tests {
         );
     }
 
+    /// A `strategy` script is a first-class study: it runs against the runtime's
+    /// own simulated broker, so it is not refused for its declaration — and the
+    /// declaration's title names the study.
     #[test]
-    fn an_unsupported_script_is_rejected_with_its_reason() {
+    fn a_strategy_script_runs_and_installs() {
         let mut panel = OpineRustPanel::default();
-        let source = "//@version=5\nstrategy(\"s\")\n";
-        assert!(panel.prepare(source, &bars(5), 0).is_none());
-        assert!(
-            panel
-                .logs()
-                .iter()
-                .any(|line| line.contains("`strategy` scripts are not supported")),
-            "{:?}",
-            panel.logs
+        let source = r#"//@version=5
+strategy("s", overlay = true)
+if ta.crossover(close, ta.sma(close, 3))
+    strategy.entry("L", strategy.long)
+plot(close, title = "C")
+"#;
+        let prepared = panel.prepare(source, &bars(20), 0);
+        assert!(prepared.is_some(), "{:?}", panel.logs());
+        assert_eq!(
+            prepared.expect("a study").study.name(),
+            "s",
+            "the strategy's title names the study"
+        );
+    }
+
+    /// A drawing-only script installs: `box`/`line` markups plot no series, and
+    /// refusing them as "no plot output" excluded most of the LuxAlgo Library.
+    #[test]
+    fn a_drawing_only_script_installs() {
+        let mut panel = OpineRustPanel::default();
+        let source = r#"//@version=5
+indicator("Blocks", overlay = true)
+var b = box.new(bar_index, high, bar_index + 2, low)
+"#;
+        let prepared = panel.prepare(source, &bars(10), 0);
+        assert!(prepared.is_some(), "{:?}", panel.logs());
+        assert_eq!(
+            prepared.expect("a study").study.drawings().len(),
+            1,
+            "the box reached the study"
         );
     }
 
@@ -1656,12 +1763,10 @@ mod tests {
         assert!(panel.prepare(good, &bars(5), 0).is_some());
         panel.commit_failed("chart refused the study".to_owned());
         assert!(panel.applied.is_none(), "a failed install is not Applied");
-        assert!(
-            panel
-                .logs()
-                .iter()
-                .any(|line| line.contains("Install failed"))
-        );
+        assert!(panel
+            .logs()
+            .iter()
+            .any(|line| line.contains("Install failed")));
     }
 
     #[test]
@@ -1845,17 +1950,29 @@ mod tests {
                 prepared = panel.show_with_close(ui, &[], 0).0.is_some();
             },
         );
-        let texts: Vec<_> = output.shapes.iter().filter_map(|shape| {
-            if let egui::Shape::Text(text) = &shape.shape {
-                Some(text.galley.text().to_owned())
-            } else {
-                None
-            }
-        }).collect();
+        let texts: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|shape| {
+                if let egui::Shape::Text(text) = &shape.shape {
+                    Some(text.galley.text().to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect();
         output.drop_without_applying_deltas();
         assert!(!prepared);
-        assert!(texts.iter().any(|text| text.contains("indicator(\"Fast and Slow\"")), "draft must remain visible: {texts:?}");
-        assert!(texts.iter().any(|text| text.contains("Load a symbol")), "explain why Run is unavailable: {texts:?}");
+        assert!(
+            texts
+                .iter()
+                .any(|text| text.contains("indicator(\"Fast and Slow\"")),
+            "draft must remain visible: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|text| text.contains("Load a symbol")),
+            "explain why Run is unavailable: {texts:?}"
+        );
     }
 
     /// The header's close button asks the host to hide the dock.

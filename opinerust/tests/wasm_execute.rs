@@ -219,18 +219,44 @@ plot(syminfo.mintick * 0 + 1, title = "Tick")
     );
 }
 
+/// The constructs that used to be refused now run on wasm too, and the ones the
+/// host cannot answer degrade honestly instead of panicking. This matters most on
+/// wasm: the old rejection short-circuited before any `request` code ran, so a
+/// `SystemTime::now()` or socket reachable only through `request` stayed hidden.
 #[wasm_bindgen_test]
-fn unsupported_constructs_are_rejected_on_wasm() {
-    for source in [
-        "//@version=5\nstrategy(\"s\")\n",
-        "//@version=5\nindicator(\"x\")\na = request.security(\"X\", \"D\", close)\n",
-    ] {
-        assert!(build_study(source, &[], 0).is_err(), "{source}");
-        match execute(source, &bars(), 0) {
-            Err(EngineError::Compile(diagnostics)) => {
-                assert!(diagnostics.iter().any(|d| d.line.is_some()), "{source}");
-            }
-            other => panic!("{source} must fail before running, got {other:?}"),
-        }
-    }
+fn host_dependent_constructs_run_on_wasm() {
+    // A strategy runs against the runtime's own broker, with no host hooks.
+    let strategy = execute("//@version=5\nstrategy(\"s\")\nplot(close)\n", &bars(), 0)
+        .expect("a strategy runs on wasm");
+    assert_eq!(strategy.info.kind, "strategy");
+
+    // An unavailable feed reads `na`; it must not panic or reach the network.
+    let requested = execute(
+        "//@version=5\nindicator(\"x\")\nplot(close)\nplot(request.security(\"X\", \"D\", close), title = \"D\")\n",
+        &bars(),
+        0,
+    )
+    .expect("request.* degrades to na on wasm");
+    assert_eq!(
+        requested.plots[1]
+            .values
+            .iter()
+            .filter(|value| value.is_some())
+            .count(),
+        0
+    );
+
+    // A drawing-only script produces geometry on wasm as well. An un-held
+    // `box.new` runs once per bar, which is Pine's own behaviour.
+    let drawn = execute(
+        "//@version=5\nindicator(\"b\")\nbox.new(0, 1.0, 2, 0.5)\n",
+        &bars(),
+        0,
+    )
+    .expect("drawings run on wasm");
+    assert_eq!(
+        drawn.boxes.len(),
+        bars().len(),
+        "one box per bar, not one merged handle"
+    );
 }
