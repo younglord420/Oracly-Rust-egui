@@ -514,7 +514,7 @@ cargo check --manifest-path examples/demo/Cargo.toml
 
 ## 8. Status Implementasi & Bukti Verifikasi
 
-**Tanggal verifikasi**: 2026-11-11. Runtime ada di `25668a0` dan bridge mem-pin revisi itu.
+**Tanggal verifikasi**: 2026-11-11. Runtime ada di `98c09bb` dan bridge mem-pin revisi itu.
 
 ### 8.1 Yang sudah dikerjakan
 
