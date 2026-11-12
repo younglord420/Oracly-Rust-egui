@@ -211,3 +211,124 @@ plot(ta.sma(close, 5), title = "MA")
         output.trades
     );
 }
+
+#[test]
+fn smc_real_script_drawings_investigation() {
+    use Oracly_charts::model::Bar as ChartBar;
+    use Oracly_charts::studies::Indicator;
+
+    let path = "/root/egui-charts/smc.txt";
+    let Ok(source) = std::fs::read_to_string(path) else {
+        return;
+    };
+
+    let bars: Vec<ChartBar> = if let Ok(csv_text) = std::fs::read_to_string("/tmp/btcusdt_1d.csv") {
+        csv_text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let parts: Vec<&str> = line.split(',').collect();
+                let t: i64 = parts[0].parse().unwrap();
+                let o: f64 = parts[1].parse().unwrap();
+                let h: f64 = parts[2].parse().unwrap();
+                let l: f64 = parts[3].parse().unwrap();
+                let c: f64 = parts[4].parse().unwrap();
+                let v: f64 = parts[5].parse().unwrap();
+                ChartBar::new(
+                    chrono::DateTime::from_timestamp_millis(t).unwrap(),
+                    o,
+                    h,
+                    l,
+                    c,
+                    v,
+                )
+            })
+            .collect()
+    } else {
+        (0..240)
+            .map(|i| {
+                let wave = ((i as f64) / 12.0).sin();
+                let close = 60000.0 + 5000.0 * wave + (i as f64) * 30.0;
+                ChartBar::new(
+                    chrono::DateTime::from_timestamp_millis(1_700_000_000_000 + i * 86_400_000).unwrap(),
+                    close - 500.0,
+                    close + 1000.0,
+                    close - 1000.0,
+                    close,
+                    100.0,
+                )
+            })
+            .collect()
+    };
+
+    println!("Testing with {} bars...", bars.len());
+    let now = bars.last().unwrap().time.timestamp_millis();
+    let engine_bars: Vec<opinerust::EngineBar> = bars
+        .iter()
+        .map(|b| opinerust::EngineBar {
+            forming: false,
+            history: true,
+            time_ms: b.time.timestamp_millis(),
+            open: b.open,
+            high: b.high,
+            low: b.low,
+            close: b.close,
+            volume: b.volume,
+        })
+        .collect();
+    let engine_out = opinerust::execute_with_environment(
+        &source,
+        &engine_bars,
+        now,
+        &opinerust::RunContext::default(),
+        &std::collections::HashMap::new(),
+        &opinerust::HostEnvironment::empty(),
+    )
+    .expect("engine executes");
+
+    println!("engine_out.boxes len = {}", engine_out.boxes.len());
+    for p in &engine_out.plots {
+        if p.title == "iob_size" || p.title == "iob_boxes_size" {
+            let last_val = p.values.last().copied().flatten();
+            let max_val = p.values.iter().filter_map(|&v| v).fold(0.0f64, f64::max);
+            println!("PLOT {}: last={:?} max={:?}", p.title, last_val, max_val);
+        }
+    }
+    for (i, bx) in engine_out.boxes.iter().enumerate() {
+        println!(
+            "BOX #{i}: left={} right={} top={} bottom={} extend={} fill={:?}",
+            bx.left, bx.right, bx.top, bx.bottom, bx.extend, bx.fill_color
+        );
+    }
+
+    let built = opinerust::build_study(&source, &bars, now).expect("SMC builds");
+    let drawings = built.study.drawings();
+    println!("Total drawings count: {}", drawings.len());
+    let mut rect_count = 0;
+    let mut line_count = 0;
+    let mut label_count = 0;
+    for d in drawings {
+        match d.tool_type {
+            Oracly_charts::drawings::DrawingToolType::Rect => {
+                rect_count += 1;
+                println!(
+                    "RECT: pts={:?} color={:?} fill={:?} extend_r={}",
+                    d.chart_points, d.color, d.fill_color, d.extend_right
+                );
+            }
+            Oracly_charts::drawings::DrawingToolType::TrendLine
+            | Oracly_charts::drawings::DrawingToolType::HorizontalLine => {
+                line_count += 1;
+            }
+            Oracly_charts::drawings::DrawingToolType::AnchoredText => {
+                label_count += 1;
+            }
+            _ => {}
+        }
+    }
+    println!(
+        "Drawings breakdown: rects={}, lines={}, labels={}",
+        rect_count, line_count, label_count
+    );
+    assert!(rect_count > 0, "Rect count should be > 0!");
+}
