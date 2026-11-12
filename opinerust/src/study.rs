@@ -76,8 +76,12 @@ struct Snapshot {
 /// need a chart handle: the most common positive gap between neighbouring bars is
 /// the candle span, which survives weekends and session breaks.
 fn bar_span_ms(bars: &[ChartBar]) -> i64 {
+    if bars.len() < 2 {
+        return 0;
+    }
     let mut gaps: Vec<i64> = bars
         .windows(2)
+        .take(30)
         .map(|pair| pair[1].time.timestamp_millis() - pair[0].time.timestamp_millis())
         .filter(|gap| *gap > 0)
         .collect();

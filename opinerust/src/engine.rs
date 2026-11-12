@@ -881,7 +881,7 @@ pub fn execute_with_environment(
                 interpreter.set_variable(&name, value);
             }
         }
-        let output = interpreter.execute(&program).map_err(|error| {
+        interpreter.execute_bar(&program).map_err(|error| {
             let (message, line, column) = split_location(&error.to_string());
             EngineError::Runtime(Diagnostic {
                 severity: DiagnosticSeverity::Error,
@@ -890,6 +890,7 @@ pub fn execute_with_environment(
                 column,
             })
         })?;
+        let output = &interpreter.output;
         for entry in output.get_logs() {
             diagnostics.push(Diagnostic {
                 severity: match entry.level {
