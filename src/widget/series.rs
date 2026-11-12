@@ -820,9 +820,9 @@ impl Chart {
             || self.scroll_start_pos.is_some()
             || self.feed.loading_history
             || (now - self.last_nav_time) < 0.25;
-        if view_moving && self.pending_from.iter().any(|p| *p == Some(0)) {
+        if view_moving && self.pending_from.iter().any(|p| p.is_some()) {
             // While a wheel zoom or pan animation is in flight, or history is actively loading,
-            // defer heavy full-recomputes from bar 0 so navigation glides smoothly at 60 FPS without freezing the frame.
+            // defer heavy full-recomputes so navigation glides smoothly at 60 FPS without freezing the frame.
             return Some(0.1);
         }
 

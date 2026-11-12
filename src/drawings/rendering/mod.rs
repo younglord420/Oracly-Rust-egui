@@ -599,6 +599,16 @@ impl Drawing {
                 | T::FontIcon
                 | T::Sticker
                 | T::Image
+                | T::TextLabel
+                | T::AnchoredText
+                | T::Note
+                | T::PriceNote
+                | T::AnchoredNote
+                | T::Callout
+                | T::Comment
+                | T::PriceLabel
+                | T::Signpost
+                | T::FlagNote
         );
         if !bounded || self.extend_left || self.extend_right {
             return None;

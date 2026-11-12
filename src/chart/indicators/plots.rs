@@ -116,10 +116,40 @@ pub(crate) fn mapped_drawings(
     if !style.visible {
         return Vec::new();
     }
+    let visible_count = if coords.bar_spacing > 0.0 {
+        (coords.rect.width() / coords.bar_spacing).ceil() as usize + 25
+    } else {
+        usize::MAX / 2
+    };
+    let min_bar = coords.start_idx.saturating_sub(25) as f32;
+    let max_bar = (coords.start_idx + visible_count) as f32;
+
     study
         .drawings()
         .iter()
-        .filter(|drawing| drawing.visible)
+        .filter(|drawing| {
+            if !drawing.visible {
+                return false;
+            }
+            // Density LOD: when zoomed out very far (dense candles < 2.5px),
+            // skip anchored text annotations to prevent thousands of redundant font layout operations.
+            if coords.bar_spacing < 2.5
+                && drawing.tool_type == crate::drawings::DrawingToolType::AnchoredText
+            {
+                return false;
+            }
+            // If the drawing extends to either edge, it may cross the visible window.
+            if drawing.extend_left || drawing.extend_right {
+                return true;
+            }
+            if drawing.chart_points.is_empty() {
+                return true;
+            }
+            // Early spatial rejection: if all anchor points lie strictly to the left or right of the screen
+            let all_before = drawing.chart_points.iter().all(|cp| cp.bar_idx < min_bar);
+            let all_after = drawing.chart_points.iter().all(|cp| cp.bar_idx > max_bar);
+            !all_before && !all_after
+        })
         .map(|drawing| {
             let mut drawing = drawing.clone();
             // A study that left the drawing at its default white stroke is asking
