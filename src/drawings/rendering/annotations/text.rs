@@ -20,15 +20,34 @@ impl Drawing {
             return;
         };
         let snap = PixelSnap::of(painter);
-        let origin = Pos2::new(
-            snap.edge(self.points[0].x + 2.0),
-            snap.edge(self.points[0].y + 2.0),
-        );
         let color = self.text_color.map_or_else(
             || painter.ctx().active_theme().ui.text,
             |c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]),
         );
         let galley = painter.layout_no_wrap(text.to_string(), self.annotation_font(), color);
+        let (shift_x, shift_y) = if self.tool_type == crate::drawings::DrawingToolType::AnchoredText
+        {
+            let width = galley.size().x;
+            let height = galley.size().y;
+            let shift_x = match self.text_h_align {
+                crate::drawings::TextHorizontalAlign::Left => -(width + 4.0),
+                crate::drawings::TextHorizontalAlign::Right => 4.0,
+                crate::drawings::TextHorizontalAlign::Center => -width * 0.5,
+            };
+            let shift_y = match self.text_v_align {
+                crate::drawings::TextVerticalAlign::Top => -(height + 4.0),
+                crate::drawings::TextVerticalAlign::Bottom => 4.0,
+                crate::drawings::TextVerticalAlign::Middle
+                | crate::drawings::TextVerticalAlign::Inside => -height * 0.5,
+            };
+            (shift_x, shift_y)
+        } else {
+            (2.0, 2.0)
+        };
+        let origin = Pos2::new(
+            snap.edge(self.points[0].x + shift_x),
+            snap.edge(self.points[0].y + shift_y),
+        );
         let glyph = Rect::from_min_size(origin, galley.size());
         let hovered = painter.ctx().input(|input| {
             input

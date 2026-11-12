@@ -279,14 +279,14 @@ pub(super) fn refresh_values(
         }
     }
     let mut wait = None::<f64>;
-    for (at, study) in studies.iter_mut().enumerate() {
+    for (at, _study) in studies.iter_mut().enumerate() {
         let Some(from) = pending_from[at] else {
             continue;
         };
         let left = if from == 0 {
-            if !study.values().is_empty() {
-                study.update(&[], 0);
-            }
+            // Do not call `update(&[], 0)`. A full recompute is already queued.
+            // An empty slice is not a calculation: Pine rejects it, and the
+            // previous rows stay until the real bars are replayed.
             0.0
         } else {
             (next_refresh[at] - now).max(0.0)

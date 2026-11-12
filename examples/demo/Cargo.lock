@@ -269,7 +269,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -1250,7 +1250,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2700,7 +2700,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2908,7 +2908,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "pine-ast"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "serde",
 ]
@@ -2916,7 +2916,7 @@ dependencies = [
 [[package]]
 name = "pine-broker"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "pine-core",
  "serde",
@@ -2925,7 +2925,7 @@ dependencies = [
 [[package]]
 name = "pine-builtin-macro"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2935,7 +2935,7 @@ dependencies = [
 [[package]]
 name = "pine-builtins"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -2951,7 +2951,7 @@ dependencies = [
 [[package]]
 name = "pine-core"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -2960,12 +2960,12 @@ dependencies = [
 [[package]]
 name = "pine-diagnostics"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 
 [[package]]
 name = "pine-interpreter"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "ahash",
  "pine-ast",
@@ -2979,7 +2979,7 @@ dependencies = [
 [[package]]
 name = "pine-lexer"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "eyre",
  "pine-core",
@@ -2989,7 +2989,7 @@ dependencies = [
 [[package]]
 name = "pine-parser"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "clap",
  "eyre",
@@ -3003,7 +3003,7 @@ dependencies = [
 [[package]]
 name = "pine-sema"
 version = "0.2.6"
-source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=77eaaf66aa567b483f5974b5321581d045b445b6#77eaaf66aa567b483f5974b5321581d045b445b6"
+source = "git+ssh://git@github.com/younglord420/OpineRust.git?rev=6750407a7bb85c5ea1a3cc6b5607cb91f1330598#6750407a7bb85c5ea1a3cc6b5607cb91f1330598"
 dependencies = [
  "pine-ast",
  "pine-core",
@@ -3380,7 +3380,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3400,9 +3400,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.15.1"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
+checksum = "102f35f7de7b06d8c61f1cff6592f5253e0dea431c74867aad5dfd70f44663fb"
 dependencies = [
  "zeroize",
 ]
@@ -3790,7 +3790,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4410,9 +4410,9 @@ dependencies = [
 
 [[package]]
 name = "webbrowser"
-version = "1.2.6"
+version = "1.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe8d20d0214027baf11b8b0cc307c1da7657d8f4db9aa956f7de27a6fb1acbd5"
+checksum = "73e91ccd4698f2647d6137e8eb17a3f1dcfd63810be9029fb2398f507279b95b"
 dependencies = [
  "jni",
  "log",
@@ -4426,9 +4426,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.11"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5f280bbb2b287bc8e7de7e3852945a0ff50d1bbcb5ed42b6c7a568c546df171"
+checksum = "7265c9301c16a8711c992c2d8da90ee77ef54b1ed51482d6dfeb00dc756b1297"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -4574,7 +4574,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

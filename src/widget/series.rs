@@ -807,9 +807,10 @@ impl Chart {
     /// recomputes the study in full, for at most one study per call: of the studies whose change
     /// starts at the first bar or whose `next_refresh` has passed, the one whose `next_refresh`
     /// is earliest. Its next full recompute then waits, from the end of this one,
-    /// the longer of a quarter second and four times what this one took. Until its turn, a
-    /// study whose change starts at the first bar has no values, since its values belong to
-    /// other bars. Returns how long until the next waiting study is due, zero if one is due now.
+    /// the longer of a quarter second and four times what this one took. Until its
+    /// turn, a study whose change starts at the first bar keeps the previous
+    /// values; they are replaced when the replay runs. Returns how long until the
+    /// next waiting study is due, zero if one is due now.
     pub(super) fn refresh_studies(&mut self, now: f64) -> Option<f64> {
         let instrument = self.instrument().cloned();
         let clock = self.bar_clock();

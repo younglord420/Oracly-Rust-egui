@@ -10,15 +10,15 @@
 //! for the host instead of silently drawing gaps as if the script worked.
 
 use crate::context::RunContext;
-use crate::engine::{Bar, Diagnostic, EngineError, EngineOutput, execute_with_environment};
+use crate::engine::{execute_with_environment, Bar, Diagnostic, EngineError, EngineOutput};
 use crate::host::HostEnvironment;
+use egui::Color32;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use Oracly_charts::model::Bar as ChartBar;
 use Oracly_charts::model::BarClock as ChartClock;
 use Oracly_charts::model::Timeframe as ChartTimeframe;
 use Oracly_charts::studies::{CustomIndicator, IndicatorValue, InputValue, PlotType, StudyStatus};
-use egui::Color32;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 /// The recalculation the study runs on every refresh.
 type RecalculateFn = Arc<dyn Fn(&[ChartBar]) -> Vec<IndicatorValue> + Send + Sync>;
@@ -86,6 +86,43 @@ fn bar_span_ms(bars: &[ChartBar]) -> i64 {
     }
     gaps.sort_unstable();
     gaps[gaps.len() / 2]
+}
+
+/// Identity of a calculation. Pan, zoom, and hover ask again with the same
+/// candles; the script does not need to replay history for that.
+fn run_key(
+    bars: &[ChartBar],
+    bar_ms: i64,
+    context: &RunContext,
+    overrides: &HashMap<String, pine_core::InputValue>,
+) -> u64 {
+    let mut hash = 0x9E37_79B9_7F4A_7C15u64;
+    let mix = |hash: &mut u64, value: u64| {
+        *hash = hash.wrapping_mul(0x100_0000_01B3).wrapping_add(value);
+    };
+    mix(&mut hash, bars.len() as u64);
+    mix(&mut hash, bar_ms as u64);
+    if let Some(first) = bars.first() {
+        mix(&mut hash, first.time.timestamp_millis() as u64);
+    }
+    if let Some(last) = bars.last() {
+        mix(&mut hash, last.time.timestamp_millis() as u64);
+        mix(&mut hash, last.open.to_bits());
+        mix(&mut hash, last.high.to_bits());
+        mix(&mut hash, last.low.to_bits());
+        mix(&mut hash, last.close.to_bits());
+        mix(&mut hash, last.volume.to_bits());
+    }
+    mix(&mut hash, context.ticker.len() as u64);
+    for byte in context.ticker.bytes() {
+        mix(&mut hash, u64::from(byte));
+    }
+    mix(&mut hash, u64::from(context.multiplier));
+    mix(&mut hash, format!("{:?}", overrides).len() as u64);
+    for byte in format!("{:?}", overrides).bytes() {
+        mix(&mut hash, u64::from(byte));
+    }
+    hash
 }
 
 /// Convert chart bars to engine bars, keeping one entry per chart bar.
@@ -316,6 +353,7 @@ fn study_from_output(
     let input_titles: Arc<Vec<String>> = Arc::new(mapped.titles);
     let overrides: Arc<Mutex<HashMap<String, pine_core::InputValue>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let same_bars: Arc<Mutex<Option<(u64, Vec<IndicatorValue>)>>> = Arc::new(Mutex::new(None));
 
     // One closure shared by both calculation paths: the plain one and the
     // input-aware one. `with_inputs` replaces the calculate callback, so the
@@ -329,6 +367,7 @@ fn study_from_output(
         let overrides = Arc::clone(&overrides);
         let live_clock = Arc::clone(&live_clock);
         let environment = environment.clone();
+        let same_bars = Arc::clone(&same_bars);
         Arc::new(move |bars: &[ChartBar]| -> Vec<IndicatorValue> {
             let now = clock.as_ref().map_or(now_ms, |clock| clock());
             let context = context
@@ -339,12 +378,21 @@ fn study_from_output(
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
-            // The candle span is answered by the chart's clock, read fresh on every
-            // run: the interval, timezone and session can all change while the study
-            // stays installed, and a cached span would then decide "forming" for the
-            // previous interval. The timestamp fallback only applies when no clock
-            // was ever supplied.
             let bar_ms = bar_span_ms(bars);
+            // The wall clock is not part of the key. Zoom and hover call this
+            // again with the same candles; only a new bar or a changed input
+            // replays the script. `now` still decides whether the last candle
+            // is forming when a replay does run.
+            let key = run_key(bars, bar_ms, &context, &overrides);
+            if let Some((cached_key, rows)) = same_bars
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .as_ref()
+            {
+                if *cached_key == key {
+                    return rows.clone();
+                }
+            }
             let live_clock = live_clock
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -368,6 +416,10 @@ fn study_from_output(
                     *errors
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+                    *same_bars
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some((key, rows.clone()));
                     rows
                 }
                 Err(error) => {
@@ -643,6 +695,8 @@ fn drawings_from(output: &EngineOutput) -> Vec<Oracly_charts::drawings::Drawing>
             "dashed" => Oracly_charts::model::LineStyle::Dashed,
             _ => Oracly_charts::model::LineStyle::Solid,
         };
+        drawing.extend_left = matches!(line.extend.as_str(), "left" | "both");
+        drawing.extend_right = matches!(line.extend.as_str(), "right" | "both");
         drawings.push(drawing);
     }
 
@@ -669,6 +723,8 @@ fn drawings_from(output: &EngineOutput) -> Vec<Oracly_charts::drawings::Drawing>
             "dashed" => Oracly_charts::model::LineStyle::Dashed,
             _ => Oracly_charts::model::LineStyle::Solid,
         };
+        drawing.extend_left = matches!(boxed.extend.as_str(), "left" | "both");
+        drawing.extend_right = matches!(boxed.extend.as_str(), "right" | "both");
         if !boxed.text.is_empty() {
             drawing.text = Some(boxed.text.clone());
         }
@@ -685,7 +741,9 @@ fn drawings_from(output: &EngineOutput) -> Vec<Oracly_charts::drawings::Drawing>
         let mut drawing = push(icon);
         drawing.chart_points = vec![ChartPoint::new(label.x as f32, label.y)];
         if let Some(color) = label.text_color.or(label.color) {
-            drawing.color = unpack_color(color);
+            let unpacked = unpack_color(color);
+            drawing.color = unpacked;
+            drawing.text_color = Some(unpacked);
         }
         if let Some(background) = label.color {
             drawing.fill_color = Some(unpack_color(background));
@@ -700,6 +758,36 @@ fn drawings_from(output: &EngineOutput) -> Vec<Oracly_charts::drawings::Drawing>
             "huge" => 20.0,
             _ => 13.0,
         };
+        let (vertical, horizontal) = match label.style.as_str() {
+            "label_up" | "label_upper_left" | "label_upper_right" => (
+                Oracly_charts::drawings::TextVerticalAlign::Top,
+                Oracly_charts::drawings::TextHorizontalAlign::Center,
+            ),
+            "label_down" | "label_lower_left" | "label_lower_right" => (
+                Oracly_charts::drawings::TextVerticalAlign::Bottom,
+                Oracly_charts::drawings::TextHorizontalAlign::Center,
+            ),
+            "label_left" => (
+                Oracly_charts::drawings::TextVerticalAlign::Middle,
+                Oracly_charts::drawings::TextHorizontalAlign::Left,
+            ),
+            "label_right" => (
+                Oracly_charts::drawings::TextVerticalAlign::Middle,
+                Oracly_charts::drawings::TextHorizontalAlign::Right,
+            ),
+            _ => (
+                Oracly_charts::drawings::TextVerticalAlign::Middle,
+                Oracly_charts::drawings::TextHorizontalAlign::Center,
+            ),
+        };
+        if matches!(label.style.as_str(), "label_upper_left" | "label_lower_left") {
+            drawing.text_h_align = Oracly_charts::drawings::TextHorizontalAlign::Left;
+        } else if matches!(label.style.as_str(), "label_upper_right" | "label_lower_right") {
+            drawing.text_h_align = Oracly_charts::drawings::TextHorizontalAlign::Right;
+        } else {
+            drawing.text_h_align = horizontal;
+        }
+        drawing.text_v_align = vertical;
         drawings.push(drawing);
     }
 
@@ -856,6 +944,23 @@ indicator("Fast and Slow", overlay = true)
 plot(ta.sma(close, 3), title = "Fast")
 plot(ta.sma(close, 10), title = "Slow")
 "#;
+
+    #[test]
+    fn the_same_candles_share_a_key_when_the_clock_would_have_moved() {
+        let bars = chart_bars(4);
+        let context = RunContext::default();
+        let overrides = HashMap::new();
+        assert_eq!(
+            run_key(&bars, 60_000, &context, &overrides),
+            run_key(&bars, 60_000, &context, &overrides)
+        );
+        let mut changed = bars.clone();
+        changed.last_mut().unwrap().close += 1.0;
+        assert_ne!(
+            run_key(&bars, 60_000, &context, &overrides),
+            run_key(&changed, 60_000, &context, &overrides)
+        );
+    }
 
     #[test]
     fn builds_a_two_line_overlay_study() {
@@ -1086,8 +1191,8 @@ plot(barstate.isconfirmed ? 1 : 0, title = "Confirmed")
     /// The guess this replaces (median gap between bars) cannot see the gap at all.
     #[test]
     fn a_session_close_ends_the_last_candle() {
-        use Oracly_charts::model::{Session, SessionWindow, TimezoneId};
         use chrono::{NaiveTime, Weekday};
+        use Oracly_charts::model::{Session, SessionWindow, TimezoneId};
 
         let source = r#"//@version=5
 indicator("state")
@@ -1252,11 +1357,9 @@ plot(close * 0 + len, title = "Len")
         );
 
         // An edit the schema refuses changes nothing.
-        assert!(
-            indicator
-                .set_input(&id, Oracly_charts::studies::InputValue::Length(500))
-                .is_err()
-        );
+        assert!(indicator
+            .set_input(&id, Oracly_charts::studies::InputValue::Length(500))
+            .is_err());
         indicator.calculate(&chart_bars(5));
         assert_eq!(indicator.values().value(0, 4), Some(3.0), "refused edit");
 
@@ -1412,6 +1515,127 @@ plot(close, title = "p")
         assert_eq!(table.cell_styles.len(), 1);
         assert_eq!(table.cell_styles[0].text_color, Some([255, 255, 255, 255]));
         assert_eq!(table.cell_styles[0].background, Some([0, 128, 0, 255]));
+    }
+
+    /// A structure line and box stay on the bars they name, in their own colours.
+    /// The chart addresses drawings by bar index, and a Pine `xloc.bar_time`
+    /// coordinate is a UNIX millisecond until the bridge moves it.
+    #[test]
+    fn a_bar_time_line_and_box_keep_their_bar_and_colour() {
+        let source = r#"//@version=5
+indicator("geom", overlay = true)
+if bar_index == 2
+    line.new(chart.point.new(time, na, high), chart.point.new(time, na, low), xloc.bar_time, color = color.red)
+    box.new(chart.point.new(time[1], na, high), chart.point.new(time, na, low), xloc = xloc.bar_time, bgcolor = color.new(color.blue, 70), border_color = color.red)
+label.new(chart.point.new(na, bar_index, high), "BOS", xloc = xloc.bar_index, textcolor = color.green, color = color(na))
+"#;
+        let built = build_study(source, &chart_bars(5), 0).expect("builds");
+        let drawings = built.study.drawings();
+        let line = drawings
+            .iter()
+            .find(|drawing| {
+                matches!(
+                    drawing.tool_type,
+                    Oracly_charts::drawings::DrawingToolType::TrendLine
+                )
+            })
+            .expect("a line");
+        assert_eq!(line.chart_points[0].bar_idx, 2.0, "{:?}", line.chart_points);
+        assert_eq!(line.color, [255, 0, 0, 255]);
+        let rect = drawings
+            .iter()
+            .find(|drawing| {
+                matches!(
+                    drawing.tool_type,
+                    Oracly_charts::drawings::DrawingToolType::Rect
+                )
+            })
+            .unwrap_or_else(|| {
+                let summary: Vec<_> = drawings
+                    .iter()
+                    .map(|drawing| {
+                        (
+                            format!("{:?}", drawing.tool_type),
+                            drawing
+                                .chart_points
+                                .iter()
+                                .map(|point| (point.bar_idx, point.price))
+                                .collect::<Vec<_>>(),
+                            drawing.text.clone(),
+                        )
+                    })
+                    .collect();
+                panic!("a box, got {summary:?}");
+            });
+        assert!(
+            rect.chart_points
+                .iter()
+                .all(|point| (0.0..5.0).contains(&point.bar_idx)),
+            "box left the candles: {:?}",
+            rect.chart_points
+        );
+        assert_eq!(rect.color, [255, 0, 0, 255]);
+        assert!(rect.fill_color.is_some(), "the box fill was dropped");
+        let label = drawings
+            .iter()
+            .find(|drawing| drawing.text.as_deref() == Some("BOS"))
+            .expect("the label");
+        assert_eq!(label.text_color, Some([0, 128, 0, 255]));
+    }
+
+    /// A premium-style zone is a filled box from an earlier bar to the last one,
+    /// and a structure label sits under its anchor when the style says so.
+    #[test]
+    fn a_zone_box_spans_its_times_and_a_label_sits_below() {
+        let source = r#"//@version=5
+indicator("zone", overlay = true)
+var b = box.new(na, na, na, na, bgcolor = color.new(color.red, 80), border_color = color(na), xloc = xloc.bar_time)
+var l = line.new(na, na, na, na, xloc = xloc.bar_time, color = color.teal, style = line.style_dashed)
+var tag = label.new(na, na, text = "CHoCH", color = color(na), textcolor = color.teal, style = label.style_label_down, size = size.small)
+if barstate.islast
+    b.set_top_left_point(chart.point.new(time[4], na, high[4]))
+    b.set_bottom_right_point(chart.point.new(time, na, low))
+    l.set_first_point(chart.point.new(time[3], na, high))
+    l.set_second_point(chart.point.new(time, na, high))
+    tag.set_point(chart.point.new(na, bar_index, high))
+"#;
+        let built = build_study(source, &chart_bars(6), 0).expect("builds");
+        let drawings = built.study.drawings();
+        let rect = drawings
+            .iter()
+            .find(|drawing| {
+                matches!(
+                    drawing.tool_type,
+                    Oracly_charts::drawings::DrawingToolType::Rect
+                )
+            })
+            .expect("the zone");
+        let mut xs: Vec<f32> = rect.chart_points.iter().map(|point| point.bar_idx).collect();
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(xs, vec![1.0, 5.0], "zone should run from bar 1 to the last bar");
+        assert!(rect.fill_color.is_some());
+        let line = drawings
+            .iter()
+            .find(|drawing| {
+                matches!(
+                    drawing.tool_type,
+                    Oracly_charts::drawings::DrawingToolType::TrendLine
+                )
+            })
+            .expect("the structure line");
+        assert_eq!(
+            line.line_style,
+            Oracly_charts::model::LineStyle::Dashed
+        );
+        let label = drawings
+            .iter()
+            .find(|drawing| drawing.text.as_deref() == Some("CHoCH"))
+            .expect("the tag");
+        assert_eq!(
+            label.text_v_align,
+            Oracly_charts::drawings::TextVerticalAlign::Bottom
+        );
+        assert_eq!(label.chart_points[0].bar_idx, 5.0);
     }
 
     /// A cell's size and alignment reach the chart table.

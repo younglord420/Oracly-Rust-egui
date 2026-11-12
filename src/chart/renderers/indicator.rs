@@ -597,6 +597,9 @@ impl IndicatorRenderer {
         price_scale: &PriceMap,
         coords: &ChartMapping,
     ) {
+        if !indicator.candles().is_empty() {
+            crate::chart::indicators::plots::paint_candles(context, indicator, price_scale, coords);
+        }
         #[cfg(feature = "drawings")]
         if !indicator.drawings().is_empty() {
             crate::chart::indicators::plots::paint_drawings(
@@ -608,7 +611,6 @@ impl IndicatorRenderer {
             return;
         }
         if !indicator.candles().is_empty() {
-            crate::chart::indicators::plots::paint_candles(context, indicator, price_scale, coords);
             return;
         }
         let visible = super::volume_profile::profile_range(coords);

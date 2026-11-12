@@ -15,7 +15,7 @@ use crate::context::RunContext;
 use crate::host::{HostEnvironment, InterpreterFeed, InterpreterLibraries};
 use crate::output::DrawingOutputSink;
 use pine_core::{
-    Bar as PineBar, Color, Data, Extend, InputOutput, Label, LineObject,
+    Bar as PineBar, Color, Data, Extend, InputOutput, Label, LabelStyle, LineObject,
     LineStyle as PineLineStyle, MetadataOutput, PineBox, PineVersion, PlotOutput, Size, Table,
     XLoc, YLoc,
 };
@@ -161,6 +161,9 @@ pub struct ScriptBox {
     pub border_width: f32,
     /// `solid`, `dotted` or `dashed`.
     pub border_style: String,
+    /// `none`, `left`, `right` or `both`. An order block uses `right` so the box
+    /// runs to the last bar.
+    pub extend: String,
     /// Text drawn inside the box.
     pub text: String,
 }
@@ -207,6 +210,8 @@ pub struct ScriptLabel {
     pub text_color: Option<u32>,
     /// `tiny`..`huge`, or `auto`.
     pub size: String,
+    /// `label_up`, `label_down`, `label_left`, `label_right`, or another `label.style_*`.
+    pub style: String,
     /// Hover tooltip text.
     pub tooltip: Option<String>,
 }
@@ -374,6 +379,11 @@ fn per_bar<O: pine_core::PineOutput>(
         // as a plain number made every such lookback `na`, which silently emptied
         // those boxes and labels.
         series("bar_index", bar.index as f64),
+        // `time` is the bar's opening UNIX ms and, like `bar_index`, a series.
+        // A subscript that only runs on some bars (`time[1]` inside an `if`,
+        // or `time[size]` the first time a pivot is stored) otherwise has no
+        // history and is `na`, which drops every line and box anchored on it.
+        series("time", bar.time as f64),
         (
             "last_bar_index".to_string(),
             last.map_or(Value::Na, |b| Value::Number(b.index as f64)),
@@ -1024,16 +1034,21 @@ fn placed_x(x: f64, time_x: bool, bars: &[PineBar]) -> f64 {
     if !time_x || !x.is_finite() || bars.is_empty() {
         return x;
     }
-    let mut nearest = 0usize;
-    let mut nearest_distance = f64::MAX;
-    for (index, bar) in bars.iter().enumerate() {
-        let distance = (bar.time as f64 - x).abs();
-        if distance < nearest_distance {
-            nearest = index;
-            nearest_distance = distance;
-        }
+    let at_or_after = bars.partition_point(|bar| (bar.time as f64) < x);
+    if at_or_after == 0 {
+        return 0.0;
     }
-    nearest as f64
+    if at_or_after >= bars.len() {
+        return (bars.len() - 1) as f64;
+    }
+    let previous = at_or_after - 1;
+    let previous_distance = (bars[previous].time as f64 - x).abs();
+    let next_distance = (bars[at_or_after].time as f64 - x).abs();
+    if previous_distance <= next_distance {
+        previous as f64
+    } else {
+        at_or_after as f64
+    }
 }
 
 /// Keep the shapes that fired on this bar.
@@ -1159,6 +1174,7 @@ fn script_box(value: &PineBox, bars: &[PineBar]) -> ScriptBox {
         fill_color: value.bgcolor.as_ref().map(pack_color),
         border_width: value.border_width as f32,
         border_style: value.border_style.clone(),
+        extend: value.extend.clone(),
         text: value.text.clone(),
     }
 }
@@ -1222,6 +1238,22 @@ fn script_label(value: &Label, bars: &[PineBar]) -> ScriptLabel {
             Size::Normal => "normal",
             Size::Large => "large",
             Size::Huge => "huge",
+        }
+        .to_string(),
+        style: match value.style {
+            LabelStyle::StyleLabelUp => "label_up",
+            LabelStyle::StyleLabelDown => "label_down",
+            LabelStyle::StyleLabelLeft => "label_left",
+            LabelStyle::StyleLabelRight => "label_right",
+            LabelStyle::StyleLabelCenter => "label_center",
+            LabelStyle::StyleLabelLowerLeft => "label_lower_left",
+            LabelStyle::StyleLabelLowerRight => "label_lower_right",
+            LabelStyle::StyleLabelUpperLeft => "label_upper_left",
+            LabelStyle::StyleLabelUpperRight => "label_upper_right",
+            other => {
+                let _ = other;
+                "label_down"
+            }
         }
         .to_string(),
         tooltip: value.tooltip.clone(),
@@ -1682,9 +1714,7 @@ plot(matrix.get(flipped, 0, 1))
         let got: Vec<f64> = (0..14).map(last).collect();
         assert_eq!(
             got,
-            vec![
-                1.0, 4.0, 10.0, 2.5, 1.0, 4.0, 1.0, 1.0, 3.0, 5.0, 2.0, 2.0, 4.0, 3.0
-            ],
+            vec![1.0, 4.0, 10.0, 2.5, 1.0, 4.0, 1.0, 1.0, 3.0, 5.0, 2.0, 2.0, 4.0, 3.0],
             "{got:?}"
         );
     }

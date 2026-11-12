@@ -513,10 +513,13 @@ mod tests {
                 },
                 |ui| slot.set(paint(ui, rect, table, ui.scope_id().with("glyph"))),
             );
-            let x = output.shapes.iter().find_map(|clipped| match &clipped.shape {
-                Shape::Text(text) if text.galley.text() == "Wider" => Some(text.pos.x),
-                _ => None,
-            });
+            let x = output
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    Shape::Text(text) if text.galley.text() == "Wider" => Some(text.pos.x),
+                    _ => None,
+                });
             let bounds = slot.get();
             output.drop_without_applying_deltas();
             (bounds, x)

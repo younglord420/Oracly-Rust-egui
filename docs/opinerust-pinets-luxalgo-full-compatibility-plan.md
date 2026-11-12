@@ -1,5 +1,7 @@
 # Blueprint & Roadmap Teknis: Pencapaian Kompatibilitas Penuh Pine Script® v5/v6 & LuxAlgo PineTS di OpineRust
 
+> **Dokumen ini bukan antrian eksekusi lagi.** Centang "jalan" di §3 ditutup dari tes kecil dan sudah terbukti salah di chart: SMC BTC 1D masih tanpa persegi panjang, dan zoom masih menghitung ulang. Antrian yang dipakai mulai 2026-11-12 ada di [`opinerust-pinets-execution-blueprint.md`](opinerust-pinets-execution-blueprint.md). File ini tetap sebagai latar, batas lisensi, dan arsitektur.
+
 **File Dokumen**: `docs/opinerust-pinets-luxalgo-full-compatibility-plan.md`  
 **Target Pelaksana**: DeepSeek / Automated Coding Agent  
 **Lingkup Workspace**:

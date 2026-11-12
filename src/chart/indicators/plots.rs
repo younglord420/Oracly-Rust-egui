@@ -122,9 +122,17 @@ pub(crate) fn mapped_drawings(
         .filter(|drawing| drawing.visible)
         .map(|drawing| {
             let mut drawing = drawing.clone();
-            drawing.color = style.color.to_srgba_unmultiplied();
-            drawing.stroke_width = style.width;
-            drawing.line_style = style.pattern;
+            // A study that left the drawing at its default white stroke is asking
+            // to be painted in plot 0. One that set a colour, a fill, or a text
+            // colour (a Pine box, line, or label) keeps that ink.
+            let own_ink = drawing.color != [255, 255, 255, 255]
+                || drawing.fill_color.is_some()
+                || drawing.text_color.is_some();
+            if !own_ink {
+                drawing.color = style.color.to_srgba_unmultiplied();
+                drawing.stroke_width = style.width;
+                drawing.line_style = style.pattern;
+            }
             drawing.update_screen_coords(
                 |bar: f32| {
                     let index = bar as usize;
