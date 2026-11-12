@@ -561,6 +561,10 @@ impl DemoApp {
         chart.config_mut().skip_background = true;
         chart.set_symbol(symbol);
         chart.set_timeframe(timeframe);
+        chart.set_bar_limit(
+            SeriesId::MAIN,
+            std::num::NonZeroUsize::new(2000),
+        );
         chart.drawings_mut().options.default_color =
             egui_charts::drawings::default_drawing_color(theme.dark);
         let storage = Arc::new(storage::DemoStorage::restore(cc.storage));

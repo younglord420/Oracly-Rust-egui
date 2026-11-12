@@ -35,15 +35,15 @@ Oracly-charts = { package = "Oracly-charts", path = "..", default-features = fal
 # same commit or Cargo links two copies of the same types. The repository is
 # private, so a clean build needs credentials; `net.git-fetch-with-cli = true`
 # makes Cargo reuse the git CLI's ssh-agent/SSH config instead of its own.
-pine-core = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-broker = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-ast = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-lexer = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-parser = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-interpreter = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-builtins = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-sema = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
-pine-diagnostics = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "fd005000ee9d59e184c280b349f79ca789528f81" }
+pine-core = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-broker = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-ast = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-lexer = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-parser = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-interpreter = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-builtins = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-sema = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
+pine-diagnostics = { git = "ssh://git@github.com/younglord420/OpineRust.git", rev = "a7df6ae478096730f367ad7a77a2743579d6d66b" }
 # `Color32` is the chart's colour type; Oracly uses it for plot colours.
 egui = { version = "0.37.0", default-features = false }
 # Bar timestamps in tests and the host adapter.

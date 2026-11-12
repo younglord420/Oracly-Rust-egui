@@ -439,9 +439,14 @@ fn study_from_output(
                     *errors
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(message);
+                    let rows = slot.rows.clone();
+                    *same_bars
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                        Some((key, rows.clone()));
                     // Keep the previous good result rather than drawing a
                     // misleading all-gap series as if the script succeeded.
-                    slot.rows.clone()
+                    rows
                 }
             }
         })
