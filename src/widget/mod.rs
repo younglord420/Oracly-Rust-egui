@@ -260,6 +260,8 @@ pub struct Chart {
     autoscale_settling: bool,
     /// egui input time of the previous frame, for animation dt
     last_anim_time: Option<f64>,
+    /// Last input time when navigation (wheel zoom, drag pan, or history paging) occurred.
+    pub(crate) last_nav_time: f64,
     /// Delta seconds of the current frame (set once per paint)
     frame_dt: f32,
     /// Time axis below the plots in the last frame; zero height while its labels are hidden

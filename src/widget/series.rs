@@ -815,11 +815,15 @@ impl Chart {
         let view_moving = self.zoom_animation.is_some()
             || self.price_zoom_animation.is_some()
             || self.scroll_animation.is_some()
-            || self.kinetic_scroll.is_active;
+            || self.kinetic_scroll.is_active
+            || self.autoscale_settling
+            || self.scroll_start_pos.is_some()
+            || self.feed.loading_history
+            || (now - self.last_nav_time) < 0.25;
         if view_moving && self.pending_from.iter().any(|p| *p == Some(0)) {
-            // While a wheel zoom or pan animation is in flight, defer heavy full-recomputes
-            // from bar 0 so the animation glides smoothly at 60 FPS without freezing the frame.
-            return Some(0.05);
+            // While a wheel zoom or pan animation is in flight, or history is actively loading,
+            // defer heavy full-recomputes from bar 0 so navigation glides smoothly at 60 FPS without freezing the frame.
+            return Some(0.1);
         }
 
         let instrument = self.instrument().cloned();

@@ -168,6 +168,12 @@ pub(crate) fn paint_drawings(
         executions: None,
     };
     for drawing in mapped_drawings(study, coords, price_to_y) {
+        if drawing
+            .paint_bounds()
+            .is_some_and(|bounds| !bounds.intersects(context.rect))
+        {
+            continue;
+        }
         drawing.render(
             &context.painter.with_clip_rect(context.rect),
             context.rect,

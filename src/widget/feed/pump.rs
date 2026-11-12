@@ -589,6 +589,7 @@ impl Chart {
         }
         self.feed.loading_history = false;
         self.feed.history_complete |= stale;
+        self.last_nav_time = self.last_anim_time.unwrap_or(0.0);
         self.data_loaded(SeriesId::MAIN);
     }
 

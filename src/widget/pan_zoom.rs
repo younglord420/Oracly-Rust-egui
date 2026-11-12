@@ -158,6 +158,10 @@ impl Chart {
             }
         }
 
+        if did_zoom {
+            self.last_nav_time = ui.input(|i| i.time);
+        }
+
         if !did_zoom
             && delta_y.abs() < 0.1
             && delta_x.abs() > 0.1
@@ -229,6 +233,7 @@ impl Chart {
                     chart_width,
                     ui.ctx().pixels_per_point(),
                 );
+                self.last_nav_time = ui.input(|i| i.time);
 
                 // Reset drag state to prevent jump after pinch
                 if self.scroll_start_offset.is_some() {
@@ -340,6 +345,7 @@ impl Chart {
 
         // Stop kinetic animation when user starts dragging
         self.kinetic_scroll.is_active = false;
+        self.last_nav_time = ui.input(|i| i.time);
 
         if self.scroll_start_pos.is_none() {
             self.scroll_start_pos = ui.input(|i| i.pointer.press_origin());

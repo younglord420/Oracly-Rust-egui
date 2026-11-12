@@ -110,6 +110,7 @@ impl Chart {
             crosshair_display: None,
             autoscale_settling: false,
             last_anim_time: None,
+            last_nav_time: 0.0,
             frame_dt: 1.0 / 60.0,
             time_axis_rect: egui::Rect::NOTHING,
             chart_type: ChartType::Candles,

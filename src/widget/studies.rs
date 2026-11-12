@@ -233,7 +233,7 @@ pub(super) fn refresh_values(
                                 && len > 0
                                 && from + 1 >= len
                                 && bars.len() >= len)
-                                && (from == 0 || now >= next_refresh[at])
+                                && (studies[at].values().is_empty() || now >= next_refresh[at])
                         })
                 })
                 .min_by(|&a, &b| next_refresh[a].total_cmp(&next_refresh[b]));
@@ -283,10 +283,8 @@ pub(super) fn refresh_values(
         let Some(from) = pending_from[at] else {
             continue;
         };
-        let left = if from == 0 {
-            // Do not call `update(&[], 0)`. A full recompute is already queued.
-            // An empty slice is not a calculation: Pine rejects it, and the
-            // previous rows stay until the real bars are replayed.
+        let left = if from == 0 && _study.values().is_empty() {
+            // Uncomputed study needs immediate first calculation.
             0.0
         } else {
             (next_refresh[at] - now).max(0.0)
