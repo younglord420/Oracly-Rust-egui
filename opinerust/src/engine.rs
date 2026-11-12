@@ -16,7 +16,7 @@ use crate::host::{HostEnvironment, InterpreterFeed, InterpreterLibraries};
 use crate::output::DrawingOutputSink;
 use pine_core::{
     Bar as PineBar, Color, Data, Extend, InputOutput, Label, LabelStyle, LineObject,
-    LineStyle as PineLineStyle, MetadataOutput, PineBox, PineVersion, PlotOutput, Size, Table,
+    LineStyle as PineLineStyle, LogOutput, MetadataOutput, PineBox, PineVersion, PlotOutput, Size, Table,
     XLoc, YLoc,
 };
 use pine_interpreter::{Interpreter, Series, Value};
@@ -869,6 +869,7 @@ pub fn execute_with_environment(
     let mut marks: Vec<ScriptMark> = Vec::new();
     let mut seen_closed = 0usize;
     let mut seen_open: Vec<(String, f64, u64)> = Vec::new();
+    let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
     for bar in &data.bars {
         interpreter.current_time = Some(bar.time);
@@ -889,6 +890,18 @@ pub fn execute_with_environment(
                 column,
             })
         })?;
+        for entry in output.get_logs() {
+            diagnostics.push(Diagnostic {
+                severity: match entry.level {
+                    pine_core::LogLevel::Info => DiagnosticSeverity::Info,
+                    pine_core::LogLevel::Warning => DiagnosticSeverity::Warning,
+                    pine_core::LogLevel::Error => DiagnosticSeverity::Error,
+                },
+                message: entry.message.clone(),
+                line: None,
+                column: None,
+            });
+        }
         // Collect the declared inputs from the first bar only: the declarations
         // are the same on every bar, and taking them once keeps declaration order.
         if seen == 0 {
@@ -1020,7 +1033,7 @@ pub fn execute_with_environment(
         tables: drawings.tables.values().map(script_table).collect(),
         marks,
         trades,
-        diagnostics: Vec::new(),
+        diagnostics,
     })
 }
 

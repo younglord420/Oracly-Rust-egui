@@ -812,6 +812,16 @@ impl Chart {
     /// values; they are replaced when the replay runs. Returns how long until the
     /// next waiting study is due, zero if one is due now.
     pub(super) fn refresh_studies(&mut self, now: f64) -> Option<f64> {
+        let view_moving = self.zoom_animation.is_some()
+            || self.price_zoom_animation.is_some()
+            || self.scroll_animation.is_some()
+            || self.kinetic_scroll.is_active;
+        if view_moving && self.pending_from.iter().any(|p| *p == Some(0)) {
+            // While a wheel zoom or pan animation is in flight, defer heavy full-recomputes
+            // from bar 0 so the animation glides smoothly at 60 FPS without freezing the frame.
+            return Some(0.05);
+        }
+
         let instrument = self.instrument().cloned();
         let clock = self.bar_clock();
         for (at, study) in self.studies.indicators_mut().iter_mut().enumerate() {

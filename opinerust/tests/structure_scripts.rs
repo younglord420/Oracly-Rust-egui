@@ -286,12 +286,9 @@ fn smc_real_script_drawings_investigation() {
     )
     .expect("engine executes");
 
-    println!("engine_out.boxes len = {}", engine_out.boxes.len());
-    for p in &engine_out.plots {
-        if p.title == "iob_size" || p.title == "iob_boxes_size" {
-            let last_val = p.values.last().copied().flatten();
-            let max_val = p.values.iter().filter_map(|&v| v).fold(0.0f64, f64::max);
-            println!("PLOT {}: last={:?} max={:?}", p.title, last_val, max_val);
+    for diag in &engine_out.diagnostics {
+        if diag.message.contains("DISP_STRUCT:") {
+            println!("{}", diag.message);
         }
     }
     for (i, bx) in engine_out.boxes.iter().enumerate() {
