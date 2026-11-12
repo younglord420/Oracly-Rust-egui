@@ -526,6 +526,8 @@ impl DemoApp {
         options.tooltip.font_size = 14.0;
         // A full-history range must also fit in a narrow window.
         options.time_scale.min_bar_spacing = 0.01;
+        // Limit zoom-in so a single candle never blows up into a fullscreen wall.
+        options.time_scale.max_bar_spacing = 60.0;
         // The scale reserves half a slot and one pixel after the last centre.
         options.time_scale.right_offset_pixels = Some(65.0 - 6.1 * 0.5 - 1.0);
         // Keep the latest candle fixed on the right while zooming.
